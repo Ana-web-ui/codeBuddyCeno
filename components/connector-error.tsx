@@ -18,7 +18,7 @@ export function ConnectorError({
       role="alert"
       className="flex min-w-0 flex-col items-start gap-3 text-sm"
     >
-      <p className="wrap-break-words">{recovery.message}</p>
+      <p className="wrap-break-word">{recovery.message}</p>
       {recovery.action && (
         <Button
           asChild
@@ -27,7 +27,7 @@ export function ConnectorError({
         >
           <a href={recovery.action.href} target="_top">
             <LinkIcon aria-hidden="true" />
-            <span className="min-w-0 wrap-break-words">{recovery.action.label}</span>
+            <span className="min-w-0 wrap-break-word">{recovery.action.label}</span>
           </a>
         </Button>
       )}
