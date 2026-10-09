@@ -1,6 +1,4 @@
-export function generateMax(_c: Config) {
-  throw new Error('Geração para 3ds Max não está disponível neste build.');
-}
+import { generateMax } from './maxscript';
 export type MaterialKind = 'white' | 'brand' | 'wood' | 'metal' | 'glass' | 'concrete' | 'plastic';
 export type Target = 'blender' | 'max';
 export const materials: {value: MaterialKind; label:string; color:string}[] = [

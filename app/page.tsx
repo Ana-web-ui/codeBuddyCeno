@@ -48,12 +48,12 @@ function Plan({c}: {c:Config}) {
 }
 export default function Home() {
   const [c,setC]=useState<Config>(defaults); const [tab,setTab]=useState('plan'); const [output,setOutput]=useState<{code:string;config:Config}|null>(null); const [error,setError]=useState(''); const [copied,setCopied]=useState(false); const [notice,setNotice]=useState(''); const current=useRef(c); current.current=c;
-  const validationMessage = (()=>{try{validate(c);return '';}catch(e){return (e as Error).message;}})();
+  const validationMessage: string = (()=>{try{validate(c);return '';}catch(e){return e instanceof Error ? e.message : 'Dados inválidos';}})();
   const valid = !validationMessage;
   const display = valid ? c : defaults;
   const dirty=output && JSON.stringify(output.config)!==JSON.stringify(c);
   const update=<K extends keyof Config>(key:K,value:Config[K])=>{setC(prev=>({...prev,[key]:value}));setError('');setNotice('');};
-  const build=()=>{try {const generated=generate(c);if(typeof generated!=='string') throw new Error('Não foi possível gerar o script.'); const code=generated;setOutput({code,config:{...c}});setTab('code');setError('');setNotice('Script gerado. Você já pode baixar o arquivo.');}catch(e){setError((e as Error).message);}};
+  const build=()=>{try {const generated=generate(c);if(typeof generated!=='string'||!generated){throw new Error('Não foi possível gerar o script.');}const code=generated;setOutput({code,config:{...c}});setTab('code');setError('');setNotice('Script gerado. Você já pode baixar o arquivo.');}catch(e){setError((e as Error).message);}};
   function download(){if(!output||dirty)return;const blob=new Blob([output.code],{type:'text/plain;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename(output.config);a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);setNotice(output.config.target==='max'?'Arquivo .ms baixado. Execute no 3ds Max.':'Arquivo .py baixado. Abra no Blender.');}
   async function handleImage(event:React.ChangeEvent<HTMLInputElement>){
     const file=event.target.files?.[0];event.target.value='';if(!file)return;
@@ -65,7 +65,7 @@ export default function Home() {
   useEffect(()=>{
     const context=(document as unknown as {modelContext?:{registerTool:(tool:unknown, options:unknown)=>Promise<void>|void}}).modelContext;
     if(!context?.registerTool)return; const controller=new AbortController();
-      try {Promise.resolve(context.registerTool({name:'generate_stand_script',title:'Gerar script de cenografia',description:'Gera o script para Blender ou 3ds Max de acordo com as medidas, materiais e textura visíveis.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:false},execute:(input:unknown)=>{if(!input || typeof input!=='object'||Array.isArray(input)||Object.keys(input).length) throw new Error('Use um objeto vazio.'); const cfg={...current.current}; const generated=generate(cfg); if(typeof generated!=='string') throw new Error('Não foi possível gerar o script.'); const code=generated; setOutput({code,config:cfg}); setTab('code'); return {filename:filename(cfg),code};}}, {signal:controller.signal})).catch(()=>{});}catch{}
+    try {Promise.resolve(context.registerTool({name:'generate_stand_script',title:'Gerar script de cenografia',description:'Gera o script para Blender ou 3ds Max de acordo com as medidas, materiais e textura visíveis.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:false},execute:(input:unknown)=>{if(!input || typeof input!=='object'||Array.isArray(input)||Object.keys(input).length) throw new Error('Use um objeto vazio.'); const cfg={...current.current};const generated=generate(cfg);if(typeof generated!=='string')throw new Error('Não foi possível gerar o script.');const code:string=generated;setOutput({code,config:cfg});setTab('code');return {filename:filename(cfg),code};}}, {signal:controller.signal})).catch(()=>{});}catch{}
     return ()=>controller.abort();
   },[]);
   return <div className="app-shell">
