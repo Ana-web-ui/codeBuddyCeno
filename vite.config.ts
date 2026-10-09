@@ -1,4 +1,5 @@
 import vinext from "vinext";
+import tailwindcss from "@tailwindcss/vite";
 import { nitro } from "nitro/vite";
 import { defineConfig } from "vite";
 import hostingConfig from "./.openai/hosting.json";
@@ -63,6 +64,7 @@ export default defineConfig(async ({ command }) => {
     },
     plugins: [
   vinext(),
+  tailwindcss(),
   sites({ mockAuth: !managedLinux }),
   connectorPreview(),
   ...(process.env.VERCEL
