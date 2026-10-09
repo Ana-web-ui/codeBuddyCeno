@@ -1,4 +1,5 @@
 import vinext from "vinext";
+import { nitro } from "nitro/vite";
 import { defineConfig } from "vite";
 import hostingConfig from "./.openai/hosting.json";
 import { readExecutionProfile } from "./scripts/execution-profile.mjs";
@@ -61,40 +62,41 @@ export default defineConfig(async ({ command }) => {
         : {}),
     },
     plugins: [
-      vinext(),
-      sites({ mockAuth: !managedLinux }),
-      connectorPreview(),
-      cloudflare({
-        viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
+  vinext(),
+  sites({ mockAuth: !managedLinux }),
+  connectorPreview(),
+  ...(process.env.VERCEL
+    ? [nitro()]
+    : [cloudflare({
+        viteEnvironment: {
+          name: "rsc",
+          childEnvironments: ["ssr"],
+        },
         inspectorPort: false,
         config: {
           ...localBindingConfig,
           ...(command === "serve"
             ? {
-                services: [
-                  {
-                    binding: "CONNECTORS",
-                    service: "sites-connector-preview",
-                    entrypoint: "ConnectorPreview",
-                  },
-                ],
+                services: [{
+                  binding: "CONNECTORS",
+                  service: "sites-connector-preview",
+                  entrypoint: "ConnectorPreview",
+                }],
               }
             : {}),
         },
         ...(command === "serve"
           ? {
-              auxiliaryWorkers: [
-                {
-                  config: {
-                    name: "sites-connector-preview",
-                    main: "./build/connector-preview-worker.mjs",
-                    compatibility_date: "2026-05-15",
-                  },
+              auxiliaryWorkers: [{
+                config: {
+                  name: "sites-connector-preview",
+                  main: "./build/connector-preview-worker.mjs",
+                  compatibility_date: "2026-05-15",
                 },
-              ],
+              }],
             }
           : {}),
-      }),
-    ],
+      })]),
+],
   };
 });
