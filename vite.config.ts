@@ -1,5 +1,4 @@
 import vinext from "vinext";
-import tailwindcss from "@tailwindcss/vite";
 import { nitro } from "nitro/vite";
 import { defineConfig } from "vite";
 import hostingConfig from "./.openai/hosting.json";
@@ -52,6 +51,20 @@ export default defineConfig(async ({ command }) => {
 
   // Wrangler snapshots its log path while the Cloudflare plugin is imported.
   const { cloudflare } = await import("@cloudflare/vite-plugin");
+  const tailwindPackageName = "@tailwindcss/vite";
+  const tailwindPlugin = await import(tailwindPackageName)
+    .then(({ default: tailwindcss }) => tailwindcss())
+    .catch((error: unknown) => {
+      if (
+        error instanceof Error &&
+        error.message.includes(tailwindPackageName) &&
+        (error.message.includes("Cannot find package") ||
+          error.message.includes("Cannot find module"))
+      ) {
+        return undefined;
+      }
+      throw error;
+    });
 
   return {
     server: {
@@ -64,7 +77,7 @@ export default defineConfig(async ({ command }) => {
     },
     plugins: [
   vinext(),
-  tailwindcss(),
+  ...(tailwindPlugin ? [tailwindPlugin] : []),
   sites({ mockAuth: !managedLinux }),
   connectorPreview(),
   ...(process.env.VERCEL
