@@ -1,6 +1,6 @@
 
 import vinext from "vinext";
-import { defineConfig } from "vite";
+import { defineConfig, type PluginOption } from "vite";
 import { nitro } from "nitro/vite";
 import hostingConfig from "./.openai/hosting.json";
 import { readExecutionProfile } from "./scripts/execution-profile.mjs";
@@ -85,13 +85,12 @@ export default defineConfig(async ({ command }) => {
   // 5. PLUGINS ORIGINAIS
   // ========================================
 
-  const plugins = [
+ const plugins: PluginOption[] = [
     vinext(),
 
-    sites({
-      mockAuth: !managedLinux,
-    }),
-
+   sites({
+  mockAuth: !managedLinux && !isVercel,
+}),
     connectorPreview(),
   ];
 
