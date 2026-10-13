@@ -33,15 +33,15 @@ const parameterFields: Record<'led' | 'counter' | 'stage' | 'totem' | 'spots' | 
     stage: [{ key: 'stageWidth', label: 'Largura' }, { key: 'stageDepth', label: 'Profundidade' }, { key: 'stageHeight', label: 'Altura', max: 1 }],
     totem: [{ key: 'totemWidth', label: 'Largura' }, { key: 'totemDepth', label: 'Profundidade' }, { key: 'totemHeight', label: 'Altura' }, { key: 'totemCount', label: 'Quantidade', unit: 'un', min: 1, max: 6 }],
     spots: [{ key: 'spotsCount', label: 'Quantidade por lado', unit: 'un', min: 1, max: 10 }],
-    chairs: [{ key: 'chairCount', label: 'Quantidade', unit: 'un', min: 1, max: 1000 },
-        { key: 'chairColumns', label: 'Cadeiras por fila', unit: 'un', min: 1, max: 60 },
+    chairs: [{ key: 'chairCount', label: 'Quantidade solicitada', unit: 'un', min: 1, max: 1000 },
+        { key: 'chairColumns', label: 'Máximo por fila', unit: 'un', min: 1, max: 60 },
         { key: 'chairWidth', label: 'Largura', min: .3, max: 1.2 },
         { key: 'chairDepth', label: 'Profundidade', min: .3, max: 1.2 },
         { key: 'chairHeight', label: 'Altura total', min: .65, max: 1.5 },
         { key: 'chairSeatHeight', label: 'Altura do assento', min: .3, max: .7 },
         { key: 'chairGapX', label: 'Vão entre cadeiras', min: 0, max: 2 },
         { key: 'chairRowGap', label: 'Vão entre filas', min: .1, max: 3 },
-        { key: 'chairAisleWidth', label: 'Corredor central', min: 0, max: 5 },
+        { key: 'chairAisleWidth', label: 'Largura de cada corredor', min: 0, max: 5 },
         { key: 'chairStageGap', label: 'Distância do palco', min: .5, max: 5 },
         { key: 'chairSideMargin', label: 'Margem lateral', min: .5, max: 5 },
         { key: 'chairFrontMargin', label: 'Margem na entrada', min: .2, max: 5 },]
@@ -83,7 +83,14 @@ function Plan({ c }: {
   </svg>;
 }
 export default function Home() {
+    const [confirmedPartial, setConfirmedPartial] = useState<string | null>(null);
+    const confirmedPartialRef = useRef<string | null>(null);
+    confirmedPartialRef.current = confirmedPartial;
     const [c, setC] = useState<Config>(() => createProjectConfig("stand"));
+    useEffect(() => {
+        setConfirmedPartial(null);
+        confirmedPartialRef.current = null;
+    }, [c]);
     const projectDrafts = useRef<Record<ProjectType, Config>>({ stand: createProjectConfig("stand"), palco: createProjectConfig("palco") });
     const [tab, setTab] = useState('plan');
     const [output, setOutput] = useState<{
@@ -107,6 +114,12 @@ export default function Home() {
         }
     })();
     const valid = !validationMessage;
+    const seating = valid
+        ? layoutChairs(c, geometry(c).stageY)
+        : null;
+    const configurationKey = JSON.stringify(c);
+    const needsPartialConfirmation = Boolean(seating && seating.missingCount > 0);
+    const partialConfirmed = confirmedPartial === configurationKey;
     const display = c;
     const dirty = output && JSON.stringify(output.config) !== JSON.stringify(c);
     const update = <K extends keyof Config>(key: K, value: Config[K]) => { setC(prev => ({ ...prev, [key]: value })); setError(''); setNotice(''); };
@@ -114,10 +127,9 @@ export default function Home() {
         try {
             validate(c);
             layoutChairs(c, geometry(c).stageY);
-            const generated = generate(c);
-            if (typeof generated !== 'string' || !generated) {
-                throw new Error('Não foi possível gerar o script.');
-            }
+            const generated = generate(c, {
+                confirmedPartial: confirmedPartial ?? undefined,
+            });
             const code = generated;
             setOutput({ code, config: { ...c } });
             setTab('code');
@@ -205,9 +217,9 @@ export default function Home() {
                     const cfg = { ...current.current };
                     validate(cfg);
                     layoutChairs(cfg, geometry(cfg).stageY);
-                    const generated = generate(cfg);
-                    if (typeof generated !== 'string' || !generated)
-                        throw new Error('Não foi possível gerar o script.');
+                    const generated = generate(cfg, {
+                        confirmedPartial: confirmedPartialRef.current ?? undefined,
+                    });
                     const code: string = generated;
                     setOutput({ code, config: cfg });
                     setTab('code');
@@ -264,8 +276,32 @@ export default function Home() {
       <div className="color-row"><label htmlFor="brand-color">Cor de destaque<small>Aplicada ao LED e aos elementos</small></label><div className="color-control"><input id="brand-color" type="color" value={c.color} onChange={e => update('color', e.target.value)}/><span>{c.color.toUpperCase()}</span></div></div>
       </TabsContent><TabsContent value="params">
       <p className="tab-help">Medidas em metros. Os elementos seguem uma distribuição automática na planta.</p>
-      {valid && c.chairs && <p className="tab-help">{c.chairCount} cadeiras em {layoutChairs(c, geometry(c).stageY).rows} filas. O assento usa a cor de destaque e as pernas usam metal.</p>}
-      {availableElements.filter(f => c[f.key]).map(f => <div className="parameter-section" key={f.key}><h3><f.icon size={16}/>{f.title}</h3><div className="param-grid">{parameterFields[f.key].map(field => <label className="field" key={field.key}>{field.label}<div className="unit-input"><input type="number" inputMode={field.unit === 'un' ? 'numeric' : 'decimal'} min={field.min ?? .1} max={field.max ?? 30} step={field.unit === 'un' ? 1 : .05} value={Number.isNaN(c[field.key]) ? '' : c[field.key] as number} onChange={e => update(field.key, e.target.value === '' ? NaN : Number(e.target.value))}/><span>{field.unit ?? 'm'}</span></div></label>)}</div></div>)}
+      {seating && c.chairs && (<p className="tab-help">
+    A planta mostra {seating.generatedCount} cadeiras
+    em {seating.rows} filas.
+    Quantidade solicitada: {seating.requestedCount}.
+  </p>)}
+      {availableElements.filter(f => c[f.key]).map(f => <div className="parameter-section" key={f.key}><h3><f.icon size={16}/>{f.title}</h3>{f.key === 'chairs' && (<div className="field">
+    <label htmlFor="chair-distribution">Distribuição da plateia</label>
+    <Select value={c.chairDistribution} onValueChange={value => {
+                    if (value === 'central' || value === 'lateral') {
+                        update('chairDistribution', value);
+                    }
+                }}>
+      <SelectTrigger id="chair-distribution" className="full-select">
+        <SelectValue placeholder="Selecione a distribuição"/>
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="central">Corredor central — dois blocos</SelectItem>
+        <SelectItem value="lateral">Corredores laterais — bloco central</SelectItem>
+      </SelectContent>
+    </Select>
+    <small>
+      {c.chairDistribution === 'lateral'
+                    ? 'Um corredor de cada lado, além das margens laterais.'
+                    : 'Um corredor entre os dois blocos de cadeiras.'}
+    </small>
+  </div>)}<div className="param-grid">{parameterFields[f.key].map(field => <label className="field" key={field.key}>{field.label}<div className="unit-input"><input type="number" inputMode={field.unit === 'un' ? 'numeric' : 'decimal'} min={field.min ?? .1} max={field.max ?? 30} step={field.unit === 'un' ? 1 : .05} value={Number.isNaN(c[field.key]) ? '' : c[field.key] as number} onChange={e => update(field.key, e.target.value === '' ? NaN : Number(e.target.value))}/><span>{field.unit ?? 'm'}</span></div></label>)}</div></div>)}
       {!availableElements.some(f => c[f.key]) && <p className="tab-help">Selecione um elemento na aba Projeto para ajustar suas medidas.</p>}
       {c.led && <div className="texture-section"><h3>Textura da TV / LED</h3><p>Escolha a arte que vai aparecer na tela. A imagem inteira é ajustada às medidas do LED.</p><label className="upload-label" htmlFor="tv-image">Escolher imagem JPG ou PNG<input id="tv-image" type="file" accept="image/png,image/jpeg" onChange={handleImage}/></label><small>Até 2 MB · incorporada ao script · imagem estática</small>{c.screenImage ? <div className="texture-preview"><img src={c.screenImage} alt="Arte selecionada para a tela de TV"/><span>{c.screenName}</span><button onClick={() => { imageRequest.current += 1; setC(prev => ({ ...prev, screenImage: '', screenName: '' })); setNotice('Imagem removida.'); }}>Remover imagem</button></div> : <p className="tab-help">Sem imagem, a tela usa a cor de destaque.</p>}</div>}
       </TabsContent><TabsContent value="materials"><p className="tab-help">Escolha o acabamento de cada parte. Madeira e concreto usam textura procedural; metal e vidro recebem propriedades de superfície.</p><div className="material-fields">{materialFields.filter((field) => {
@@ -273,7 +309,44 @@ export default function Home() {
                 return c.back || c.left || c.right;
             return !field.enabled || c[field.enabled];
         }).map(f => <div className="field material-field" key={f.key}><label htmlFor={'mat-' + f.key}>{f.label}</label><Select value={c[f.key]} onValueChange={v => update(f.key, v as MaterialKind)}><SelectTrigger id={'mat-' + f.key} className="full-select"><SelectValue /></SelectTrigger><SelectContent>{materials.map(m => <SelectItem key={m.value} value={m.value}><span className="material-dot" style={{ background: m.value === 'brand' ? c.color : m.color }}/>{m.label}</SelectItem>)}</SelectContent></Select></div>)}</div></TabsContent></Tabs>
-      <button className="generate-button" onClick={build}><Sparkles size={18}/>Gerar {c.target === 'max' ? 'MaxScript' : 'script Blender'}</button><p className="generation-note">Piso, câmera frontal e iluminação incluídos.</p>{error && <p role="alert" className="error">{error}</p>}
+        {seating && c.chairs && (<div className="parameter-section">
+    <h3>Distribuição da plateia</h3>
+
+    <p className="tab-help">
+      Solicitadas: {seating.requestedCount}
+      <br />
+      Na planta: {seating.generatedCount}
+      <br />
+      Lugares não atendidos: {seating.missingCount}
+      <br />
+      Filas utilizadas: {seating.rows}
+      <br />
+      Máximo utilizado por fila: {seating.columns}
+    </p>
+
+    {needsPartialConfirmation && (<>
+        <p className="tab-help">
+          A planta mostra a quantidade que cabe.
+          Você pode ajustar os parâmetros ou
+          confirmar a geração parcial.
+        </p>
+
+        {partialConfirmed ? (<p className="tab-help" role="status">
+            Geração parcial confirmada.
+            Clique em Gerar para exportar.
+          </p>) : (<button type="button" className="generate-button" onClick={() => {
+                        setConfirmedPartial(configurationKey);
+                        setError("");
+                    }}>
+            Confirmar geração de{" "}
+            {seating.generatedCount} cadeiras
+          </button>)}
+      </>)}
+  </div>)}
+
+    <button className="generate-button" onClick={build} disabled={!valid ||
+            (needsPartialConfirmation &&
+                !partialConfirmed)}><Sparkles size={18}/>Gerar {c.target === 'max' ? 'MaxScript' : 'script Blender'}</button><p className="generation-note">Piso, câmera frontal e iluminação incluídos.</p>{error && <p role="alert" className="error">{error}</p>}
     </section>
     <section className="result-panel" aria-label="Visualização e script"><Tabs value={tab} onValueChange={setTab}><div className="result-header"><TabsList className="view-tabs"><TabsTrigger value="plan"><Square size={16}/>Planta</TabsTrigger><TabsTrigger value="code"><Code2 size={17}/>{c.target === 'max' ? 'MaxScript' : 'Script Python'}</TabsTrigger></TabsList><span className="plan-scale">{valid ? `${num(c.width)} × ${num(c.depth)} m` : 'Confira as medidas'}</span></div>
       <TabsContent value="plan"><div className="plan-title"><span>VISTA SUPERIOR</span><small>Planta esquemática · sem perspectiva</small></div><div className="drawing">{valid ? <Plan c={display}/> : <div className="empty"><Ruler size={32}/><p>{validationMessage}</p></div>}</div><div className="legend">{(c.back || c.left || c.right) && <span><i className="legend-wall"/>Parede</span>}<span><i style={{ background: c.color }}/>Elementos</span><span><i className="legend-light"/>Spots</span></div><div className="model-info"><div><span>ÁREA TOTAL</span><strong>{valid ? num(c.width * c.depth) : '—'} <small>m²</small></strong></div><div><span>ALTURA DE MONTAGEM</span><strong>{valid ? num(c.height) : '—'} <small>m</small></strong></div><div><span>{c.target === 'max' ? 'EXPORTAÇÃO' : 'RENDER'}</span><strong>{c.target === 'max' ? '3ds Max' : 'Cycles'} <small>{c.target === 'max' ? '.ms' : '64 samples'}</small></strong></div></div></TabsContent>

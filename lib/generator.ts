@@ -176,21 +176,57 @@ export function validate(c: Config) {
     return c;
 }
 export function filename(c: Config) { return (c.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'stand') + (c.target === 'max' ? '.ms' : '.py'); }
-export function generate(c: Config) {
-    validate(c);
-    const layout = layoutChairs(c, geometry(c).stageY);
-    if (c.target === 'blender') {
-        return generateBlender(c) + blenderChairs(c, layout);
-    }
-    const script = generateMax(c);
-    const chairs = maxChairs(c, layout);
-    if (!chairs)
-        return script;
-    const marker = 'select criados';
-    if (!script.includes(marker)) {
-        throw new Error('Não encontrei o ponto de inserção das cadeiras no MaxScript.');
-    }
-    return script.replace(marker, chairs + '\n' + marker);
+export function generate(
+  c: Config,
+  options: {
+    confirmedPartial?: string;
+  } = {}
+) {
+  validate(c);
+
+  const layout = layoutChairs(
+    c,
+    geometry(c).stageY
+  );
+
+  const configurationKey = JSON.stringify(c);
+
+  if (
+    layout.missingCount > 0 &&
+    options.confirmedPartial !== configurationKey
+  ) {
+    throw new Error(
+      `Você solicitou ${layout.requestedCount} cadeiras, ` +
+      `mas cabem ${layout.generatedCount}. ` +
+      "Confirme a geração parcial antes de continuar."
+    );
+  }
+
+  if (c.target === "blender") {
+    return (
+      generateBlender(c) +
+      blenderChairs(c, layout)
+    );
+  }
+
+  const script = generateMax(c);
+  const chairs = maxChairs(c, layout);
+
+  if (!chairs) return script;
+
+  const marker = "select criados";
+
+  if (!script.includes(marker)) {
+    throw new Error(
+      "Não encontrei o ponto de inserção " +
+      "das cadeiras no MaxScript."
+    );
+  }
+
+  return script.replace(
+    marker,
+    chairs + "\n" + marker
+  );
 }
 export function generateBlender(c: Config) {
     validate(c);
