@@ -1,67 +1,201 @@
 import { generateMax } from './maxscript';
+import { chairDefaults, layoutChairs } from './library';
+import type { ChairConfig } from './library';
+import { blenderChairs, maxChairs } from './chair-exporters';
 export type MaterialKind = 'white' | 'brand' | 'wood' | 'metal' | 'glass' | 'concrete' | 'plastic';
+export type ProjectType = 'stand' | 'palco';
 export type Target = 'blender' | 'max';
-export const materials: {value: MaterialKind; label:string; color:string}[] = [
-  {value:'white',label:'Pintura branca',color:'#c8cedb'}, {value:'brand',label:'Cor de destaque',color:'#5268ff'},
-  {value:'wood',label:'Madeira',color:'#a87542'}, {value:'metal',label:'Metal',color:'#8d99a8'},
-  {value:'glass',label:'Vidro',color:'#81bfce'}, {value:'concrete',label:'Concreto',color:'#747b86'},
-  {value:'plastic',label:'Plástico',color:'#c4d1e1'}
+export const materials: {
+    value: MaterialKind;
+    label: string;
+    color: string;
+}[] = [
+    { value: 'white', label: 'Pintura branca', color: '#c8cedb' }, { value: 'brand', label: 'Cor de destaque', color: '#5268ff' },
+    { value: 'wood', label: 'Madeira', color: '#a87542' }, { value: 'metal', label: 'Metal', color: '#8d99a8' },
+    { value: 'glass', label: 'Vidro', color: '#81bfce' }, { value: 'concrete', label: 'Concreto', color: '#747b86' },
+    { value: 'plastic', label: 'Plástico', color: '#c4d1e1' }
 ];
-export type Config = {
-  name: string; width: number; depth: number; height: number; color: string; target: Target;
-  back: boolean; left: boolean; right: boolean; led: boolean;
-  counter: boolean; stage: boolean; totem: boolean; spots: boolean;
-  ledWidth: number; ledHeight: number; ledBottom: number;
-  counterWidth: number; counterDepth:number; counterHeight:number; counterCount:number;
-  stageWidth:number; stageDepth:number; stageHeight:number;
-  totemWidth:number; totemDepth:number; totemHeight:number; totemCount:number; spotsCount:number;
-  floorMat:MaterialKind; wallMat:MaterialKind; counterMat:MaterialKind; stageMat:MaterialKind; totemMat:MaterialKind;
-  screenImage:string; screenName:string;
+export type Config = ChairConfig & {
+    projectType: ProjectType;
+    name: string;
+    width: number;
+    depth: number;
+    height: number;
+    color: string;
+    target: Target;
+    back: boolean;
+    left: boolean;
+    right: boolean;
+    led: boolean;
+    counter: boolean;
+    stage: boolean;
+    totem: boolean;
+    spots: boolean;
+    ledWidth: number;
+    ledHeight: number;
+    ledBottom: number;
+    counterWidth: number;
+    counterDepth: number;
+    counterHeight: number;
+    counterCount: number;
+    stageWidth: number;
+    stageDepth: number;
+    stageHeight: number;
+    totemWidth: number;
+    totemDepth: number;
+    totemHeight: number;
+    totemCount: number;
+    spotsCount: number;
+    floorMat: MaterialKind;
+    wallMat: MaterialKind;
+    counterMat: MaterialKind;
+    stageMat: MaterialKind;
+    totemMat: MaterialKind;
+    screenImage: string;
+    screenName: string;
 };
-export const defaults: Config = { name: 'Meu primeiro stand', width: 10, depth: 5, height: 3.5, color: '#5268ff', target:'blender', back: true, left: false, right: false, led: true, counter: true, stage: false, totem: false, spots: true,
- ledWidth:4,ledHeight:2,ledBottom:.65,counterWidth:2,counterDepth:.65,counterHeight:1,counterCount:1,
- stageWidth:4.5,stageDepth:1.4,stageHeight:.3,totemWidth:.55,totemDepth:.25,totemHeight:1.8,totemCount:1,spotsCount:3,
- floorMat:'white',wallMat:'white',counterMat:'brand',stageMat:'metal',totemMat:'brand',screenImage:'',screenName:'' };
+export const defaults: Config = {
+    ...chairDefaults,
+    name: 'Meu primeiro stand', width: 10, depth: 5, height: 3.5, color: '#5268ff', target: 'blender', back: true, left: false, right: false, led: true, counter: true, stage: false, totem: false, spots: true,
+    ledWidth: 4, ledHeight: 2, ledBottom: .65, counterWidth: 2, counterDepth: .65, counterHeight: 1, counterCount: 1,
+    stageWidth: 4.5, stageDepth: 1.4, stageHeight: .3, totemWidth: .55, totemDepth: .25, totemHeight: 1.8, totemCount: 1, spotsCount: 3,
+    floorMat: 'white', wallMat: 'white', counterMat: 'brand', stageMat: 'metal', totemMat: 'brand', screenImage: '', screenName: '',
+    projectType: 'stand'
+};
 export function geometry(c: Config) {
-  return {ledW:c.ledWidth,ledH:c.ledHeight,ledZ:.1+c.ledBottom+c.ledHeight/2,
-    counterW:c.counterWidth,stageW:c.stageWidth,stageD:c.stageDepth,stageY:c.depth*.18,counterY:-c.depth*.28,
-    counterXs:Array.from({length:Math.min(6,Math.max(0,c.counterCount||0))},(_,i)=>(i-(c.counterCount-1)/2)*(c.counterWidth+.4)),
-    totemXs:Array.from({length:Math.min(6,Math.max(0,c.totemCount||0))},(_,i)=>(i-(c.totemCount-1)/2)*(c.totemWidth+.5)),totemY:-c.depth*.07,
-    spotYs:Array.from({length:Math.min(10,Math.max(0,c.spotsCount||0))},(_,i)=>c.spotsCount===1?0:-c.depth*.27+i*(c.depth*.54/(c.spotsCount-1)))};
+    return {
+        ledW: c.ledWidth,
+        ledH: c.ledHeight,
+        ledZ: 0.1 + c.ledBottom + c.ledHeight / 2,
+        counterW: c.counterWidth,
+        stageW: c.stageWidth,
+        stageD: c.stageDepth,
+        stageY: c.projectType === "palco"
+            ? c.depth / 2 - 0.7 - c.stageDepth / 2
+            : c.depth * 0.18,
+        counterY: -c.depth * 0.28,
+        counterXs: Array.from({ length: Math.min(6, Math.max(0, c.counterCount || 0)) }, (_, i) => (i - (c.counterCount - 1) / 2) *
+            (c.counterWidth + 0.4)),
+        totemXs: Array.from({ length: Math.min(6, Math.max(0, c.totemCount || 0)) }, (_, i) => (i - (c.totemCount - 1) / 2) *
+            (c.totemWidth + 0.5)),
+        totemY: -c.depth * 0.07,
+        spotYs: Array.from({ length: Math.min(10, Math.max(0, c.spotsCount || 0)) }, (_, i) => c.spotsCount === 1
+            ? 0
+            : -c.depth * 0.27 +
+                i * (c.depth * 0.54 / (c.spotsCount - 1))),
+    };
 }
 export function validate(c: Config) {
-  if (!c.name.trim() || c.name.length > 80) throw new Error('Dê um nome ao projeto, com até 80 caracteres.');
-  for (const k of ['width', 'depth', 'height'] as const) {
-    const min = k === 'height' ? 2 : 3; const max = k === 'height' ? 8 : 30;
-    if (!Number.isFinite(c[k]) || c[k] < min || c[k] > max) throw new Error(k === 'height' ? 'A altura deve estar entre 2 e 8 m.' : 'Largura e profundidade devem estar entre 3 e 30 m.');
-  }
-  if (!/^#[0-9a-f]{6}$/i.test(c.color)) throw new Error('Escolha uma cor válida.');
-  if(!['blender','max'].includes(c.target)) throw new Error('Escolha Blender ou 3ds Max.');
-  for (const k of ['back', 'left', 'right', 'led', 'counter', 'stage', 'totem', 'spots'] as const) if (typeof c[k] !== 'boolean') throw new Error('Seleção de elementos inválida.');
-  for(const [key, initial] of Object.entries(defaults)) if(typeof initial==='number'&&(!Number.isFinite(c[key as keyof Config] as number))) throw new Error('Confira os parâmetros dos elementos: todas as medidas e quantidades devem conter números.');
-  for(const k of ['floorMat','wallMat','counterMat','stageMat','totemMat'] as const) if(!materials.some(m=>m.value===c[k])) throw new Error('Material inválido.');
-  const check=(keys:(keyof Config)[],label:string)=>{for(const k of keys)if(typeof c[k]!=='number'||!Number.isFinite(c[k])||(c[k] as number)<.1||(c[k] as number)>30)throw new Error('Confira as medidas de '+label+' (mínimo 0,1 m).');};
-  const count=(value:number,label:string,max:number)=>{if(!Number.isInteger(value)||value<1||value>max)throw new Error(label+': use uma quantidade inteira de 1 a '+max+'.');};
-  if(c.led){check(['ledWidth','ledHeight'],'LED');if(!Number.isFinite(c.ledBottom)||c.ledBottom<.1||c.ledBottom>8)throw new Error('A altura da base do LED deve ser de 0,1 a 8 m.');if(c.ledWidth+.24>c.width-.3||c.ledBottom+c.ledHeight+.06>c.height)throw new Error('O LED deve caber na largura e na altura do stand, incluindo a moldura.');}
-  if(c.counter){check(['counterWidth','counterDepth','counterHeight'],'balcão');count(c.counterCount,'Balcões',6);if(c.counterHeight>c.height)throw new Error('O balcão deve ser menor que a altura do stand.');}
-  if(c.stage){check(['stageWidth','stageDepth','stageHeight'],'palco');if(c.stageHeight>Math.min(1,c.height))throw new Error('A altura do palco deve ser de 0,1 a 1 m.');}
-  if(c.totem){check(['totemWidth','totemDepth','totemHeight'],'totem');count(c.totemCount,'Totens',6);if(c.totemHeight>c.height)throw new Error('O totem deve caber na altura do stand.');}
-  if(c.spots)count(c.spotsCount,'Spots por lado',10);
-  const g=geometry(c);const rects:{label:string;x:number;y:number;w:number;d:number}[]=[];
-  if(c.counter)g.counterXs.forEach(x=>rects.push({label:'balcão',x,y:g.counterY,w:c.counterWidth+.08,d:c.counterDepth+.08}));
-  if(c.totem)g.totemXs.forEach(x=>rects.push({label:'totem',x,y:g.totemY,w:c.totemWidth+.15,d:c.totemDepth+.2}));
-  if(c.stage)rects.push({label:'palco',x:0,y:g.stageY,w:c.stageWidth,d:c.stageDepth});
-  for(const r of rects)if(Math.abs(r.x)+r.w/2>c.width/2-.2||Math.abs(r.y)+r.d/2>c.depth/2-.5)throw new Error('As medidas ou quantidades de '+r.label+' ultrapassam o espaço disponível. Reduza o tamanho ou a quantidade.');
-  for(let i=0;i<rects.length;i++)for(let j=i+1;j<rects.length;j++){const a=rects[i],b=rects[j];if(Math.abs(a.x-b.x)<(a.w+b.w)/2+.1&&Math.abs(a.y-b.y)<(a.d+b.d)/2+.1)throw new Error('Há sobreposição entre '+a.label+' e '+b.label+'. Reduza suas medidas.');}
-  if(c.screenImage&&(!/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/]+={0,2}$/.test(c.screenImage)||c.screenImage.length>2800000))throw new Error('Use uma imagem JPG ou PNG de até 2 MB.');
-  return c;
+    if (!c.name.trim() || c.name.length > 80)
+        throw new Error('Dê um nome ao projeto, com até 80 caracteres.');
+    if (!['stand', 'palco'].includes(c.projectType))
+        throw new Error('Tipo de projeto inválido.');
+    if (c.projectType === 'palco') {
+        if (!c.stage)
+            throw new Error('Palco / plenária precisa incluir um palco.');
+        if (c.back || c.left || c.right || c.counter || c.totem) {
+            throw new Error('Nesta versão, Palco / plenária aceita palco, LED, spots e cadeiras.');
+        }
+    }
+    for (const k of ['width', 'depth', 'height'] as const) {
+        const min = k === 'height' ? 2 : 3;
+        const max = k === 'height' ? 8 : 30;
+        if (!Number.isFinite(c[k]) || c[k] < min || c[k] > max)
+            throw new Error(k === 'height' ? 'A altura deve estar entre 2 e 8 m.' : 'Largura e profundidade devem estar entre 3 e 30 m.');
+    }
+    if (!/^#[0-9a-f]{6}$/i.test(c.color))
+        throw new Error('Escolha uma cor válida.');
+    if (!['blender', 'max'].includes(c.target))
+        throw new Error('Escolha Blender ou 3ds Max.');
+    for (const k of ['back', 'left', 'right', 'led', 'counter', 'stage', 'totem', 'spots', 'chairs'] as const)
+        if (typeof c[k] !== 'boolean')
+            throw new Error('Seleção de elementos inválida.');
+    for (const [key, initial] of Object.entries(defaults))
+        if (typeof initial === 'number' && (!Number.isFinite(c[key as keyof Config] as number)))
+            throw new Error('Confira os parâmetros dos elementos: todas as medidas e quantidades devem conter números.');
+    for (const k of ['floorMat', 'wallMat', 'counterMat', 'stageMat', 'totemMat'] as const)
+        if (!materials.some(m => m.value === c[k]))
+            throw new Error('Material inválido.');
+    const check = (keys: (keyof Config)[], label: string) => { for (const k of keys)
+        if (typeof c[k] !== 'number' || !Number.isFinite(c[k]) || (c[k] as number) < .1 || (c[k] as number) > 30)
+            throw new Error('Confira as medidas de ' + label + ' (mínimo 0,1 m).'); };
+    const count = (value: number, label: string, max: number) => { if (!Number.isInteger(value) || value < 1 || value > max)
+        throw new Error(label + ': use uma quantidade inteira de 1 a ' + max + '.'); };
+    if (c.led) {
+        check(['ledWidth', 'ledHeight'], 'LED');
+        if (!Number.isFinite(c.ledBottom) || c.ledBottom < .1 || c.ledBottom > 8)
+            throw new Error('A altura da base do LED deve ser de 0,1 a 8 m.');
+        if (c.ledWidth + .24 > c.width - .3 || c.ledBottom + c.ledHeight + .06 > c.height)
+            throw new Error('O LED deve caber na largura e na altura do stand, incluindo a moldura.');
+    }
+    if (c.counter) {
+        check(['counterWidth', 'counterDepth', 'counterHeight'], 'balcão');
+        count(c.counterCount, 'Balcões', 6);
+        if (c.counterHeight > c.height)
+            throw new Error('O balcão deve ser menor que a altura do stand.');
+    }
+    if (c.stage) {
+        check(['stageWidth', 'stageDepth', 'stageHeight'], 'palco');
+        if (c.stageHeight > Math.min(1, c.height))
+            throw new Error('A altura do palco deve ser de 0,1 a 1 m.');
+    }
+    if (c.totem) {
+        check(['totemWidth', 'totemDepth', 'totemHeight'], 'totem');
+        count(c.totemCount, 'Totens', 6);
+        if (c.totemHeight > c.height)
+            throw new Error('O totem deve caber na altura do stand.');
+    }
+    if (c.spots)
+        count(c.spotsCount, 'Spots por lado', 10);
+    const g = geometry(c);
+    const rects: {
+        label: string;
+        x: number;
+        y: number;
+        w: number;
+        d: number;
+    }[] = [];
+    if (c.counter)
+        g.counterXs.forEach(x => rects.push({ label: 'balcão', x, y: g.counterY, w: c.counterWidth + .08, d: c.counterDepth + .08 }));
+    if (c.totem)
+        g.totemXs.forEach(x => rects.push({ label: 'totem', x, y: g.totemY, w: c.totemWidth + .15, d: c.totemDepth + .2 }));
+    if (c.stage)
+        rects.push({ label: 'palco', x: 0, y: g.stageY, w: c.stageWidth, d: c.stageDepth });
+    for (const r of rects)
+        if (Math.abs(r.x) + r.w / 2 > c.width / 2 - .2 || Math.abs(r.y) + r.d / 2 > c.depth / 2 - .5)
+            throw new Error('As medidas ou quantidades de ' + r.label + ' ultrapassam o espaço disponível. Reduza o tamanho ou a quantidade.');
+    for (let i = 0; i < rects.length; i++)
+        for (let j = i + 1; j < rects.length; j++) {
+            const a = rects[i], b = rects[j];
+            if (Math.abs(a.x - b.x) < (a.w + b.w) / 2 + .1 && Math.abs(a.y - b.y) < (a.d + b.d) / 2 + .1)
+                throw new Error('Há sobreposição entre ' + a.label + ' e ' + b.label + '. Reduza suas medidas.');
+        }
+    if (c.screenImage && (!/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/]+={0,2}$/.test(c.screenImage) || c.screenImage.length > 2800000))
+        throw new Error('Use uma imagem JPG ou PNG de até 2 MB.');
+    layoutChairs(c, geometry(c).stageY);
+    return c;
 }
-export function filename(c: Config) { return (c.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'stand') + (c.target==='max'?'.ms':'.py'); }
-export function generate(c:Config) {validate(c);return c.target==='max'?generateMax(c):generateBlender(c);}
+export function filename(c: Config) { return (c.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'stand') + (c.target === 'max' ? '.ms' : '.py'); }
+export function generate(c: Config) {
+    validate(c);
+    const layout = layoutChairs(c, geometry(c).stageY);
+    if (c.target === 'blender') {
+        return generateBlender(c) + blenderChairs(c, layout);
+    }
+    const script = generateMax(c);
+    const chairs = maxChairs(c, layout);
+    if (!chairs)
+        return script;
+    const marker = 'select criados';
+    if (!script.includes(marker)) {
+        throw new Error('Não encontrei o ponto de inserção das cadeiras no MaxScript.');
+    }
+    return script.replace(marker, chairs + '\n' + marker);
+}
 export function generateBlender(c: Config) {
-  validate(c);
-  const rgb = [1,3,5].map(i=> +(parseInt(c.color.slice(i,i+2),16)/255).toFixed(5));
-  return `# CODE BUDDY | Cenografia
+    validate(c);
+    const rgb = [1, 3, 5].map(i => +(parseInt(c.color.slice(i, i + 2), 16) / 255).toFixed(5));
+    return `# CODE BUDDY | Cenografia
 # Modelo conceitual em metros. Projeto: ${c.name.replace(/[\r\n]/g, ' ')}
 # Blender: Scripting > New > cole este código > Run Script.
 # Reexecutar substitui apenas a coleção CodeBuddy_Gerado.
@@ -106,7 +240,7 @@ MATERIAL_PAREDES = '${c.wallMat}'
 MATERIAL_BALCAO = '${c.counterMat}'
 MATERIAL_PALCO = '${c.stageMat}'
 MATERIAL_TOTEM = '${c.totemMat}'
-IMAGEM_TV = '${c.led?c.screenImage:''}'
+IMAGEM_TV = '${c.led ? c.screenImage : ''}'
 
 COLECAO = 'CodeBuddy_Gerado'
 colecao = None
@@ -299,7 +433,7 @@ def criar_elementos(branco, marca, escuro, tela):
             caixa('Balcao_Corpo', (BALCAO_LARGURA, BALCAO_PROFUNDIDADE, BALCAO_ALTURA-.06), (x, y, .1+(BALCAO_ALTURA-.06)/2), acabamento(MATERIAL_BALCAO), .02)
             caixa('Balcao_Tampo', (BALCAO_LARGURA+.08, BALCAO_PROFUNDIDADE+.08, .06), (x, y, .1+BALCAO_ALTURA-.03), branco, .02)
     if ADICIONAR_PALCO:
-        caixa('Palco', (PALCO_LARGURA, PALCO_PROFUNDIDADE, PALCO_ALTURA), (0, PROFUNDIDADE*.18, .1+PALCO_ALTURA/2), acabamento(MATERIAL_PALCO), .02)
+        caixa('Palco', (PALCO_LARGURA, PALCO_PROFUNDIDADE, PALCO_ALTURA), (0, ${geometry(c).stageY}, .1+PALCO_ALTURA/2), acabamento(MATERIAL_PALCO), .02)
     if ADICIONAR_TOTEM:
         for i in range(TOTENS):
             x = (i - (TOTENS-1)/2)*(TOTEM_LARGURA + .5)
