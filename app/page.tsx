@@ -1,11 +1,11 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
 import type { ChangeEvent } from 'react';
-import { Box, Layers, Download, Copy, Check, Code2, Ruler, Monitor, LampDesk, PanelTop, RectangleVertical, Square, Sparkles, Armchair } from 'lucide-react';
+import { Box, Layers, Download, Copy, Check, Code2, Ruler, Monitor, LampDesk, PanelTop, RectangleVertical, Square, Sparkles, Armchair, Circle } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
-import { materials, generate, geometry, filename, validate } from '@/lib/generator';
+import { materials, generate, geometry, filename, validate, roundTableGeometry } from '@/lib/generator';
 import type { MaterialKind, Target, Config, ProjectType } from '@/lib/generator';
 import { projectTypes, createProjectConfig } from '@/lib/project-types';
 import { libraryCatalog, layoutChairs } from '@/lib/library';
@@ -16,6 +16,7 @@ const elements = [
     { key: 'totem', title: 'Totem', text: 'Elemento vertical de marca', icon: RectangleVertical },
     { key: 'spots', title: 'Spots laterais', text: 'Dois trilhos com luz quente', icon: LampDesk },
     { key: 'chairs', title: 'Cadeiras', text: 'Plateia organizada em filas', icon: Armchair },
+    { key: 'roundTables', title: 'Mesas redondas', text: 'Mesas com cadeiras ao redor', icon: Circle, },
 ] as const;
 type NumberKey = {
     [K in keyof Config]: Config[K] extends number ? K : never;
@@ -27,30 +28,37 @@ type ParameterField = {
     min?: number;
     max?: number;
 };
-const parameterFields: Record<'led' | 'counter' | 'stage' | 'totem' | 'spots' | 'chairs', ParameterField[]> = {
+const parameterFields: Record<'led' | 'counter' | 'stage' | 'totem' | 'spots' | 'chairs' | 'roundTables', ParameterField[]> = {
     led: [{ key: 'ledWidth', label: 'Largura' }, { key: 'ledHeight', label: 'Altura' }, { key: 'ledBottom', label: 'Base sobre o piso', max: 8 }],
     counter: [{ key: 'counterWidth', label: 'Largura' }, { key: 'counterDepth', label: 'Profundidade' }, { key: 'counterHeight', label: 'Altura' }, { key: 'counterCount', label: 'Quantidade', unit: 'un', min: 1, max: 6 }],
     stage: [{ key: 'stageWidth', label: 'Largura' }, { key: 'stageDepth', label: 'Profundidade' }, { key: 'stageHeight', label: 'Altura', max: 1 }],
     totem: [{ key: 'totemWidth', label: 'Largura' }, { key: 'totemDepth', label: 'Profundidade' }, { key: 'totemHeight', label: 'Altura' }, { key: 'totemCount', label: 'Quantidade', unit: 'un', min: 1, max: 6 }],
     spots: [{ key: 'spotsCount', label: 'Quantidade por lado', unit: 'un', min: 1, max: 10 }],
-    chairs: [{ key: 'chairCount', label: 'Quantidade solicitada', unit: 'un', min: 1, max: 1000 },
-        { key: 'chairColumns', label: 'Máximo por fila', unit: 'un', min: 1, max: 60 },
-        { key: 'chairWidth', label: 'Largura', min: .3, max: 1.2 },
-        { key: 'chairDepth', label: 'Profundidade', min: .3, max: 1.2 },
-        { key: 'chairHeight', label: 'Altura total', min: .65, max: 1.5 },
-        { key: 'chairSeatHeight', label: 'Altura do assento', min: .3, max: .7 },
-        { key: 'chairGapX', label: 'Vão entre cadeiras', min: 0, max: 2 },
-        { key: 'chairRowGap', label: 'Vão entre filas', min: .1, max: 3 },
-        { key: 'chairAisleWidth', label: 'Largura de cada corredor', min: 0, max: 5 },
-        { key: 'chairStageGap', label: 'Distância do palco', min: .5, max: 5 },
-        { key: 'chairSideMargin', label: 'Margem lateral', min: .5, max: 5 },
-        { key: 'chairFrontMargin', label: 'Margem na entrada', min: .2, max: 5 },]
+    chairs: [{ key: 'attendeeCount', label: 'Pessoas previstas', unit: 'un', min: 1, max: 1000 },
+    { key: 'chairExtraCount', label: 'Cadeiras extras', unit: 'un', min: 0, max: 1000 },
+    { key: 'chairColumns', label: 'Máximo por fila', unit: 'un', min: 1, max: 60 },
+    { key: 'chairWidth', label: 'Largura', min: .3, max: 1.2 },
+    { key: 'chairDepth', label: 'Profundidade', min: .3, max: 1.2 },
+    { key: 'chairHeight', label: 'Altura total', min: .65, max: 1.5 },
+    { key: 'chairSeatHeight', label: 'Altura do assento', min: .3, max: .7 },
+    { key: 'chairGapX', label: 'Vão entre cadeiras', min: 0, max: 2 },
+    { key: 'chairRowGap', label: 'Vão entre filas', min: .1, max: 3 },
+    { key: 'chairAisleWidth', label: 'Largura de cada corredor', min: 0, max: 5 },
+    { key: 'chairStageGap', label: 'Distância do palco', min: .5, max: 5 },
+    { key: 'chairSideMargin', label: 'Margem lateral', min: .5, max: 5 },
+    { key: 'chairFrontMargin', label: 'Margem na entrada', min: .2, max: 5 },],
+    roundTables: [{ key:'roundTableCount', label: 'Quantidade', unit: 'un', min: 1, max: 100},{ key: 'roundTableHeight', label:'Altura', min: 0.4, max: 1.2}, {key:'roundTableGap', label:'Vão livre entre as mesas', min:0, max:5}]
 };
 const materialFields: {
-    key: 'floorMat' | 'wallMat' | 'counterMat' | 'stageMat' | 'totemMat';
+    key: 'floorMat' | 'wallMat' | 'counterMat' | 'stageMat' | 'totemMat' | 'roundTableMat';
     label: string;
-    enabled?: 'counter' | 'stage' | 'totem';
-}[] = [{ key: 'floorMat', label: 'Piso' }, { key: 'wallMat', label: 'Paredes' }, { key: 'counterMat', label: 'Corpo do balcão', enabled: 'counter' }, { key: 'stageMat', label: 'Palco', enabled: 'stage' }, { key: 'totemMat', label: 'Totem', enabled: 'totem' }];
+    enabled?: 'counter' | 'stage' | 'totem' | 'roundTables';
+}[] = [{ key: 'floorMat', label: 'Piso' }, 
+    { key: 'wallMat', label: 'Paredes' }, 
+    { key: 'counterMat', label: 'Corpo do balcão', enabled: 'counter' }, 
+    { key: 'stageMat', label: 'Palco', enabled: 'stage' }, 
+    { key: 'totemMat', label: 'Totem', enabled: 'totem' },
+    { key: 'roundTableMat', label: 'Mesas redondas', enabled: 'roundTables' }];
 const num = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
 function Plan({ c }: {
     c: Config;
@@ -60,6 +68,14 @@ function Plan({ c }: {
     const s = Math.min(440 / c.width, 280 / c.depth);
     const w = c.width * s, h = c.depth * s, x = (600 - w) / 2, y = (390 - h) / 2;
     const px = (v: number) => x + w / 2 + v * s, py = (v: number) => y + h / 2 - v * s;
+    const tables = roundTableGeometry(c);
+
+const tableColor =
+  c.roundTableMat === "brand"
+    ? c.color
+    : materials.find(
+        (material) => material.value === c.roundTableMat,
+      )?.color ?? "#c8cedb";
     return <svg viewBox="0 0 600 430" role="img" aria-label={`Planta esquemática da área de montagem de ${num(c.width)} por ${num(c.depth)} metros`}>
       <defs><pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M 20 0 L 0 0 0 20" fill="none" stroke="#252d40" strokeWidth=".5"/></pattern></defs>
     <rect width="600" height="430" fill="url(#grid)"/>
@@ -76,6 +92,33 @@ function Plan({ c }: {
     {c.chairs && (<g aria-label={`${seating.positions.length} cadeiras`}>
     {seating.positions.map(([cx, cy], index) => (<rect key={index} x={px(cx - c.chairWidth / 2)} y={py(cy + c.chairDepth / 2)} width={c.chairWidth * s} height={c.chairDepth * s} fill={c.color} stroke="#dce6ff" strokeWidth="0.5"/>))}
   </g>)}
+  {c.roundTables && (
+  <g aria-label={`${tables.generatedCount} mesas redondas`}>
+    {tables.positions.map(([cx, cy], index) => (
+      <g key={`round-table-${index}`}>
+        <circle
+          cx={px(cx)}
+          cy={py(cy)}
+          r={(c.roundTableDiameter / 2) * s}
+          fill={tableColor}
+          stroke="#dce6ff"
+          strokeWidth="1"
+        />
+
+        <text
+          x={px(cx)}
+          y={py(cy)}
+          textAnchor="middle"
+          dominantBaseline="middle"
+          fill="#111827"
+          fontSize="9"
+        >
+          {index + 1}
+        </text>
+      </g>
+    ))}
+  </g>
+)}
     {c.counter && g.counterXs.map((cx, i) => <g key={i}><rect x={px(cx - (g.counterW + .08) / 2)} y={py(g.counterY + (c.counterDepth + .08) / 2)} width={(g.counterW + .08) * s} height={(c.counterDepth + .08) * s} rx="3" fill={c.counterMat === 'brand' ? c.color : materials.find(m => m.value === c.counterMat)?.color}/><text x={px(cx)} y={py(g.counterY) + 5} textAnchor="middle" fill="white" fontSize="12">Balcão</text></g>)}
     {c.totem && g.totemXs.map((tx, i) => <g key={i}><rect x={px(tx - (c.totemWidth + .15) / 2)} y={py(g.totemY + (c.totemDepth + .2) / 2)} width={(c.totemWidth + .15) * s} height={(c.totemDepth + .2) * s} rx="2" fill={c.totemMat === 'brand' ? c.color : materials.find(m => m.value === c.totemMat)?.color}/><text x={px(tx)} y={py(g.totemY) + 27} textAnchor="middle" fill="#cdd7ec" fontSize="12">Totem</text></g>)}
     {c.spots && [-1, 1].map(sign => <g key={sign}><path d={`M ${px(sign * (c.width / 2 - .35))} ${py(c.depth / 2 - .25)} V ${py(-c.depth / 2 + .25)}`} stroke="#b49a67" strokeWidth="2"/>{g.spotYs.map((sy, i) => <circle key={i} cx={px(sign * (c.width / 2 - .35))} cy={py(sy)} r="4" fill="#f0ca85"/>)}</g>)}
@@ -277,11 +320,38 @@ export default function Home() {
       </TabsContent><TabsContent value="params">
       <p className="tab-help">Medidas em metros. Os elementos seguem uma distribuição automática na planta.</p>
       {seating && c.chairs && (<p className="tab-help">
-    A planta mostra {seating.generatedCount} cadeiras
-    em {seating.rows} filas.
-    Quantidade solicitada: {seating.requestedCount}.
+    {c.chairGenerationMode === 'fill' ? (<>
+        A configuração comporta {seating.capacity} cadeiras.{" "}
+        A planta mostra {seating.generatedCount} cadeiras em {seating.rows} filas.
+      </>) : (<>
+        Público previsto: {seating.attendeeCount} pessoas.{" "}
+        Reserva solicitada: {seating.extraRequestedCount} cadeiras.{" "}
+        Total solicitado: {seating.requestedCount} cadeiras.{" "}
+        A planta mostra {seating.generatedCount} cadeiras em {seating.rows} filas.
+        <br />
+        A soma de pessoas e cadeiras extras deve ser de até 1.000.
+      </>)}
   </p>)}
       {availableElements.filter(f => c[f.key]).map(f => <div className="parameter-section" key={f.key}><h3><f.icon size={16}/>{f.title}</h3>{f.key === 'chairs' && (<div className="field">
+    <label htmlFor="chair-generation-mode">Como deseja gerar a plateia?</label>
+    <Select value={c.chairGenerationMode} onValueChange={value => {
+                    if (value === 'quantity' || value === 'fill') {
+                        update('chairGenerationMode', value);
+                    }
+                }}>
+      <SelectTrigger id="chair-generation-mode" className="full-select">
+        <SelectValue placeholder="Selecione o modo"/>
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="quantity">Informar pessoas e cadeiras extras</SelectItem>
+        <SelectItem value="fill">Preencher o espaço disponível</SelectItem>
+      </SelectContent>
+    </Select>
+    <p className="tab-help">
+      {c.chairGenerationMode === 'fill'
+                    ? 'Gera todas as cadeiras que cabem na configuração, respeitando os corredores, os espaçamentos e o máximo por fila. Limite de 1.000 cadeiras.'
+                    : 'Calcula as cadeiras necessárias para o público previsto e a reserva solicitada.'}
+    </p>
     <label htmlFor="chair-distribution">Distribuição da plateia</label>
     <Select value={c.chairDistribution} onValueChange={value => {
                     if (value === 'central' || value === 'lateral') {
@@ -301,7 +371,10 @@ export default function Home() {
                     ? 'Um corredor de cada lado, além das margens laterais.'
                     : 'Um corredor entre os dois blocos de cadeiras.'}
     </small>
-  </div>)}<div className="param-grid">{parameterFields[f.key].map(field => <label className="field" key={field.key}>{field.label}<div className="unit-input"><input type="number" inputMode={field.unit === 'un' ? 'numeric' : 'decimal'} min={field.min ?? .1} max={field.max ?? 30} step={field.unit === 'un' ? 1 : .05} value={Number.isNaN(c[field.key]) ? '' : c[field.key] as number} onChange={e => update(field.key, e.target.value === '' ? NaN : Number(e.target.value))}/><span>{field.unit ?? 'm'}</span></div></label>)}</div></div>)}
+  </div>)}<div className="param-grid">{parameterFields[f.key].filter(field => {
+                const isQuantityField = field.key === 'attendeeCount' || field.key === 'chairExtraCount';
+                return c.chairGenerationMode !== 'fill' || !isQuantityField;
+            }).map(field => <label className="field" key={field.key}>{field.label}<div className="unit-input"><input type="number" inputMode={field.unit === 'un' ? 'numeric' : 'decimal'} min={field.min ?? .1} max={field.max ?? 30} step={field.unit === 'un' ? 1 : field.key === "roundTableTopThickness" ? 0.01 : 0.05} value={Number.isNaN(c[field.key]) ? '' : c[field.key] as number} onChange={e => update(field.key, e.target.value === '' ? NaN : Number(e.target.value))}/><span>{field.unit ?? 'm'}</span></div></label>)}</div></div>)}
       {!availableElements.some(f => c[f.key]) && <p className="tab-help">Selecione um elemento na aba Projeto para ajustar suas medidas.</p>}
       {c.led && <div className="texture-section"><h3>Textura da TV / LED</h3><p>Escolha a arte que vai aparecer na tela. A imagem inteira é ajustada às medidas do LED.</p><label className="upload-label" htmlFor="tv-image">Escolher imagem JPG ou PNG<input id="tv-image" type="file" accept="image/png,image/jpeg" onChange={handleImage}/></label><small>Até 2 MB · incorporada ao script · imagem estática</small>{c.screenImage ? <div className="texture-preview"><img src={c.screenImage} alt="Arte selecionada para a tela de TV"/><span>{c.screenName}</span><button onClick={() => { imageRequest.current += 1; setC(prev => ({ ...prev, screenImage: '', screenName: '' })); setNotice('Imagem removida.'); }}>Remover imagem</button></div> : <p className="tab-help">Sem imagem, a tela usa a cor de destaque.</p>}</div>}
       </TabsContent><TabsContent value="materials"><p className="tab-help">Escolha o acabamento de cada parte. Madeira e concreto usam textura procedural; metal e vidro recebem propriedades de superfície.</p><div className="material-fields">{materialFields.filter((field) => {
@@ -313,22 +386,27 @@ export default function Home() {
     <h3>Distribuição da plateia</h3>
 
     <p className="tab-help">
-      Solicitadas: {seating.requestedCount}
+      Modo: {c.chairGenerationMode === 'fill' ? 'Preencher o espaço disponível' : 'Por quantidade'}
       <br />
-      Na planta: {seating.generatedCount}
-      <br />
-      Lugares não atendidos: {seating.missingCount}
-      <br />
-      Filas utilizadas: {seating.rows}
-      <br />
-      Máximo utilizado por fila: {seating.columns}
+      {c.chairGenerationMode === 'quantity' && (<>
+          Pessoas previstas: {seating.attendeeCount}<br />
+          Cadeiras extras solicitadas: {seating.extraRequestedCount}<br />
+          Total de cadeiras solicitadas: {seating.requestedCount}<br />
+          Pessoas sem assento: {seating.unseatedCount}<br />
+          Cadeiras extras disponíveis: {seating.extraGeneratedCount}<br />
+          Cadeiras extras não atendidas: {seating.extraMissingCount}<br />
+        </>)}
+      Capacidade geométrica nesta configuração: {seating.capacity}<br />
+      Cadeiras na planta: {seating.generatedCount}<br />
+      Filas utilizadas: {seating.rows}<br />
+      Máximo de cadeiras por fila: {seating.columns}
     </p>
 
     {needsPartialConfirmation && (<>
         <p className="tab-help">
-          A planta mostra a quantidade que cabe.
-          Você pode ajustar os parâmetros ou
-          confirmar a geração parcial.
+          {seating.unseatedCount > 0 ? (<>Faltam assentos para {seating.unseatedCount} pessoas.{" "}</>) : (<>Todas as pessoas previstas têm assento.{" "}</>)}
+          {seating.extraMissingCount > 0 && (<>Não couberam {seating.extraMissingCount} cadeiras extras.{" "}</>)}
+          Você pode ajustar os parâmetros ou confirmar a geração parcial.
         </p>
 
         {partialConfirmed ? (<p className="tab-help" role="status">

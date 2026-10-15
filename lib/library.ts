@@ -1,22 +1,23 @@
 /** Catálogo dos componentes que já possuem geração no Code Buddy. */
+
+import type { MaterialKind } from "./generator";
 export const libraryCatalog = [
   { id: "led", label: "Painel de LED", projectTypes: ["stand", "palco"] },
   { id: "counter", label: "Balcão", projectTypes: ["stand"] },
   { id: "stage", label: "Palco", projectTypes: ["stand", "palco"] },
   { id: "totem", label: "Totem", projectTypes: ["stand"] },
-  {
-    id: "spots",
-    label: "Spots laterais",
-    projectTypes: ["stand", "palco"],
-  },
+  { id: "spots", label: "Spots laterais", projectTypes: ["stand", "palco"],},
   { id: "chairs", label: "Cadeiras", projectTypes: ["palco"] },
+  { id:"roundTable", label: "Mesas Redondas", projectTypes: ["stand", "palco"],},
 ] as const;
 
 export type ChairDistribution = "central" | "lateral";
+export type ChairGenerationMode = "quantity" | "fill";
+
+
 
 export type ChairConfig = {
   chairs: boolean;
-  chairCount: number;
   chairColumns: number;
   chairWidth: number;
   chairDepth: number;
@@ -28,12 +29,14 @@ export type ChairConfig = {
   chairStageGap: number;
   chairSideMargin: number;
   chairFrontMargin: number;
-  chairDistribution: ChairDistribution;
+  chairDistribution: ChairDistribution; 
+  chairGenerationMode: ChairGenerationMode;
+  attendeeCount: number;
+  chairExtraCount: number;
 };
 
 export const chairDefaults: ChairConfig = {
   chairs: false,
-  chairCount: 300,
   chairColumns: 15,
   chairWidth: 0.5,
   chairDepth: 0.5,
@@ -46,6 +49,9 @@ export const chairDefaults: ChairConfig = {
   chairSideMargin: 0.7,
   chairFrontMargin: 0.5,
   chairDistribution: "central",
+  attendeeCount: 300,
+  chairExtraCount: 0,
+  chairGenerationMode: "quantity",
 };
 
 type LayoutContext = ChairConfig & {
@@ -67,6 +73,11 @@ export type ChairLayout = {
   generatedCount: number;
   missingCount: number;
   capacity: number;
+  attendeeCount: number;
+  extraRequestedCount: number;
+  unseatedCount: number;
+  extraGeneratedCount: number;
+  extraMissingCount: number;
 };
 
 /**
@@ -95,6 +106,11 @@ export function layoutChairs(
       generatedCount: 0,
       missingCount: 0,
       capacity: 0,
+      attendeeCount: 0,
+      extraRequestedCount: 0,
+      unseatedCount: 0,
+      extraGeneratedCount: 0,
+      extraMissingCount: 0,
     };
   }
 
@@ -147,7 +163,31 @@ export function layoutChairs(
     }
   };
 
-  integer(c.chairCount, 1000, "Quantidade de cadeiras");
+let requestedCount = 0;
+
+if (c.chairGenerationMode === "quantity") {
+  integer(c.attendeeCount, 1000, "Quantidade de pessoas");
+
+  if (
+    !Number.isInteger(c.chairExtraCount) ||
+    c.chairExtraCount < 0 ||
+    c.chairExtraCount > 1000
+  ) {
+    throw new Error(
+      "Cadeiras extras: use um número inteiro de 0 a 1000.",
+    );
+  }
+
+  requestedCount =
+    c.attendeeCount + c.chairExtraCount;
+
+  if (requestedCount > 1000) {
+    throw new Error(
+      "Nesta versão, a soma de pessoas e cadeiras extras " +
+        "deve ser de até 1000.",
+    );
+  }
+}
   integer(c.chairColumns, 60, "Máximo de cadeiras por fila");
 
   range(c.chairWidth, 0.3, 1.2, "Largura da cadeira");
@@ -310,11 +350,52 @@ export function layoutChairs(
     );
   }
 
-  const capacity = columns * maximumRows;
-  const requestedCount = c.chairCount;
-  const generatedCount = Math.min(requestedCount, capacity);
-  const missingCount = requestedCount - generatedCount;
-  const rows = Math.ceil(generatedCount / columns);
+const capacity = columns * maximumRows;
+const isFillMode = c.chairGenerationMode === "fill";
+
+if (isFillMode) {
+  if (capacity > 1000) {
+    throw new Error(
+      `Cabem ${capacity} cadeiras nesta configuração, ` +
+        "mas esta versão permite gerar até 1000. " +
+        "Use o modo por quantidade ou ajuste os parâmetros.",
+    );
+  }
+
+  requestedCount = capacity;
+}
+
+const generatedCount = Math.min(
+  requestedCount,
+  capacity,
+);
+
+const missingCount =
+  requestedCount - generatedCount;
+
+const attendeeCount =
+  isFillMode ? 0 : c.attendeeCount;
+
+const extraRequestedCount =
+  isFillMode ? 0 : c.chairExtraCount;
+
+const unseatedCount = Math.max(
+  0,
+  attendeeCount - generatedCount,
+);
+
+const extraGeneratedCount = isFillMode
+  ? 0
+  : Math.max(0, generatedCount - attendeeCount);
+
+const extraMissingCount = Math.max(
+  0,
+  extraRequestedCount - extraGeneratedCount,
+);
+
+const rows = Math.ceil(
+  generatedCount / columns,
+);
 
   const positions: [number, number][] = [];
 
@@ -346,9 +427,245 @@ export function layoutChairs(
     depth:
       rows * c.chairDepth +
       (rows - 1) * c.chairRowGap,
-    requestedCount,
+    requestedCount: requestedCount,
     generatedCount,
     missingCount,
     capacity,
+    attendeeCount: attendeeCount,
+    extraRequestedCount: extraRequestedCount,
+    unseatedCount: unseatedCount,
+    extraGeneratedCount: extraGeneratedCount,
+    extraMissingCount: extraMissingCount,
   };
+}
+export type RoundTableConfig = {
+  roundTables: boolean;
+  roundTableCount: number;
+  roundTableDiameter: number;
+  roundTableHeight: number;
+  roundTableTopThickness: number;
+  roundTableGap: number;
+  roundTableMat: MaterialKind;
+};
+
+export const roundTableDefaults: RoundTableConfig = {
+  roundTables: false,
+  roundTableCount: 1,
+  roundTableDiameter: 0.8,
+  roundTableHeight: 0.75,
+  roundTableTopThickness: 0.03,
+  roundTableGap: 0.8,
+  roundTableMat: "white",
+};
+
+export type ReservedArea = {
+  centerX: number;
+  centerY: number;
+  width: number;
+  depth: number;
+};
+
+export type RoundTableLayout = {
+  positions: [number, number][];
+  generatedCount: number;
+};
+
+type RoundTableContext = RoundTableConfig & {
+  width: number;
+  depth: number;
+};
+
+/**
+ * Distribui mesas em uma grade centralizada na área.
+ *
+ * roundTableGap é o vão livre entre os tampos.
+ * As áreas reservadas devem incluir os espaços
+ * que precisam permanecer livres ao redor dos objetos.
+ */
+export function layoutRoundTables(
+  c: RoundTableContext,
+  reservedAreas: ReservedArea[],
+): RoundTableLayout {
+  if (!c.roundTables) {
+    return {
+      positions: [],
+      generatedCount: 0,
+    };
+  }
+
+  if (
+    !Number.isInteger(c.roundTableCount) ||
+    c.roundTableCount < 1 ||
+    c.roundTableCount > 100
+  ) {
+    throw new Error(
+      "Mesas redondas: use uma quantidade inteira de 1 a 100.",
+    );
+  }
+
+  const checkRange = (
+    value: number,
+    min: number,
+    max: number,
+    label: string,
+  ) => {
+    if (
+      !Number.isFinite(value) ||
+      value < min ||
+      value > max
+    ) {
+      throw new Error(
+        `${label}: use um valor entre ${min} e ${max} m.`,
+      );
+    }
+  };
+
+  checkRange(
+    c.roundTableDiameter,
+    0.4,
+    3,
+    "Diâmetro da mesa",
+  );
+
+  checkRange(
+    c.roundTableHeight,
+    0.4,
+    1.2,
+    "Altura da mesa",
+  );
+
+  checkRange(
+    c.roundTableTopThickness,
+    0.01,
+    0.15,
+    "Espessura do tampo",
+  );
+
+  checkRange(
+    c.roundTableGap,
+    0,
+    5,
+    "Vão entre mesas",
+  );
+
+  if (
+    !Number.isFinite(c.width) ||
+    !Number.isFinite(c.depth) ||
+    c.width <= 0 ||
+    c.depth <= 0
+  ) {
+    throw new Error(
+      "Confira a largura e a profundidade da área.",
+    );
+  }
+
+  for (const area of reservedAreas) {
+    if (
+      ![
+        area.centerX,
+        area.centerY,
+        area.width,
+        area.depth,
+      ].every(Number.isFinite) ||
+      area.width <= 0 ||
+      area.depth <= 0
+    ) {
+      throw new Error(
+        "Existe uma área reservada com medidas inválidas.",
+      );
+    }
+  }
+
+  const diameter = c.roundTableDiameter;
+  const radius = diameter / 2;
+  const step = diameter + c.roundTableGap;
+
+  const columns = Math.floor(
+    (c.width + c.roundTableGap + 1e-9) / step,
+  );
+
+  const rows = Math.floor(
+    (c.depth + c.roundTableGap + 1e-9) / step,
+  );
+
+  if (columns < 1 || rows < 1) {
+    throw new Error(
+      "Não cabe uma mesa redonda na área disponível.",
+    );
+  }
+
+  const gridWidth =
+    columns * diameter +
+    (columns - 1) * c.roundTableGap;
+
+  const gridDepth =
+    rows * diameter +
+    (rows - 1) * c.roundTableGap;
+
+  function overlapsReservedArea(
+    x: number,
+    y: number,
+  ): boolean {
+    return reservedAreas.some((area) => {
+      const minX = area.centerX - area.width / 2;
+      const maxX = area.centerX + area.width / 2;
+      const minY = area.centerY - area.depth / 2;
+      const maxY = area.centerY + area.depth / 2;
+
+      const nearestX = Math.max(
+        minX,
+        Math.min(x, maxX),
+      );
+
+      const nearestY = Math.max(
+        minY,
+        Math.min(y, maxY),
+      );
+
+      const distanceX = x - nearestX;
+      const distanceY = y - nearestY;
+
+      return (
+        distanceX * distanceX +
+          distanceY * distanceY <
+        radius * radius
+      );
+    });
+  }
+
+  const positions: [number, number][] = [];
+
+  // Começa pela frente da área, onde Y é negativo.
+  for (let row = 0; row < rows; row++) {
+    const y =
+      -gridDepth / 2 +
+      radius +
+      row * step;
+
+    for (let column = 0; column < columns; column++) {
+      const x =
+        -gridWidth / 2 +
+        radius +
+        column * step;
+
+      if (overlapsReservedArea(x, y)) {
+        continue;
+      }
+
+      positions.push([x, y]);
+
+      if (positions.length === c.roundTableCount) {
+        return {
+          positions,
+          generatedCount: positions.length,
+        };
+      }
+    }
+  }
+
+  throw new Error(
+    `Foram solicitadas ${c.roundTableCount} mesas, ` +
+      `mas esta distribuição comporta ${positions.length}. ` +
+      "Ajuste a quantidade, as medidas ou os espaços livres.",
+  );
 }
