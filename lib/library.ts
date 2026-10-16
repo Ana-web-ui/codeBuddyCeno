@@ -1,6 +1,7 @@
 /** Catálogo dos componentes que já possuem geração no Code Buddy. */
 import type { MaterialKind } from "./generator";
 export const libraryCatalog = [
+    { id: 'coffeeTables', label: 'Mesas de centro', projectTypes: ['stand', 'palco'] },
     { id: 'armchairs', label: 'Poltronas', projectTypes: ['stand', 'palco'] },
     { id: 'puffs', label: 'Puffs', projectTypes: ['stand', 'palco'] },
     { id: 'pedestals', label: 'Pedestais expositores', projectTypes: ['stand', 'palco'] },
@@ -1156,6 +1157,54 @@ export function layoutPuffs(c: LoungeContext, reserved: ReservedArea[]): LoungeL
     catch (error) {
         if (error instanceof Error)
             throw new Error(error.message.replace(/pedestais/gi, 'puffs').replace(/pedestal/gi, 'puff'));
+        throw error;
+    }
+}
+export type CoffeeTableConfig = {
+    coffeeTables: boolean;
+    coffeeTableCount: number;
+    coffeeTableWidth: number;
+    coffeeTableDepth: number;
+    coffeeTableHeight: number;
+    coffeeTableTopThickness: number;
+    coffeeTableGap: number;
+    coffeeTableMat: MaterialKind;
+};
+export const coffeeTableDefaults: CoffeeTableConfig = {
+    coffeeTables: false, coffeeTableCount: 1, coffeeTableWidth: .9, coffeeTableDepth: .5,
+    coffeeTableHeight: .4, coffeeTableTopThickness: .03, coffeeTableGap: .5, coffeeTableMat: 'wood',
+};
+export type CoffeeTableLayout = {
+    positions: [
+        number,
+        number
+    ][];
+    generatedCount: number;
+};
+export function layoutCoffeeTables(c: CoffeeTableConfig & {
+    width: number;
+    depth: number;
+    height: number;
+}, reserved: ReservedArea[]): CoffeeTableLayout {
+    if (!c.coffeeTables)
+        return { positions: [], generatedCount: 0 };
+    if (!Number.isInteger(c.coffeeTableCount) || c.coffeeTableCount < 1 || c.coffeeTableCount > 100)
+        throw new Error('Mesas de centro: use uma quantidade inteira de 1 a 100.');
+    for (const [v, min, max, label] of [
+        [c.coffeeTableWidth, .4, 2.5, 'Largura da mesa de centro'], [c.coffeeTableDepth, .3, 1.5, 'Profundidade da mesa de centro'],
+        [c.coffeeTableHeight, .2, .65, 'Altura da mesa de centro'], [c.coffeeTableTopThickness, .02, .12, 'Espessura do tampo da mesa de centro'],
+        [c.coffeeTableGap, 0, 3, 'Vão entre mesas de centro'],
+    ] as const)
+        if (!Number.isFinite(v) || v < min || v > max)
+            throw new Error(`${label}: use um valor entre ${min} e ${max} m.`);
+    try {
+        return layoutPedestals({ width: c.width, depth: c.depth, height: c.height, pedestals: true,
+            pedestalCount: c.coffeeTableCount, pedestalWidth: c.coffeeTableWidth, pedestalDepth: c.coffeeTableDepth,
+            pedestalHeight: c.coffeeTableHeight, pedestalGap: c.coffeeTableGap, pedestalMat: c.coffeeTableMat }, reserved);
+    }
+    catch (error) {
+        if (error instanceof Error)
+            throw new Error(error.message.replace(/Foram solicitados/g, 'Foram solicitadas').replace(/pedestais/gi, 'mesas de centro').replace(/pedestal/gi, 'mesa de centro'));
         throw error;
     }
 }
