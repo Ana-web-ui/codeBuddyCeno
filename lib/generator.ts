@@ -1,8 +1,8 @@
 import { blenderLounge, maxLounge } from './lounge-exporters';
 import { blenderPedestals, maxPedestals } from './pedestal-exporters';
 import { generateMax } from './maxscript';
-import { chairDefaults, layoutChairs, roundTableDefaults, layoutRoundTables, rectTableDefaults, layoutRectTables, bistroTableDefaults, layoutBistroTables, stoolDefaults, layoutStools, validateStoolAssociation, layoutBistroStoolSets, tableChairDefaults, validateTableChairs, layoutTablesWithChairs, pedestalDefaults, layoutPedestals, loungeDefaults, validateLounge, layoutArmchairs, layoutPuffs, coffeeTableDefaults, layoutCoffeeTables } from './library';
-import type { ChairConfig, ReservedArea, RoundTableConfig, RectTableConfig, BistroTableConfig, StoolConfig, TableChairConfig, TableChairLayout, PedestalConfig, LoungeConfig, CoffeeTableConfig } from './library';
+import { chairDefaults, layoutChairs, roundTableDefaults, layoutRoundTables, rectTableDefaults, layoutRectTables, bistroTableDefaults, layoutBistroTables, stoolDefaults, layoutStools, validateStoolAssociation, layoutBistroStoolSets, tableChairDefaults, validateTableChairs, layoutTablesWithChairs, pedestalDefaults, layoutPedestals, loungeDefaults, validateLounge, layoutArmchairs, layoutPuffs, coffeeTableDefaults, layoutCoffeeTables, loungeSetDefaults, layoutLoungeSets } from './library';
+import type { ChairConfig, ReservedArea, RoundTableConfig, RectTableConfig, BistroTableConfig, StoolConfig, TableChairConfig, TableChairLayout, PedestalConfig, LoungeConfig, CoffeeTableConfig, LoungeSetConfig } from './library';
 import { blenderChairs, maxChairs } from './chair-exporters';
 import { blenderRoundTables, maxRoundTables } from './round-table-exporters';
 import { blenderRectTables, maxRectTables, } from './react-table-exporters';
@@ -21,7 +21,7 @@ export const materials: {
     { value: 'glass', label: 'Vidro', color: '#81bfce' }, { value: 'concrete', label: 'Concreto', color: '#747b86' },
     { value: 'plastic', label: 'Plástico', color: '#c4d1e1' }
 ];
-export type Config = ChairConfig & RoundTableConfig & RectTableConfig & BistroTableConfig & StoolConfig & TableChairConfig & PedestalConfig & LoungeConfig & CoffeeTableConfig & {
+export type Config = ChairConfig & RoundTableConfig & RectTableConfig & BistroTableConfig & StoolConfig & TableChairConfig & PedestalConfig & LoungeConfig & CoffeeTableConfig & LoungeSetConfig & {
     projectType: ProjectType;
     name: string;
     width: number;
@@ -61,6 +61,19 @@ export type Config = ChairConfig & RoundTableConfig & RectTableConfig & BistroTa
     screenImage: string;
     screenName: string;
 };
+
+function blenderCoffeeTables(c: Config, layout: { positions: [number, number][] }): string {
+    return layout.positions.map(([x, y], index) =>
+        `caixa('Mesa_Centro_${index + 1}', (${c.coffeeTableWidth}, ${c.coffeeTableDepth}, ${c.coffeeTableHeight}), (${x}, ${y}, ${0.1 + c.coffeeTableHeight / 2}), acabamento('${c.coffeeTableMat}'))`
+    ).join('\n');
+}
+
+function maxCoffeeTables(c: Config, layout: { positions: [number, number][] }): string {
+    return layout.positions.map(([x, y], index) =>
+        `box name:\"Mesa_Centro_${index + 1}\" width:${c.coffeeTableWidth} length:${c.coffeeTableDepth} height:${c.coffeeTableHeight} pos:[${x},${y},${0.1 + c.coffeeTableHeight / 2}]`
+    ).join('\n');
+}
+
 export const defaults: Config = {
     ...chairDefaults,
     ...roundTableDefaults,
@@ -71,6 +84,7 @@ export const defaults: Config = {
     ...pedestalDefaults,
     ...loungeDefaults,
     ...coffeeTableDefaults,
+    ...loungeSetDefaults,
     name: 'Meu primeiro stand', width: 10, depth: 5, height: 3.5, color: '#5268ff', target: 'blender', back: true, left: false, right: false, led: true, counter: true, stage: false, totem: false, spots: true,
     ledWidth: 4, ledHeight: 2, ledBottom: .65, counterWidth: 2, counterDepth: .65, counterHeight: 1, counterCount: 1,
     stageWidth: 4.5, stageDepth: 1.4, stageHeight: .3, totemWidth: .55, totemDepth: .25, totemHeight: 1.8, totemCount: 1, spotsCount: 3,
@@ -304,7 +318,20 @@ export function pedestalGeometry(c: Config) {
     return layoutPedestals(c, furnitureReservedAreas(c, c.pedestalGap));
 }
 /** Ordem: mesas e assentos, pedestais, poltronas e puffs. */
+/** Reserva todo o conjunto antes de posicionar mesas e assentos associados. */
+function loungeSetGeometry(c: Config) {
+    const reserved = furnitureReservedAreas(c, c.loungeSetGap);
+    const pedestals = pedestalGeometry(c);
+    if (c.pedestals)
+        for (const [x, y] of pedestals.positions) {
+            const gap = Math.max(c.loungeSetGap, c.pedestalGap);
+            reserved.push({ centerX: x, centerY: y, width: c.pedestalWidth + 2 * gap, depth: c.pedestalDepth + 2 * gap });
+        }
+    return layoutLoungeSets(c, reserved);
+}
 export function loungeGeometry(c: Config) {
+    if (c.loungeMode === 'set')
+        return loungeSetGeometry(c).lounge;
     if (!c.armchairs && !c.puffs)
         return { armchairs: { positions: [] as [
                     number,
@@ -337,6 +364,8 @@ export function loungeGeometry(c: Config) {
 }
 /** Mesas de centro avulsas, posicionadas depois dos móveis existentes. */
 export function coffeeTableGeometry(c: Config) {
+    if (c.loungeMode === 'set')
+        return loungeSetGeometry(c).tables;
     if (!c.coffeeTables)
         return { positions: [] as [
                 number,
@@ -360,31 +389,9 @@ export function coffeeTableGeometry(c: Config) {
         reserve(lounge.puffs.positions, c.puffWidth, c.puffDepth, c.puffGap);
     return layoutCoffeeTables(c, reserved);
 }
-/** Exporta as mesas de centro localmente para não depender de um módulo ausente. */
-function blenderCoffeeTables(c: Config, layout: ReturnType<typeof coffeeTableGeometry>) {
-    const material = JSON.stringify(c.coffeeTableMat);
-    const width = c.coffeeTableWidth;
-    const depth = c.coffeeTableDepth;
-    const height = c.coffeeTableHeight;
-    return layout.positions.map(([x, y], index) => {
-        const name = `Mesa_Centro_${index + 1}`;
-        const topZ = 0.1 + height - 0.025;
-        const legHeight = height - 0.05;
-        const legZ = 0.1 + legHeight / 2;
-        return `\n_caixa_mat = acabamento(${material})\ncaixa('${name}_Tampo', (${width}, ${depth}, 0.05), (${x}, ${y}, ${topZ}), _caixa_mat, 0.02)\nfor _sx in [-1, 1]:\n    for _sy in [-1, 1]:\n        caixa('${name}_Pe', (0.05, 0.05, ${legHeight}), (${x} + _sx * ${width / 2 - 0.04}, ${y} + _sy * ${depth / 2 - 0.04}, ${legZ}), _caixa_mat)`;
-    }).join('');
-}
-function maxCoffeeTables(c: Config, layout: ReturnType<typeof coffeeTableGeometry>) {
-    const width = c.coffeeTableWidth;
-    const depth = c.coffeeTableDepth;
-    const height = c.coffeeTableHeight;
-    return layout.positions.map(([x, y], index) => {
-        const name = `Mesa_Centro_${index + 1}`;
-        const legHeight = height - 0.05;
-        return `box name:"${name}_Tampo" width:${width} length:${depth} height:0.05 pos:[${x},${y},${0.1 + height - 0.025}]\nfor sx in #(-1,1) do for sy in #(-1,1) do box name:"${name}_Pe" width:0.05 length:0.05 height:${legHeight} pos:[${x}+sx*${width / 2 - 0.04},${y}+sy*${depth / 2 - 0.04},${0.1 + legHeight / 2}]`;
-    }).join('\n');
-}
 export function validate(c: Config) {
+    if (c.loungeMode !== 'free' && c.loungeMode !== 'set')
+        throw new Error('Selecione um modo válido para o lounge.');
     if (!c.name.trim() || c.name.length > 80)
         throw new Error('Dê um nome ao projeto, com até 80 caracteres.');
     if (!['stand', 'palco'].includes(c.projectType))

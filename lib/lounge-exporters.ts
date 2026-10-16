@@ -26,30 +26,37 @@ function armchairParts(c: LoungeConfig): Part[] {
     return parts;
 }
 function puffParts(c: LoungeConfig): Part[] { return [[c.puffWidth, c.puffDepth, c.puffHeight, 0, 0, .1 + c.puffHeight / 2, 0]]; }
-function blenderObjects(name: string, positions: [
-    number,
-    number
-][], parts: Part[], mat: MaterialKind): string {
+function blenderObjects(name: string, layout: LoungeLayout, parts: Part[], mat: MaterialKind): string {
+    const positions = layout.positions;
+    const angles = positions.map((_, i) => layout.rotations?.[i] ?? 0);
+    if (angles.some(a => !Number.isFinite(a)))
+        throw new Error('Rotação de móvel inválida.');
     if (!positions.length)
         return '';
     return `
 # BIBLIOTECA: ${name.toUpperCase()}
+import math
 def criar_${name.toLowerCase()}():
     posicoes = ${JSON.stringify(positions)}
     pecas = ${JSON.stringify(parts)}
+    angulos = ${JSON.stringify(angles)}
     materiais = [acabamento('${mat}'), acabamento('metal')]
     for i, (x, y) in enumerate(posicoes, 1):
+        angulo = angulos[i - 1]
+        seno, cosseno = math.sin(angulo), math.cos(angulo)
         for j, (w, d, h, dx, dy, z, material_id) in enumerate(pecas, 1):
-            caixa('${name}_%03d_Peca_%d' % (i, j), (w, d, h),
-                  (x + dx, y + dy, z), materiais[int(material_id)], 0.02)
+            obj = caixa('${name}_%03d_Peca_%d' % (i, j), (w, d, h),
+                  (x + dx * cosseno - dy * seno, y + dx * seno + dy * cosseno, z), materiais[int(material_id)], 0.02)
+            obj.rotation_euler[2] = angulo
 
 criar_${name.toLowerCase()}()
 `;
 }
-function maxObjects(name: string, positions: [
-    number,
-    number
-][], parts: Part[], mat: MaterialKind): string {
+function maxObjects(name: string, layout: LoungeLayout, parts: Part[], mat: MaterialKind): string {
+    const positions = layout.positions;
+    const angles = positions.map((_, i) => layout.rotations?.[i] ?? 0);
+    if (angles.some(a => !Number.isFinite(a)))
+        throw new Error('Rotação de móvel inválida.');
     if (!positions.length)
         return '';
     const pos = '#(' + positions.map(([x, y]) => `[${x},${y},0]`).join(',') + ')';
@@ -60,16 +67,23 @@ undo "Adicionar ${name} Code Buddy" on
 (
     local posicoesLounge = ${pos}
     local pecasLounge = ${pieces}
+    local angulosLounge = #(${angles.map(a => a * 180 / Math.PI).join(",")})
     local materiaisLounge = #(cbMaterial "${mat}", cbMaterial "metal")
     for i = 1 to posicoesLounge.count do
     (
         local ponto = posicoesLounge[i]
+        local angulo = angulosLounge[i]
+        local seno = sin angulo
+        local cosseno = cos angulo
         for j = 1 to pecasLounge.count do
         (
             local peca = pecasLounge[j]
             local indice = (peca[7] as integer) + 1
             local nome = "${name}_" + (i as string) + "_Peca_" + (j as string)
-            cbCaixa nome peca[1] peca[2] peca[3] (ponto.x + peca[4]) (ponto.y + peca[5]) peca[6] materiaisLounge[indice]
+            local x = ponto.x + peca[4]*cosseno - peca[5]*seno
+            local y = ponto.y + peca[4]*seno + peca[5]*cosseno
+            local obj = cbCaixa nome peca[1] peca[2] peca[3] x y peca[6] materiaisLounge[indice]
+            obj.rotation = (eulerAngles 0 0 angulo)
         )
     )
 )
@@ -80,10 +94,10 @@ type Layouts = {
     puffs: LoungeLayout;
 };
 export function blenderLounge(c: LoungeConfig, layout: Layouts): string {
-    return (c.armchairs ? blenderObjects('Poltrona', layout.armchairs.positions, armchairParts(c), c.armchairMat) : '') +
-        (c.puffs ? blenderObjects('Puff', layout.puffs.positions, puffParts(c), c.puffMat) : '');
+    return (c.armchairs ? blenderObjects('Poltrona', layout.armchairs, armchairParts(c), c.armchairMat) : '') +
+        (c.puffs ? blenderObjects('Puff', layout.puffs, puffParts(c), c.puffMat) : '');
 }
 export function maxLounge(c: LoungeConfig, layout: Layouts): string {
-    return (c.armchairs ? maxObjects('Poltrona', layout.armchairs.positions, armchairParts(c), c.armchairMat) : '') +
-        (c.puffs ? maxObjects('Puff', layout.puffs.positions, puffParts(c), c.puffMat) : '');
+    return (c.armchairs ? maxObjects('Poltrona', layout.armchairs, armchairParts(c), c.armchairMat) : '') +
+        (c.puffs ? maxObjects('Puff', layout.puffs, puffParts(c), c.puffMat) : '');
 }

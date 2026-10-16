@@ -122,6 +122,11 @@ const parameterFields: Record<'led' | 'counter' | 'stage' | 'totem' | 'spots' | 
         { key: 'puffGap', label: 'Vão livre entre puffs', min: 0, max: 3 },
     ],
     coffeeTables: [
+        { key: 'loungeArmchairsPerTable', label: 'Poltronas por conjunto', unit: 'un', min: 0, max: 4 },
+        { key: 'loungePuffsPerTable', label: 'Puffs por conjunto', unit: 'un', min: 0, max: 4 },
+        { key: 'loungeTableSeatGap', label: 'Distância livre entre mesa e assentos', min: 0, max: 2 },
+        { key: 'loungeSeatGap', label: 'Vão livre entre assentos do conjunto', min: 0, max: 2 },
+        { key: 'loungeSetGap', label: 'Vão livre entre conjuntos', min: 0, max: 3 },
         { key: 'coffeeTableCount', label: 'Quantidade', unit: 'un', min: 1, max: 100 },
         { key: 'coffeeTableWidth', label: 'Largura', min: .4, max: 2.5 },
         { key: 'coffeeTableDepth', label: 'Profundidade', min: .3, max: 1.5 },
@@ -242,14 +247,14 @@ function Plan({ c }: {
           </g>))}
       </g>)}
     {c.armchairs && (<g aria-label={`${lounge.armchairs.generatedCount} poltronas`}>
-        {lounge.armchairs.positions.map(([cx, cy], index) => (<g key={`armchair-${index}`}>
+        {lounge.armchairs.positions.map(([cx, cy], index) => (<g key={`armchair-${index}`} transform={`rotate(${-(lounge.armchairs.rotations?.[index] ?? 0) * 180 / Math.PI} ${px(cx)} ${py(cy)})`}>
             <rect x={px(cx - c.armchairWidth / 2)} y={py(cy + c.armchairDepth / 2)} width={c.armchairWidth * s} height={c.armchairDepth * s} rx="2" fill={loungeColor(c.armchairMat)} stroke="#dce6ff" strokeWidth="1"/>
             <path d={`M ${px(cx - c.armchairWidth / 2 + .1)} ${py(cy + c.armchairDepth / 2)} V ${py(cy - c.armchairDepth / 2 + .12)} H ${px(cx + c.armchairWidth / 2 - .1)} V ${py(cy + c.armchairDepth / 2)}`} fill="none" stroke="#687695" strokeWidth="1"/>
             <text x={px(cx)} y={py(cy)} textAnchor="middle" dominantBaseline="middle" fill="#111827" fontSize="9">PL{index + 1}</text>
           </g>))}
       </g>)}
     {c.puffs && (<g aria-label={`${lounge.puffs.generatedCount} puffs`}>
-        {lounge.puffs.positions.map(([cx, cy], index) => (<g key={`puff-${index}`}>
+        {lounge.puffs.positions.map(([cx, cy], index) => (<g key={`puff-${index}`} transform={`rotate(${-(lounge.puffs.rotations?.[index] ?? 0) * 180 / Math.PI} ${px(cx)} ${py(cy)})`}>
             <rect x={px(cx - c.puffWidth / 2)} y={py(cy + c.puffDepth / 2)} width={c.puffWidth * s} height={c.puffDepth * s} rx="3" fill={loungeColor(c.puffMat)} stroke="#dce6ff" strokeWidth="1"/>
             <text x={px(cx)} y={py(cy)} textAnchor="middle" dominantBaseline="middle" fill="#111827" fontSize="9">PF{index + 1}</text>
           </g>))}
@@ -543,7 +548,30 @@ export default function Home() {
         As medidas das cadeiras são compartilhadas entre mesas redondas e retangulares.
         {f.key === 'rectTables' && ' As cadeiras ficam nos dois lados paralelos à largura da mesa.'}
       </p>)}
+  </div>)} {f.key === 'coffeeTables' && (<div className="field">
+    <label htmlFor="lounge-mode">Distribuição do lounge</label>
+    <Select value={c.loungeMode} onValueChange={value => {
+                    if (value !== 'free' && value !== 'set')
+                        return;
+                    setC(prev => ({ ...prev, loungeMode: value,
+                        armchairs: value === 'set' && prev.loungeArmchairsPerTable > 0 ? true : prev.armchairs,
+                        puffs: value === 'set' && prev.loungePuffsPerTable > 0 ? true : prev.puffs }));
+                    setError('');
+                    setNotice('');
+                }}>
+      <SelectTrigger id="lounge-mode" className="full-select"><SelectValue /></SelectTrigger>
+      <SelectContent><SelectItem value="free">Móveis avulsos</SelectItem><SelectItem value="set">Conjunto de lounge</SelectItem></SelectContent>
+    </Select>
+    <p className="tab-help">{c.loungeMode === 'set'
+                    ? <>Cada mesa de centro forma um conjunto com até 4 assentos. Total: {c.coffeeTableCount} mesas, {c.armchairs ? c.coffeeTableCount * c.loungeArmchairsPerTable : 0} poltronas e {c.puffs ? c.coffeeTableCount * c.loungePuffsPerTable : 0} puffs. Limite de 100 unidades de cada tipo de assento.</>
+                    : 'Mesas de centro, poltronas e puffs ocupam posições livres de forma independente.'}</p>
   </div>)} <div className="param-grid">{parameterFields[f.key].filter(field => {
+                if (field.key.startsWith('lounge') && c.loungeMode !== 'set')
+                    return false;
+                if (field.key === 'coffeeTableGap' && c.loungeMode === 'set')
+                    return false;
+                if ((field.key === 'armchairCount' || field.key === 'armchairGap' || field.key === 'puffCount' || field.key === 'puffGap') && c.loungeMode === 'set')
+                    return false;
                 if (f.key === 'roundTables' && (field.key === 'roundTableChairsPerTable' || field.key.startsWith('tableChair')) && !c.roundTableChairs)
                     return false;
                 if (f.key === 'rectTables' && (field.key === 'rectTableChairsPerTable' || field.key.startsWith('tableChair')) && !c.rectTableChairs)
@@ -554,7 +582,7 @@ export default function Home() {
                     return false;
                 const isQuantityField = field.key === 'attendeeCount' || field.key === 'chairExtraCount';
                 return c.chairGenerationMode !== 'fill' || !isQuantityField;
-            }).map(field => <label className="field" key={field.key}>{field.label}<div className="unit-input"><input type="number" inputMode={field.unit === 'un' ? 'numeric' : 'decimal'} min={field.min ?? .1} max={field.max ?? 30} step={field.unit === 'un' ? 1 : field.key === "roundTableTopThickness" || field.key === "rectTableTopThickness" || field.key === "bistroTableTopThickness" || field.key === "coffeeTableTopThickness" || field.key === "stoolSeatThickness" || field.key === "stoolBistroGap" ? 0.01 : 0.05} value={Number.isNaN(c[field.key]) ? '' : c[field.key] as number} onChange={e => update(field.key, e.target.value === '' ? NaN : Number(e.target.value))}/><span>{field.unit ?? 'm'}</span></div></label>)}</div></div>)}
+            }).map(field => <label className="field" key={field.key}>{field.key === 'coffeeTableCount' && c.loungeMode === 'set' ? 'Quantidade de conjuntos' : field.label}<div className="unit-input"><input type="number" inputMode={field.unit === 'un' ? 'numeric' : 'decimal'} min={field.min ?? .1} max={field.max ?? 30} step={field.unit === 'un' ? 1 : field.key === "roundTableTopThickness" || field.key === "rectTableTopThickness" || field.key === "bistroTableTopThickness" || field.key === "coffeeTableTopThickness" || field.key === "stoolSeatThickness" || field.key === "stoolBistroGap" ? 0.01 : 0.05} value={Number.isNaN(c[field.key]) ? '' : c[field.key] as number} onChange={e => update(field.key, e.target.value === '' ? NaN : Number(e.target.value))}/><span>{field.unit ?? 'm'}</span></div></label>)}</div></div>)}
       {!availableElements.some(f => c[f.key]) && <p className="tab-help">Selecione um elemento na aba Projeto para ajustar suas medidas.</p>}
       {c.led && <div className="texture-section"><h3>Textura da TV / LED</h3><p>Escolha a arte que vai aparecer na tela. A imagem inteira é ajustada às medidas do LED.</p><label className="upload-label" htmlFor="tv-image">Escolher imagem JPG ou PNG<input id="tv-image" type="file" accept="image/png,image/jpeg" onChange={handleImage}/></label><small>Até 2 MB · incorporada ao script · imagem estática</small>{c.screenImage ? <div className="texture-preview"><img src={c.screenImage} alt="Arte selecionada para a tela de TV"/><span>{c.screenName}</span><button onClick={() => { imageRequest.current += 1; setC(prev => ({ ...prev, screenImage: '', screenName: '' })); setNotice('Imagem removida.'); }}>Remover imagem</button></div> : <p className="tab-help">Sem imagem, a tela usa a cor de destaque.</p>}</div>}
       </TabsContent><TabsContent value="materials"><p className="tab-help">Escolha o acabamento de cada parte. Madeira e concreto usam textura procedural; metal e vidro recebem propriedades de superfície.</p><div className="material-fields">{materialFields.filter((field) => {

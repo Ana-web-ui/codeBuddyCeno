@@ -1088,6 +1088,7 @@ export const loungeDefaults: LoungeConfig = {
     puffs: false, puffCount: 2, puffWidth: .5, puffDepth: .5, puffHeight: .45, puffGap: .4, puffMat: 'plastic',
 };
 export type LoungeLayout = {
+    rotations?: number[];
     positions: [
         number,
         number
@@ -1207,4 +1208,108 @@ export function layoutCoffeeTables(c: CoffeeTableConfig & {
             throw new Error(error.message.replace(/Foram solicitados/g, 'Foram solicitadas').replace(/pedestais/gi, 'mesas de centro').replace(/pedestal/gi, 'mesa de centro'));
         throw error;
     }
+}
+export type LoungeSetConfig = {
+    loungeMode: 'free' | 'set';
+    loungeArmchairsPerTable: number;
+    loungePuffsPerTable: number;
+    loungeTableSeatGap: number;
+    loungeSeatGap: number;
+    loungeSetGap: number;
+};
+export const loungeSetDefaults: LoungeSetConfig = {
+    loungeMode: 'free', loungeArmchairsPerTable: 2, loungePuffsPerTable: 2,
+    loungeTableSeatGap: .25, loungeSeatGap: .1, loungeSetGap: .8,
+};
+type SetContext = LoungeSetConfig & LoungeConfig & CoffeeTableConfig & {
+    width: number;
+    depth: number;
+    height: number;
+};
+export function layoutLoungeSets(c: SetContext, reserved: ReservedArea[]) {
+    const empty = () => ({ positions: [] as [
+            number,
+            number
+        ][], rotations: [] as number[], generatedCount: 0 });
+    if (!c.armchairs && !c.puffs && !c.coffeeTables)
+        return { tables: empty(), lounge: { armchairs: empty(), puffs: empty() } };
+    if (!c.coffeeTables)
+        throw new Error('Ative as mesas de centro para montar os conjuntos de lounge.');
+    for (const n of [c.loungeArmchairsPerTable, c.loungePuffsPerTable])
+        if (!Number.isInteger(n) || n < 0 || n > 4)
+            throw new Error('Use uma quantidade inteira de 0 a 4 assentos de cada tipo por mesa.');
+    const armCount = c.armchairs ? c.loungeArmchairsPerTable : 0, puffCount = c.puffs ? c.loungePuffsPerTable : 0;
+    if (armCount + puffCount < 1 || armCount + puffCount > 4)
+        throw new Error('Cada conjunto deve ter de 1 a 4 assentos no total. Ative poltronas ou puffs e ajuste as quantidades por mesa.');
+    for (const [v, min, max, label] of [[c.loungeTableSeatGap, 0, 2, 'Distância entre mesa e assentos'], [c.loungeSeatGap, 0, 2, 'Vão entre assentos do conjunto'], [c.loungeSetGap, 0, 3, 'Vão entre conjuntos']] as const)
+        if (!Number.isFinite(v) || v < min || v > max)
+            throw new Error(`${label}: use um valor entre ${min} e ${max} m.`);
+    if (!Number.isInteger(c.coffeeTableCount) || c.coffeeTableCount < 1 || c.coffeeTableCount > 100)
+        throw new Error('Use de 1 a 100 mesas de centro.');
+    const effective = { ...c, armchairs: armCount > 0, puffs: puffCount > 0, armchairCount: armCount * c.coffeeTableCount, puffCount: puffCount * c.coffeeTableCount };
+    validateLounge(effective);
+    // Valida as medidas da mesa sem usar o vão avulso para a distribuição do conjunto.
+    layoutCoffeeTables({ ...c, coffeeTableCount: 1 }, []);
+    type Seat = {
+        kind: 'armchair' | 'puff';
+        x: number;
+        y: number;
+        angle: number;
+        w: number;
+        d: number;
+    };
+    const seats: Seat[] = [];
+    const kinds: ('armchair' | 'puff')[] = [...Array(armCount).fill('armchair'), ...Array(puffCount).fill('puff')];
+    kinds.forEach((kind, index) => {
+        const w = kind === 'armchair' ? c.armchairWidth : c.puffWidth, d = kind === 'armchair' ? c.armchairDepth : c.puffDepth;
+        const gap = c.loungeTableSeatGap;
+        const positions = [
+            [0, -c.coffeeTableDepth / 2 - gap - d / 2, 0],
+            [0, c.coffeeTableDepth / 2 + gap + d / 2, Math.PI],
+            [-c.coffeeTableWidth / 2 - gap - d / 2, 0, -Math.PI / 2],
+            [c.coffeeTableWidth / 2 + gap + d / 2, 0, Math.PI / 2],
+        ];
+        const [x, y, angle] = positions[index];
+        seats.push({ kind, x, y, angle, w: index < 2 ? w : d, d: index < 2 ? d : w });
+    });
+    for (let i = 0; i < seats.length; i++)
+        for (let j = i + 1; j < seats.length; j++) {
+            const a = seats[i], b = seats[j];
+            const dx = Math.abs(a.x - b.x) - (a.w + b.w) / 2, dy = Math.abs(a.y - b.y) - (a.d + b.d) / 2;
+            if ((dx < 0 && dy < 0) || Math.hypot(Math.max(0, dx), Math.max(0, dy)) + 1e-9 < c.loungeSeatGap)
+                throw new Error('Os assentos do lounge ficam próximos demais. Aumente a distância até a mesa ou reduza suas medidas e quantidades.');
+        }
+    const halfW = Math.max(c.coffeeTableWidth / 2, ...seats.map(s => Math.abs(s.x) + s.w / 2));
+    const halfD = Math.max(c.coffeeTableDepth / 2, ...seats.map(s => Math.abs(s.y) + s.d / 2));
+    const w = 2 * halfW, d = 2 * halfD, gap = c.loungeSetGap;
+    if (![c.width, c.depth, w, d].every(Number.isFinite) || c.width <= 0 || c.depth <= 0)
+        throw new Error('Confira as medidas do conjunto e da montagem.');
+    for (const a of reserved)
+        if (![a.centerX, a.centerY, a.width, a.depth].every(Number.isFinite) || a.width <= 0 || a.depth <= 0)
+            throw new Error('Existe uma área reservada inválida.');
+    const cols = Math.floor((c.width + gap + 1e-9) / (w + gap)), rows = Math.floor((c.depth + gap + 1e-9) / (d + gap));
+    const fullW = cols * w + Math.max(0, cols - 1) * gap, fullD = rows * d + Math.max(0, rows - 1) * gap;
+    const tables = empty(), armchairs = empty(), puffs = empty();
+    for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+            const x = -fullW / 2 + w / 2 + col * (w + gap), y = -fullD / 2 + d / 2 + row * (d + gap);
+            if (reserved.some(a => Math.abs(x - a.centerX) < (w + a.width) / 2 && Math.abs(y - a.centerY) < (d + a.depth) / 2))
+                continue;
+            tables.positions.push([x, y]);
+            for (const seat of seats) {
+                const dest = seat.kind === 'armchair' ? armchairs : puffs;
+                dest.positions.push([x + seat.x, y + seat.y]);
+                dest.rotations.push(seat.angle);
+            }
+            if (tables.positions.length === c.coffeeTableCount)
+                break;
+        }
+        if (tables.positions.length === c.coffeeTableCount)
+            break;
+    }
+    if (tables.positions.length !== c.coffeeTableCount)
+        throw new Error(`Foram solicitados ${c.coffeeTableCount} conjuntos de lounge, mas esta grade comporta ${tables.positions.length}. Ajuste as quantidades, as medidas ou os espaços livres.`);
+    for (const layout of [tables, armchairs, puffs])
+        layout.generatedCount = layout.positions.length;
+    return { tables, lounge: { armchairs, puffs } };
 }
