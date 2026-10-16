@@ -5,7 +5,7 @@ import { Box, Layers, Download, Copy, Check, Code2, Ruler, Monitor, LampDesk, Pa
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
-import { materials, generate, geometry, filename, validate, tableGeometry, } from '@/lib/generator';
+import { materials, generate, geometry, filename, validate, tableGeometry, stoolGeometry, } from '@/lib/generator';
 import type { MaterialKind, Target, Config, ProjectType } from '@/lib/generator';
 import { projectTypes, createProjectConfig } from '@/lib/project-types';
 import { libraryCatalog, layoutChairs } from '@/lib/library';
@@ -19,6 +19,7 @@ const elements = [
     { key: 'chairs', title: 'Cadeiras', text: 'Plateia organizada em filas', icon: Armchair },
     { key: 'roundTables', title: 'Mesas redondas', text: 'Mesas com tampo circular e base central', icon: Circle, },
     { key: 'rectTables', title: 'Mesas retangulares', text: 'Mesas com tampo retangular e quatro pés', icon: PanelTop },
+    { key: 'stools', title: 'Banquetas', text: 'Assentos altos com base central', icon: Armchair },
 ] as const;
 type NumberKey = {
     [K in keyof Config]: Config[K] extends number ? K : never;
@@ -30,7 +31,7 @@ type ParameterField = {
     min?: number;
     max?: number;
 };
-const parameterFields: Record<'led' | 'counter' | 'stage' | 'totem' | 'spots' | 'chairs' | 'roundTables' | 'rectTables' | 'bistroTables', ParameterField[]> = {
+const parameterFields: Record<'led' | 'counter' | 'stage' | 'totem' | 'spots' | 'chairs' | 'roundTables' | 'rectTables' | 'bistroTables' | 'stools', ParameterField[]> = {
     led: [{ key: 'ledWidth', label: 'Largura' }, { key: 'ledHeight', label: 'Altura' }, { key: 'ledBottom', label: 'Base sobre o piso', max: 8 }],
     counter: [{ key: 'counterWidth', label: 'Largura' }, { key: 'counterDepth', label: 'Profundidade' }, { key: 'counterHeight', label: 'Altura' }, { key: 'counterCount', label: 'Quantidade', unit: 'un', min: 1, max: 6 }],
     stage: [{ key: 'stageWidth', label: 'Largura' }, { key: 'stageDepth', label: 'Profundidade' }, { key: 'stageHeight', label: 'Altura', max: 1 }],
@@ -50,6 +51,13 @@ const parameterFields: Record<'led' | 'counter' | 'stage' | 'totem' | 'spots' | 
         { key: 'chairSideMargin', label: 'Margem lateral', min: .5, max: 5 },
         { key: 'chairFrontMargin', label: 'Margem na entrada', min: .2, max: 5 },],
     roundTables: [
+        { key: 'roundTableChairsPerTable', label: 'Cadeiras por mesa', unit: 'un', min: 1, max: 10 },
+        { key: 'tableChairWidth', label: 'Largura das cadeiras das mesas', min: 0.3, max: 1.2 },
+        { key: 'tableChairDepth', label: 'Profundidade das cadeiras das mesas', min: 0.3, max: 1.2 },
+        { key: 'tableChairHeight', label: 'Altura das cadeiras das mesas', min: 0.65, max: 1.5 },
+        { key: 'tableChairSeatHeight', label: 'Altura do assento das cadeiras das mesas', min: 0.3, max: 0.7 },
+        { key: 'tableChairTableGap', label: 'Distância livre entre mesa e cadeiras', min: 0, max: 2 },
+        { key: 'tableChairGap', label: 'Vão entre cadeiras das mesas', min: 0, max: 2 },
         { key: 'roundTableCount', label: 'Quantidade', unit: 'un', min: 1, max: 100 },
         { key: 'roundTableDiameter', label: 'Diâmetro', min: 0.4, max: 3 },
         { key: 'roundTableHeight', label: 'Altura', min: 0.4, max: 1.2 },
@@ -57,6 +65,13 @@ const parameterFields: Record<'led' | 'counter' | 'stage' | 'totem' | 'spots' | 
         { key: 'roundTableGap', label: 'Vão livre entre mesas', min: 0, max: 5 },
     ],
     rectTables: [
+        { key: 'rectTableChairsPerTable', label: 'Cadeiras por mesa', unit: 'un', min: 1, max: 12 },
+        { key: 'tableChairWidth', label: 'Largura das cadeiras das mesas', min: 0.3, max: 1.2 },
+        { key: 'tableChairDepth', label: 'Profundidade das cadeiras das mesas', min: 0.3, max: 1.2 },
+        { key: 'tableChairHeight', label: 'Altura das cadeiras das mesas', min: 0.65, max: 1.5 },
+        { key: 'tableChairSeatHeight', label: 'Altura do assento das cadeiras das mesas', min: 0.3, max: 0.7 },
+        { key: 'tableChairTableGap', label: 'Distância livre entre mesa e cadeiras', min: 0, max: 2 },
+        { key: 'tableChairGap', label: 'Vão entre cadeiras das mesas', min: 0, max: 2 },
         { key: "rectTableCount", label: "Quantidade", unit: "un", min: 1, max: 100, },
         { key: "rectTableWidth", label: "Largura", min: 0.4, max: 4, },
         { key: "rectTableDepth", label: "Profundidade", min: 0.4, max: 2, },
@@ -71,11 +86,20 @@ const parameterFields: Record<'led' | 'counter' | 'stage' | 'totem' | 'spots' | 
         { key: 'bistroTableTopThickness', label: 'Espessura do tampo', min: 0.01, max: 0.15 },
         { key: 'bistroTableGap', label: 'Vão livre entre mesas', min: 0, max: 5 },
     ],
+    stools: [
+        { key: "stoolCount", label: "Quantidade", unit: "un", min: 1, max: 100, },
+        { key: 'stoolsPerBistro', label: 'Banquetas por bistrô', unit: 'un', min: 1, max: 6 },
+        { key: 'stoolBistroGap', label: 'Distância livre entre tampo e assentos', min: 0, max: 2 },
+        { key: "stoolSeatDiameter", label: "Diâmetro do assento", min: 0.25, max: 0.8, },
+        { key: "stoolSeatHeight", label: "Altura até o topo do assento", min: 0.4, max: 1, },
+        { key: "stoolSeatThickness", label: "Espessura do assento", min: 0.02, max: 0.12, },
+        { key: "stoolGap", label: "Vão livre entre banquetas", min: 0, max: 3, },
+    ],
 };
 const materialFields: {
-    key: 'floorMat' | 'wallMat' | 'counterMat' | 'stageMat' | 'totemMat' | 'roundTableMat' | 'rectTableMat' | 'bistroTableMat';
+    key: 'floorMat' | 'wallMat' | 'counterMat' | 'stageMat' | 'totemMat' | 'roundTableMat' | 'rectTableMat' | 'bistroTableMat' | 'stoolMat';
     label: string;
-    enabled?: 'counter' | 'stage' | 'totem' | 'roundTables' | 'rectTables' | 'bistroTables';
+    enabled?: 'counter' | 'stage' | 'totem' | 'roundTables' | 'rectTables' | 'bistroTables' | 'stools';
 }[] = [{ key: 'floorMat', label: 'Piso' },
     { key: 'wallMat', label: 'Paredes' },
     { key: 'counterMat', label: 'Corpo do balcão', enabled: 'counter' },
@@ -83,7 +107,8 @@ const materialFields: {
     { key: 'totemMat', label: 'Totem', enabled: 'totem' },
     { key: 'roundTableMat', label: 'Tampo das mesas redondas', enabled: 'roundTables' },
     { key: 'rectTableMat', label: 'Tampo das mesas retangulares', enabled: 'rectTables' },
-    { key: 'bistroTableMat', label: 'Tampo das mesas bistrô', enabled: 'bistroTables' }];
+    { key: 'bistroTableMat', label: 'Tampo das mesas bistrô', enabled: 'bistroTables' },
+    { key: 'stoolMat', label: 'Assento das banquetas', enabled: 'stools' }];
 const num = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
 function Plan({ c }: {
     c: Config;
@@ -97,6 +122,7 @@ function Plan({ c }: {
     const tables = tableLayouts.roundTables;
     const rectTables = tableLayouts.rectTables;
     const bistroTables = tableLayouts.bistroTables;
+    const stools = stoolGeometry(c);
     const bistroTableColor = c.bistroTableMat === 'brand'
         ? c.color
         : materials.find(material => material.value === c.bistroTableMat)?.color ?? '#c8cedb';
@@ -106,6 +132,9 @@ function Plan({ c }: {
     const tableColor = c.roundTableMat === "brand"
         ? c.color
         : materials.find((material) => material.value === c.roundTableMat)?.color ?? "#c8cedb";
+    const stoolColor = c.stoolMat === "brand"
+        ? c.color
+        : materials.find((material) => material.value === c.stoolMat)?.color ?? "#c8cedb";
     return <svg viewBox="0 0 600 430" role="img" aria-label={`Planta esquemática da área de montagem de ${num(c.width)} por ${num(c.depth)} metros`}>
       <defs><pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M 20 0 L 0 0 0 20" fill="none" stroke="#252d40" strokeWidth=".5"/></pattern></defs>
     <rect width="600" height="430" fill="url(#grid)"/>
@@ -145,6 +174,21 @@ function Plan({ c }: {
             <text x={px(cx)} y={py(cy)} textAnchor="middle" dominantBaseline="middle" fill="#111827" fontSize="9">
               B{index + 1}
             </text>
+          </g>))}
+      </g>)}
+   {c.stools && (<g aria-label={`${stools.generatedCount} banquetas`}>
+    {stools.positions.map(([cx, cy], index) => (<g key={`stool-${index}`}>
+        <circle cx={px(cx)} cy={py(cy)} r={(c.stoolSeatDiameter / 2) * s} fill={stoolColor} stroke="#dce6ff" strokeWidth="1"/>
+
+        <text x={px(cx)} y={py(cy)} textAnchor="middle" dominantBaseline="middle" fill="#111827" fontSize="8">
+          BN{index + 1}
+        </text>
+      </g>))}
+  </g>)}
+    {tableLayouts.tableChairs.generatedCount > 0 && (<g aria-label={`${tableLayouts.tableChairs.generatedCount} cadeiras das mesas`}>
+        {tableLayouts.tableChairs.positions.map(([cx, cy], index) => (<g key={`table-chair-${index}`} transform={`translate(${px(cx)} ${py(cy)}) rotate(${-tableLayouts.tableChairs.rotations[index] * 180 / Math.PI})`}>
+            <rect x={-c.tableChairWidth * s / 2} y={-c.tableChairDepth * s / 2} width={c.tableChairWidth * s} height={c.tableChairDepth * s} fill={c.color} stroke="#dce6ff" strokeWidth="0.6"/>
+            <path d={`M ${-c.tableChairWidth * s / 2} ${c.tableChairDepth * s / 2} H ${c.tableChairWidth * s / 2}`} stroke="#ffffff" strokeWidth="2"/>
           </g>))}
       </g>)}
     {c.counter && g.counterXs.map((cx, i) => <g key={i}><rect x={px(cx - (g.counterW + .08) / 2)} y={py(g.counterY + (c.counterDepth + .08) / 2)} width={(g.counterW + .08) * s} height={(c.counterDepth + .08) * s} rx="3" fill={c.counterMat === 'brand' ? c.color : materials.find(m => m.value === c.counterMat)?.color}/><text x={px(cx)} y={py(g.counterY) + 5} textAnchor="middle" fill="white" fontSize="12">Balcão</text></g>)}
@@ -399,10 +443,49 @@ export default function Home() {
                     ? 'Um corredor de cada lado, além das margens laterais.'
                     : 'Um corredor entre os dois blocos de cadeiras.'}
     </small>
-  </div>)}<div className="param-grid">{parameterFields[f.key].filter(field => {
+  </div>)}{f.key === 'stools' && (<div className="field">
+    <label htmlFor="stool-distribution">Distribuição das banquetas</label>
+    <Select value={c.stoolDistribution} onValueChange={value => {
+                    if (value !== 'free' && value !== 'bistro')
+                        return;
+                    setC(prev => ({ ...prev, stoolDistribution: value,
+                        bistroTables: value === 'bistro' ? true : prev.bistroTables }));
+                    setError('');
+                    setNotice('');
+                }}>
+      <SelectTrigger id="stool-distribution" className="full-select"><SelectValue /></SelectTrigger>
+      <SelectContent>
+        <SelectItem value="free">Avulsas</SelectItem>
+        <SelectItem value="bistro">Ao redor dos bistrôs</SelectItem>
+      </SelectContent>
+    </Select>
+    <p className="tab-help">
+      {c.stoolDistribution === 'bistro'
+                    ? <>Total calculado: {c.bistroTableCount} bistrôs × {c.stoolsPerBistro} banquetas = {c.bistroTableCount * c.stoolsPerBistro}. O espaço da mesa e dos assentos é reservado em conjunto. Limite de 100 banquetas.</>
+                    : 'As banquetas são distribuídas nas posições livres depois das mesas.'}
+    </p>
+  </div>)} {(f.key === 'roundTables' || f.key === 'rectTables') && (<div className="field">
+    <label className="element">
+      <span>Adicionar cadeiras ao redor</span>
+      <Checkbox checked={f.key === 'roundTables' ? c.roundTableChairs : c.rectTableChairs} onCheckedChange={v => update(f.key === 'roundTables' ? 'roundTableChairs' : 'rectTableChairs', v === true)} aria-label={f.key === 'roundTables' ? 'Cadeiras nas mesas redondas' : 'Cadeiras nas mesas retangulares'}/>
+    </label>
+    {(f.key === 'roundTables' ? c.roundTableChairs : c.rectTableChairs) && (<p className="tab-help">
+        Total: {f.key === 'roundTables' ? c.roundTableCount * c.roundTableChairsPerTable : c.rectTableCount * c.rectTableChairsPerTable} cadeiras, separadas da plateia.
+        As medidas das cadeiras são compartilhadas entre mesas redondas e retangulares.
+        {f.key === 'rectTables' && ' As cadeiras ficam nos dois lados paralelos à largura da mesa.'}
+      </p>)}
+  </div>)} <div className="param-grid">{parameterFields[f.key].filter(field => {
+                if (f.key === 'roundTables' && (field.key === 'roundTableChairsPerTable' || field.key.startsWith('tableChair')) && !c.roundTableChairs)
+                    return false;
+                if (f.key === 'rectTables' && (field.key === 'rectTableChairsPerTable' || field.key.startsWith('tableChair')) && !c.rectTableChairs)
+                    return false;
+                if (field.key === 'stoolCount' && c.stoolDistribution === 'bistro')
+                    return false;
+                if ((field.key === 'stoolsPerBistro' || field.key === 'stoolBistroGap') && c.stoolDistribution !== 'bistro')
+                    return false;
                 const isQuantityField = field.key === 'attendeeCount' || field.key === 'chairExtraCount';
                 return c.chairGenerationMode !== 'fill' || !isQuantityField;
-            }).map(field => <label className="field" key={field.key}>{field.label}<div className="unit-input"><input type="number" inputMode={field.unit === 'un' ? 'numeric' : 'decimal'} min={field.min ?? .1} max={field.max ?? 30} step={field.unit === 'un' ? 1 : field.key === "roundTableTopThickness" || field.key === "rectTableTopThickness" || field.key === "bistroTableTopThickness" ? 0.01 : 0.05} value={Number.isNaN(c[field.key]) ? '' : c[field.key] as number} onChange={e => update(field.key, e.target.value === '' ? NaN : Number(e.target.value))}/><span>{field.unit ?? 'm'}</span></div></label>)}</div></div>)}
+            }).map(field => <label className="field" key={field.key}>{field.label}<div className="unit-input"><input type="number" inputMode={field.unit === 'un' ? 'numeric' : 'decimal'} min={field.min ?? .1} max={field.max ?? 30} step={field.unit === 'un' ? 1 : field.key === "roundTableTopThickness" || field.key === "rectTableTopThickness" || field.key === "bistroTableTopThickness" || field.key === "stoolSeatThickness" || field.key === "stoolBistroGap" ? 0.01 : 0.05} value={Number.isNaN(c[field.key]) ? '' : c[field.key] as number} onChange={e => update(field.key, e.target.value === '' ? NaN : Number(e.target.value))}/><span>{field.unit ?? 'm'}</span></div></label>)}</div></div>)}
       {!availableElements.some(f => c[f.key]) && <p className="tab-help">Selecione um elemento na aba Projeto para ajustar suas medidas.</p>}
       {c.led && <div className="texture-section"><h3>Textura da TV / LED</h3><p>Escolha a arte que vai aparecer na tela. A imagem inteira é ajustada às medidas do LED.</p><label className="upload-label" htmlFor="tv-image">Escolher imagem JPG ou PNG<input id="tv-image" type="file" accept="image/png,image/jpeg" onChange={handleImage}/></label><small>Até 2 MB · incorporada ao script · imagem estática</small>{c.screenImage ? <div className="texture-preview"><img src={c.screenImage} alt="Arte selecionada para a tela de TV"/><span>{c.screenName}</span><button onClick={() => { imageRequest.current += 1; setC(prev => ({ ...prev, screenImage: '', screenName: '' })); setNotice('Imagem removida.'); }}>Remover imagem</button></div> : <p className="tab-help">Sem imagem, a tela usa a cor de destaque.</p>}</div>}
       </TabsContent><TabsContent value="materials"><p className="tab-help">Escolha o acabamento de cada parte. Madeira e concreto usam textura procedural; metal e vidro recebem propriedades de superfície.</p><div className="material-fields">{materialFields.filter((field) => {

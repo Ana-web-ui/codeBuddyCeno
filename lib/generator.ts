@@ -1,10 +1,11 @@
 import { generateMax } from './maxscript';
-import { chairDefaults, layoutChairs, roundTableDefaults, layoutRoundTables, rectTableDefaults, layoutRectTables, bistroTableDefaults, layoutBistroTables } from './library';
-import type { ChairConfig, ReservedArea, RoundTableConfig, RectTableConfig, BistroTableConfig } from './library';
+import { chairDefaults, layoutChairs, roundTableDefaults, layoutRoundTables, rectTableDefaults, layoutRectTables, bistroTableDefaults, layoutBistroTables, stoolDefaults, layoutStools, validateStoolAssociation, layoutBistroStoolSets, tableChairDefaults, validateTableChairs, layoutTablesWithChairs } from './library';
+import type { ChairConfig, ReservedArea, RoundTableConfig, RectTableConfig, BistroTableConfig, StoolConfig, TableChairConfig, TableChairLayout } from './library';
 import { blenderChairs, maxChairs } from './chair-exporters';
 import { blenderRoundTables, maxRoundTables } from './round-table-exporters';
 import { blenderRectTables, maxRectTables, } from './react-table-exporters';
 import { blenderBistroTables, maxBistroTables } from './bistro-table-exporters';
+import { blenderStools, maxStools } from './stool-exporters';
 export type MaterialKind = 'white' | 'brand' | 'wood' | 'metal' | 'glass' | 'concrete' | 'plastic';
 export type ProjectType = 'stand' | 'palco';
 export type Target = 'blender' | 'max';
@@ -18,7 +19,7 @@ export const materials: {
     { value: 'glass', label: 'Vidro', color: '#81bfce' }, { value: 'concrete', label: 'Concreto', color: '#747b86' },
     { value: 'plastic', label: 'Plástico', color: '#c4d1e1' }
 ];
-export type Config = ChairConfig & RoundTableConfig & RectTableConfig & BistroTableConfig & {
+export type Config = ChairConfig & RoundTableConfig & RectTableConfig & BistroTableConfig & StoolConfig & TableChairConfig & {
     projectType: ProjectType;
     name: string;
     width: number;
@@ -63,6 +64,8 @@ export const defaults: Config = {
     ...roundTableDefaults,
     ...rectTableDefaults,
     ...bistroTableDefaults,
+    ...stoolDefaults,
+    ...tableChairDefaults,
     name: 'Meu primeiro stand', width: 10, depth: 5, height: 3.5, color: '#5268ff', target: 'blender', back: true, left: false, right: false, led: true, counter: true, stage: false, totem: false, spots: true,
     ledWidth: 4, ledHeight: 2, ledBottom: .65, counterWidth: 2, counterDepth: .65, counterHeight: 1, counterCount: 1,
     stageWidth: 4.5, stageDepth: 1.4, stageHeight: .3, totemWidth: .55, totemDepth: .25, totemHeight: 1.8, totemCount: 1, spotsCount: 3,
@@ -157,43 +160,47 @@ function tableReservedAreas(c: Config): ReservedArea[] {
 }
 /** Distribui redondas, retangulares e bistrôs, nesta ordem. */
 export function tableGeometry(c: Config) {
+    validateStoolAssociation(c);
+    validateTableChairs(c);
+    const grouped = c.stools && c.stoolDistribution === 'bistro';
+    const roundSeated = c.roundTables && c.roundTableChairs;
+    const rectSeated = c.rectTables && c.rectTableChairs;
+    const roundGap = Math.max(c.roundTableGap, roundSeated ? c.tableChairGap : 0);
+    const rectGap = Math.max(c.rectTableGap, rectSeated ? c.tableChairGap : 0);
+    const bistroGap = Math.max(c.bistroTableGap, grouped ? c.stoolGap : 0);
     const reserved = tableReservedAreas(c);
-    const roundTables = layoutRoundTables(c, reserved);
-    const rectReserved: ReservedArea[] = [...reserved];
-    if (c.roundTables && c.rectTables) {
-        const mixedGap = Math.max(c.roundTableGap, c.rectTableGap);
-        for (const [x, y] of roundTables.positions) {
-            rectReserved.push({
-                centerX: x, centerY: y,
-                width: c.roundTableDiameter + 2 * mixedGap,
-                depth: c.roundTableDiameter + 2 * mixedGap,
-            });
-        }
+    const emptyChairs = (): TableChairLayout => ({ positions: [], rotations: [], rows: 0, generatedCount: 0 });
+    function reserveObjects(areas: ReservedArea[], positions: [
+        number,
+        number
+    ][], w: number, d: number, gap: number) {
+        for (const [x, y] of positions)
+            areas.push({ centerX: x, centerY: y, width: w + 2 * gap, depth: d + 2 * gap });
     }
-    const rectTables = layoutRectTables(c, rectReserved);
-    const bistroReserved: ReservedArea[] = [...reserved];
-    if (c.bistroTables && c.roundTables) {
-        const mixedGap = Math.max(c.bistroTableGap, c.roundTableGap);
-        for (const [x, y] of roundTables.positions) {
-            bistroReserved.push({
-                centerX: x, centerY: y,
-                width: c.roundTableDiameter + 2 * mixedGap,
-                depth: c.roundTableDiameter + 2 * mixedGap,
-            });
-        }
-    }
-    if (c.bistroTables && c.rectTables) {
-        const mixedGap = Math.max(c.bistroTableGap, c.rectTableGap);
-        for (const [x, y] of rectTables.positions) {
-            bistroReserved.push({
-                centerX: x, centerY: y,
-                width: c.rectTableWidth + 2 * mixedGap,
-                depth: c.rectTableDepth + 2 * mixedGap,
-            });
-        }
-    }
-    const bistroTables = layoutBistroTables(c, bistroReserved);
-    return { roundTables, rectTables, bistroTables };
+    const roundSet = roundSeated ? layoutTablesWithChairs(c, 'round', reserved) : null;
+    const roundTables = roundSet ? roundSet.tables : layoutRoundTables(c, reserved);
+    const roundFootprint = roundSet ? roundSet.footprint : { width: c.roundTableDiameter, depth: c.roundTableDiameter };
+    const rectReserved = [...reserved];
+    if (c.roundTables && c.rectTables)
+        reserveObjects(rectReserved, roundTables.positions, roundFootprint.width, roundFootprint.depth, Math.max(roundGap, rectGap));
+    const rectSet = rectSeated ? layoutTablesWithChairs(c, 'rect', rectReserved) : null;
+    const rectTables = rectSet ? rectSet.tables : layoutRectTables(c, rectReserved);
+    const rectFootprint = rectSet ? rectSet.footprint : { width: c.rectTableWidth, depth: c.rectTableDepth };
+    const bistroReserved = [...reserved];
+    if (c.roundTables && c.bistroTables)
+        reserveObjects(bistroReserved, roundTables.positions, roundFootprint.width, roundFootprint.depth, Math.max(roundGap, bistroGap));
+    if (c.rectTables && c.bistroTables)
+        reserveObjects(bistroReserved, rectTables.positions, rectFootprint.width, rectFootprint.depth, Math.max(rectGap, bistroGap));
+    const sets = grouped ? layoutBistroStoolSets(c, bistroReserved) : null;
+    const bistroTables = sets ? sets.tables : layoutBistroTables(c, bistroReserved);
+    const bistroStools = sets ? sets.stools : { positions: [] as [
+            number,
+            number
+        ][], generatedCount: 0 };
+    const roundChairs = roundSet ? roundSet.chairs : emptyChairs();
+    const rectChairs = rectSet ? rectSet.chairs : emptyChairs();
+    const tableChairs: TableChairLayout = { positions: [...roundChairs.positions, ...rectChairs.positions], rotations: [...roundChairs.rotations, ...rectChairs.rotations], rows: 0, generatedCount: roundChairs.generatedCount + rectChairs.generatedCount };
+    return { roundTables, rectTables, bistroTables, bistroStools, tableChairs, roundChairs, rectChairs, roundFootprint, rectFootprint };
 }
 /** Mantém compatibilidade com a planta e o exportador existentes. */
 export function roundTableGeometry(c: Config) {
@@ -204,6 +211,59 @@ export function rectTableGeometry(c: Config) {
 }
 export function bistroTableGeometry(c: Config) {
     return tableGeometry(c).bistroTables;
+}
+/**
+ * Posiciona banquetas avulsas depois dos três tipos de mesa.
+ */
+export function stoolGeometry(c: Config) {
+    if (!c.stools) {
+        return {
+            positions: [] as [
+                number,
+                number
+            ][],
+            generatedCount: 0,
+        };
+    }
+    validateStoolAssociation(c);
+    if (c.stoolDistribution === 'bistro')
+        return tableGeometry(c).bistroStools;
+    const reserved = tableReservedAreas(c);
+    const tables = tableGeometry(c);
+    if (c.roundTables) {
+        const gap = Math.max(c.stoolGap, c.roundTableGap, c.roundTableChairs ? c.tableChairGap : 0);
+        for (const [x, y] of tables.roundTables.positions) {
+            reserved.push({
+                centerX: x,
+                centerY: y,
+                width: tables.roundFootprint.width + 2 * gap,
+                depth: tables.roundFootprint.depth + 2 * gap,
+            });
+        }
+    }
+    if (c.rectTables) {
+        const gap = Math.max(c.stoolGap, c.rectTableGap, c.rectTableChairs ? c.tableChairGap : 0);
+        for (const [x, y] of tables.rectTables.positions) {
+            reserved.push({
+                centerX: x,
+                centerY: y,
+                width: tables.rectFootprint.width + 2 * gap,
+                depth: tables.rectFootprint.depth + 2 * gap,
+            });
+        }
+    }
+    if (c.bistroTables) {
+        const gap = Math.max(c.stoolGap, c.bistroTableGap);
+        for (const [x, y] of tables.bistroTables.positions) {
+            reserved.push({
+                centerX: x,
+                centerY: y,
+                width: c.bistroTableDiameter + 2 * gap,
+                depth: c.bistroTableDiameter + 2 * gap,
+            });
+        }
+    }
+    return layoutStools(c, reserved);
 }
 export function validate(c: Config) {
     if (!c.name.trim() || c.name.length > 80)
@@ -227,13 +287,13 @@ export function validate(c: Config) {
         throw new Error('Escolha uma cor válida.');
     if (!['blender', 'max'].includes(c.target))
         throw new Error('Escolha Blender ou 3ds Max.');
-    for (const k of ['back', 'left', 'right', 'led', 'counter', 'stage', 'totem', 'spots', 'chairs', 'roundTables', 'rectTables', 'bistroTables'] as const)
+    for (const k of ['back', 'left', 'right', 'led', 'counter', 'stage', 'totem', 'spots', 'chairs', 'roundTables', 'rectTables', 'bistroTables', 'stools', 'roundTableChairs', 'rectTableChairs'] as const)
         if (typeof c[k] !== 'boolean')
             throw new Error('Seleção de elementos inválida.');
     for (const [key, initial] of Object.entries(defaults))
         if (typeof initial === 'number' && (!Number.isFinite(c[key as keyof Config] as number)))
             throw new Error('Confira os parâmetros dos elementos: todas as medidas e quantidades devem conter números.');
-    for (const k of ['floorMat', 'wallMat', 'counterMat', 'stageMat', 'totemMat', 'roundTableMat', 'rectTableMat', 'bistroTableMat'] as const)
+    for (const k of ['floorMat', 'wallMat', 'counterMat', 'stageMat', 'totemMat', 'roundTableMat', 'rectTableMat', 'bistroTableMat', 'stoolMat'] as const)
         if (!materials.some(m => m.value === c[k]))
             throw new Error('Material inválido.');
     const check = (keys: (keyof Config)[], label: string) => {
@@ -245,6 +305,29 @@ export function validate(c: Config) {
         if (!Number.isInteger(value) || value < 1 || value > max)
             throw new Error(label + ': use uma quantidade inteira de 1 a ' + max + '.');
     };
+    if (c.stools) {
+        validateStoolAssociation(c);
+        if (c.stoolDistribution === 'free')
+            count(c.stoolCount, 'Banquetas', 100);
+        const dimensions = [
+            ['stoolSeatDiameter', 0.25, 0.8, 'Diâmetro do assento da banqueta'],
+            ['stoolSeatHeight', 0.4, 1, 'Altura do assento da banqueta'],
+            ['stoolSeatThickness', 0.02, 0.12, 'Espessura do assento da banqueta'],
+            ['stoolGap', 0, 3, 'Vão entre banquetas'],
+        ] as const;
+        for (const [key, min, max, label] of dimensions) {
+            const value = c[key];
+            if (!Number.isFinite(value) || value < min || value > max) {
+                throw new Error(label + ': use um valor entre ' + min + ' e ' + max + ' m.');
+            }
+        }
+        if (c.stoolSeatHeight > c.height) {
+            throw new Error('A banqueta deve caber na altura da montagem.');
+        }
+        if (c.stoolSeatDiameter > Math.min(c.width, c.depth)) {
+            throw new Error('O assento da banqueta deve caber na área de montagem.');
+        }
+    }
     if (c.bistroTables) {
         count(c.bistroTableCount, 'Mesas bistrô', 100);
         const dimensions = [
@@ -319,6 +402,7 @@ export function validate(c: Config) {
         throw new Error('Use uma imagem JPG ou PNG de até 2 MB.');
     layoutChairs(c, geometry(c).stageY);
     tableGeometry(c);
+    stoolGeometry(c);
     return c;
 }
 export function filename(c: Config) { return (c.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'stand') + (c.target === 'max' ? '.ms' : '.py'); }
@@ -328,6 +412,12 @@ export function generate(c: Config, options: {
     validate(c);
     const chairLayout = layoutChairs(c, geometry(c).stageY);
     const tables = tableGeometry(c);
+    const stools = stoolGeometry(c);
+    const diningConfig = {
+        ...c, chairs: true,
+        chairWidth: c.tableChairWidth, chairDepth: c.tableChairDepth,
+        chairHeight: c.tableChairHeight, chairSeatHeight: c.tableChairSeatHeight,
+    };
     const configurationKey = JSON.stringify(c);
     if (chairLayout.missingCount > 0 &&
         options.confirmedPartial !== configurationKey) {
@@ -337,16 +427,20 @@ export function generate(c: Config, options: {
     }
     if (c.target === "blender") {
         return (generateBlender(c) +
-            blenderChairs(c, chairLayout) +
+            blenderChairs(c, chairLayout, { group: "audience" }) +
+            blenderChairs(diningConfig, tables.tableChairs, { group: "tables" }) +
             blenderRoundTables(c, tables.roundTables) +
             blenderRectTables(c, tables.rectTables) +
-            blenderBistroTables(c, tables.bistroTables));
+            blenderBistroTables(c, tables.bistroTables) +
+            blenderStools(c, stools));
     }
     const script = generateMax(c);
-    const additions = maxChairs(c, chairLayout) +
+    const additions = maxChairs(c, chairLayout, { group: "audience" }) +
+        maxChairs(diningConfig, tables.tableChairs, { group: "tables" }) +
         maxRoundTables(c, tables.roundTables) +
         maxRectTables(c, tables.rectTables) +
-        maxBistroTables(c, tables.bistroTables);
+        maxBistroTables(c, tables.bistroTables) +
+        maxStools(c, stools);
     if (!additions) {
         return script;
     }

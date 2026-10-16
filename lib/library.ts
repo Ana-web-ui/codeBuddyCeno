@@ -10,6 +10,7 @@ export const libraryCatalog = [
     { id: "roundTables", label: "Mesas Redondas", projectTypes: ["stand", "palco"], },
     { id: "rectTables", label: "Mesas Retangulares", projectTypes: ["stand", "palco"], },
     { id: "bistroTables", label: "Mesas Bistrô", projectTypes: ["stand", "palco"] },
+    { id: "stools", label: "Banquetas", projectTypes: ["stand", "palco"] },
 ] as const;
 export type ChairDistribution = "central" | "lateral";
 export type ChairGenerationMode = "quantity" | "fill";
@@ -562,59 +563,435 @@ export function layoutRectTables(c: RectTableContext, reservedAreas: ReservedAre
         `mas esta distribuição comporta ${positions.length}. ` +
         "Ajuste a quantidade, as medidas ou os espaços livres.");
 }
-
 export type BistroTableConfig = {
-  bistroTables: boolean;
-  bistroTableCount: number;
-  bistroTableDiameter: number;
-  bistroTableHeight: number;
-  bistroTableTopThickness: number;
-  bistroTableGap: number;
-  bistroTableMat: MaterialKind;
+    bistroTables: boolean;
+    bistroTableCount: number;
+    bistroTableDiameter: number;
+    bistroTableHeight: number;
+    bistroTableTopThickness: number;
+    bistroTableGap: number;
+    bistroTableMat: MaterialKind;
 };
-
 export const bistroTableDefaults: BistroTableConfig = {
-  bistroTables: false,
-  bistroTableCount: 1,
-  bistroTableDiameter: 0.6,
-  bistroTableHeight: 1.05,
-  bistroTableTopThickness: 0.03,
-  bistroTableGap: 0.8,
-  bistroTableMat: "white",
+    bistroTables: false,
+    bistroTableCount: 1,
+    bistroTableDiameter: 0.6,
+    bistroTableHeight: 1.05,
+    bistroTableTopThickness: 0.03,
+    bistroTableGap: 0.8,
+    bistroTableMat: "white",
 };
-export function layoutBistroTables(
-  c: BistroTableConfig & {
+export function layoutBistroTables(c: BistroTableConfig & {
     width: number;
     depth: number;
-  },
-  reservedAreas: ReservedArea[],
-): RoundTableLayout {
-  const circularConfig: RoundTableContext = {
-    width: c.width,
-    depth: c.depth,
-
-    roundTables: c.bistroTables,
-    roundTableCount: c.bistroTableCount,
-    roundTableDiameter: c.bistroTableDiameter,
-    roundTableHeight: c.bistroTableHeight,
-    roundTableTopThickness: c.bistroTableTopThickness,
-    roundTableGap: c.bistroTableGap,
-    roundTableMat: c.bistroTableMat,
-  };
-
-  try {
-    return layoutRoundTables(
-      circularConfig,
-      reservedAreas,
-    );
-  } catch (error) {
-    if (error instanceof Error) {
-      throw new Error(
-        "Mesas bistrô: " + error.message.replace(/mesas redondas/gi, "mesas bistrô")
-          .replace(/mesa redonda/gi, "mesa bistrô"),
-      );
+}, reservedAreas: ReservedArea[]): RoundTableLayout {
+    const circularConfig: RoundTableContext = {
+        width: c.width,
+        depth: c.depth,
+        roundTables: c.bistroTables,
+        roundTableCount: c.bistroTableCount,
+        roundTableDiameter: c.bistroTableDiameter,
+        roundTableHeight: c.bistroTableHeight,
+        roundTableTopThickness: c.bistroTableTopThickness,
+        roundTableGap: c.bistroTableGap,
+        roundTableMat: c.bistroTableMat,
+    };
+    try {
+        return layoutRoundTables(circularConfig, reservedAreas);
     }
-
-    throw error;
-  }
+    catch (error) {
+        if (error instanceof Error) {
+            throw new Error("Mesas bistrô: " + error.message.replace(/mesas redondas/gi, "mesas bistrô")
+                .replace(/mesa redonda/gi, "mesa bistrô"));
+        }
+        throw error;
+    }
+}
+export type StoolConfig = {
+    stoolDistribution: StoolDistribution;
+    stoolsPerBistro: number;
+    stoolBistroGap: number;
+    stools: boolean;
+    stoolCount: number;
+    stoolSeatDiameter: number;
+    stoolSeatHeight: number;
+    stoolSeatThickness: number;
+    stoolGap: number;
+    stoolMat: MaterialKind;
+};
+export const stoolDefaults: StoolConfig = {
+    stoolDistribution: "free",
+    stoolsPerBistro: 2,
+    stoolBistroGap: 0.15,
+    stools: false,
+    stoolCount: 2,
+    stoolSeatDiameter: 0.4,
+    stoolSeatHeight: 0.75,
+    stoolSeatThickness: 0.04,
+    stoolGap: 0.4,
+    stoolMat: "white",
+};
+export type StoolLayout = {
+    positions: [
+        number,
+        number
+    ][];
+    generatedCount: number;
+};
+type StoolContext = StoolConfig & {
+    width: number;
+    depth: number;
+};
+/**
+ * Distribui banquetas avulsas em uma grade.
+ *
+ * stoolGap é o vão livre entre as bordas dos assentos.
+ * reservedAreas informa os espaços que devem ficar livres.
+ */
+export function layoutStools(c: StoolContext, reservedAreas: ReservedArea[]): StoolLayout {
+    if (!c.stools) {
+        return {
+            positions: [],
+            generatedCount: 0,
+        };
+    }
+    if (!Number.isInteger(c.stoolCount) ||
+        c.stoolCount < 1 ||
+        c.stoolCount > 100) {
+        throw new Error("Banquetas: use uma quantidade inteira de 1 a 100.");
+    }
+    const dimensions = [
+        [c.stoolSeatDiameter, 0.25, 0.8, "Diâmetro do assento"],
+        [c.stoolSeatHeight, 0.4, 1, "Altura do assento"],
+        [c.stoolSeatThickness, 0.02, 0.12, "Espessura do assento"],
+        [c.stoolGap, 0, 3, "Vão entre banquetas"],
+    ] as const;
+    for (const [value, min, max, label] of dimensions) {
+        if (!Number.isFinite(value) ||
+            value < min ||
+            value > max) {
+            throw new Error(`${label}: use um valor entre ${min} e ${max} m.`);
+        }
+    }
+    if (!Number.isFinite(c.width) ||
+        !Number.isFinite(c.depth) ||
+        c.width <= 0 ||
+        c.depth <= 0) {
+        throw new Error("Confira a largura e a profundidade da área.");
+    }
+    for (const area of reservedAreas) {
+        if (![
+            area.centerX,
+            area.centerY,
+            area.width,
+            area.depth,
+        ].every(Number.isFinite) ||
+            area.width <= 0 ||
+            area.depth <= 0) {
+            throw new Error("Existe uma área reservada com medidas inválidas.");
+        }
+    }
+    const diameter = c.stoolSeatDiameter;
+    const radius = diameter / 2;
+    const step = diameter + c.stoolGap;
+    const columns = Math.floor((c.width + c.stoolGap + 1e-9) / step);
+    const rows = Math.floor((c.depth + c.stoolGap + 1e-9) / step);
+    if (columns < 1 || rows < 1) {
+        throw new Error("Não cabe uma banqueta na área disponível.");
+    }
+    const gridWidth = columns * diameter +
+        (columns - 1) * c.stoolGap;
+    const gridDepth = rows * diameter +
+        (rows - 1) * c.stoolGap;
+    function overlapsReservedArea(x: number, y: number): boolean {
+        return reservedAreas.some((area) => {
+            const nearestX = Math.max(area.centerX - area.width / 2, Math.min(x, area.centerX + area.width / 2));
+            const nearestY = Math.max(area.centerY - area.depth / 2, Math.min(y, area.centerY + area.depth / 2));
+            const dx = x - nearestX;
+            const dy = y - nearestY;
+            return dx * dx + dy * dy < radius * radius;
+        });
+    }
+    const positions: [
+        number,
+        number
+    ][] = [];
+    for (let row = 0; row < rows; row++) {
+        const y = -gridDepth / 2 +
+            radius +
+            row * step;
+        for (let column = 0; column < columns; column++) {
+            const x = -gridWidth / 2 +
+                radius +
+                column * step;
+            if (overlapsReservedArea(x, y)) {
+                continue;
+            }
+            positions.push([x, y]);
+            if (positions.length === c.stoolCount) {
+                return {
+                    positions,
+                    generatedCount: positions.length,
+                };
+            }
+        }
+    }
+    throw new Error(`Foram solicitadas ${c.stoolCount} banquetas, ` +
+        `mas esta distribuição comporta ${positions.length}. ` +
+        "Ajuste a quantidade, as medidas ou os espaços livres.");
+}
+/** Distribuição avulsa ou associada aos bistrôs. */
+export type StoolDistribution = "free" | "bistro";
+export function validateStoolAssociation(c: StoolConfig & BistroTableConfig) {
+    if (!c.stools)
+        return;
+    if (c.stoolDistribution !== "free" && c.stoolDistribution !== "bistro") {
+        throw new Error("Selecione uma distribuição válida para as banquetas.");
+    }
+    if (c.stoolDistribution === "free")
+        return;
+    if (!c.bistroTables)
+        throw new Error("Ative as mesas bistrô para associar as banquetas.");
+    if (!Number.isInteger(c.stoolsPerBistro) || c.stoolsPerBistro < 1 || c.stoolsPerBistro > 6) {
+        throw new Error("Use uma quantidade inteira de 1 a 6 banquetas por bistrô.");
+    }
+    if (!Number.isFinite(c.stoolBistroGap) || c.stoolBistroGap < 0 || c.stoolBistroGap > 2) {
+        throw new Error("Distância entre tampo e assentos: use um valor entre 0 e 2 m.");
+    }
+    if (!Number.isInteger(c.bistroTableCount) || c.bistroTableCount < 1 || c.bistroTableCount > 100) {
+        throw new Error("Mesas bistrô: use uma quantidade inteira de 1 a 100.");
+    }
+    if (c.bistroTableCount * c.stoolsPerBistro > 100) {
+        throw new Error("O conjunto pode gerar até 100 banquetas. Reduza os bistrôs ou os assentos por mesa.");
+    }
+}
+export function stoolsAroundBistro(centerX: number, centerY: number, tableDiameter: number, seatDiameter: number, count: number, tableSeatGap: number, seatGap: number): [
+    number,
+    number
+][] {
+    if (![centerX, centerY, tableDiameter, seatDiameter, tableSeatGap, seatGap].every(Number.isFinite) ||
+        tableDiameter <= 0 || seatDiameter <= 0 || tableSeatGap < 0 || seatGap < 0) {
+        throw new Error("Confira as medidas e os espaços do conjunto bistrô com banquetas.");
+    }
+    if (!Number.isInteger(count) || count < 1 || count > 6) {
+        throw new Error("Use uma quantidade inteira de 1 a 6 banquetas por bistrô.");
+    }
+    const radius = tableDiameter / 2 + tableSeatGap + seatDiameter / 2;
+    if (count > 1 && 2 * radius * Math.sin(Math.PI / count) + 1e-9 < seatDiameter + seatGap) {
+        throw new Error("As banquetas ficam próximas demais. Reduza os assentos por mesa ou aumente a distância entre tampo e assentos.");
+    }
+    return Array.from({ length: count }, (_, index) => {
+        const angle = -Math.PI / 2 + 2 * Math.PI * index / count;
+        return [centerX + Math.cos(angle) * radius, centerY + Math.sin(angle) * radius];
+    });
+}
+/** Reserva uma envoltória circular para a mesa e todos os assentos. */
+export function layoutBistroStoolSets(c: BistroTableConfig & StoolConfig & {
+    width: number;
+    depth: number;
+}, reservedAreas: ReservedArea[]): {
+    tables: RoundTableLayout;
+    stools: StoolLayout;
+} {
+    validateStoolAssociation(c);
+    // Verifica também se a quantidade de assentos respeita o vão entre vizinhos.
+    const offsets = stoolsAroundBistro(0, 0, c.bistroTableDiameter, c.stoolSeatDiameter, c.stoolsPerBistro, c.stoolBistroGap, c.stoolGap);
+    const radius = c.bistroTableDiameter / 2 + c.stoolBistroGap + c.stoolSeatDiameter;
+    const diameter = 2 * radius;
+    const gap = Math.max(c.bistroTableGap, c.stoolGap);
+    if (![c.width, c.depth, diameter, gap].every(Number.isFinite) ||
+        c.width <= 0 || c.depth <= 0 || diameter <= 0 || gap < 0) {
+        throw new Error("Confira as medidas da área e do conjunto bistrô com banquetas.");
+    }
+    for (const a of reservedAreas) {
+        if (![a.centerX, a.centerY, a.width, a.depth].every(Number.isFinite) || a.width <= 0 || a.depth <= 0) {
+            throw new Error("Existe uma área reservada com medidas inválidas.");
+        }
+    }
+    const step = diameter + gap;
+    const columns = Math.floor((c.width + gap + 1e-9) / step);
+    const rows = Math.floor((c.depth + gap + 1e-9) / step);
+    const gridWidth = columns * diameter + Math.max(0, columns - 1) * gap;
+    const gridDepth = rows * diameter + Math.max(0, rows - 1) * gap;
+    const positions: [
+        number,
+        number
+    ][] = [];
+    for (let row = 0; row < rows; row++) {
+        for (let column = 0; column < columns; column++) {
+            const x = -gridWidth / 2 + radius + column * step;
+            const y = -gridDepth / 2 + radius + row * step;
+            const blocked = reservedAreas.some(a => {
+                const dx = Math.max(0, Math.abs(x - a.centerX) - a.width / 2);
+                const dy = Math.max(0, Math.abs(y - a.centerY) - a.depth / 2);
+                return dx * dx + dy * dy < radius * radius;
+            });
+            if (blocked)
+                continue;
+            positions.push([x, y]);
+            if (positions.length === c.bistroTableCount)
+                break;
+        }
+        if (positions.length === c.bistroTableCount)
+            break;
+    }
+    if (positions.length !== c.bistroTableCount) {
+        throw new Error(`Foram solicitados ${c.bistroTableCount} conjuntos de bistrô com banquetas, mas esta grade comporta ${positions.length}. Ajuste a quantidade, as medidas ou os espaços livres.`);
+    }
+    const seats: [
+        number,
+        number
+    ][] = [];
+    for (const [x, y] of positions)
+        for (const [dx, dy] of offsets)
+            seats.push([x + dx, y + dy]);
+    return {
+        tables: { positions, generatedCount: positions.length },
+        stools: { positions: seats, generatedCount: seats.length },
+    };
+}
+export type TableChairConfig = {
+    roundTableChairs: boolean;
+    roundTableChairsPerTable: number;
+    rectTableChairs: boolean;
+    rectTableChairsPerTable: number;
+    tableChairWidth: number;
+    tableChairDepth: number;
+    tableChairHeight: number;
+    tableChairSeatHeight: number;
+    tableChairTableGap: number;
+    tableChairGap: number;
+};
+export const tableChairDefaults: TableChairConfig = {
+    roundTableChairs: false, roundTableChairsPerTable: 4,
+    rectTableChairs: false, rectTableChairsPerTable: 4,
+    tableChairWidth: 0.5, tableChairDepth: 0.5,
+    tableChairHeight: 0.9, tableChairSeatHeight: 0.45,
+    tableChairTableGap: 0.15, tableChairGap: 0.1,
+};
+export type TableChairLayout = {
+    positions: [
+        number,
+        number
+    ][];
+    rotations: number[];
+    rows: number;
+    generatedCount: number;
+};
+type TableSeatingContext = TableChairConfig & RoundTableConfig & RectTableConfig & {
+    width: number;
+    depth: number;
+    height: number;
+};
+export function validateTableChairs(c: TableSeatingContext) {
+    if (typeof c.roundTableChairs !== 'boolean' || typeof c.rectTableChairs !== 'boolean')
+        throw new Error('Seleção de cadeiras das mesas inválida.');
+    const round = c.roundTables && c.roundTableChairs;
+    const rect = c.rectTables && c.rectTableChairs;
+    if (!round && !rect)
+        return;
+    for (const [v, min, max, label] of [
+        [c.tableChairWidth, .3, 1.2, 'Largura das cadeiras das mesas'],
+        [c.tableChairDepth, .3, 1.2, 'Profundidade das cadeiras das mesas'],
+        [c.tableChairHeight, .65, 1.5, 'Altura das cadeiras das mesas'],
+        [c.tableChairSeatHeight, .3, .7, 'Altura do assento das cadeiras das mesas'],
+        [c.tableChairTableGap, 0, 2, 'Distância entre mesa e cadeiras'],
+        [c.tableChairGap, 0, 2, 'Vão entre cadeiras das mesas'],
+    ] as const)
+        if (!Number.isFinite(v) || v < min || v > max)
+            throw new Error(`${label}: use um valor entre ${min} e ${max} m.`);
+    if (c.tableChairHeight < c.tableChairSeatHeight + .15 || c.tableChairHeight > c.height)
+        throw new Error('Confira as alturas do assento, do encosto e da montagem para as cadeiras das mesas.');
+    let total = 0;
+    for (const [active, count, max, tableCount, tableHeight, thickness, label] of [
+        [round, c.roundTableChairsPerTable, 10, c.roundTableCount, c.roundTableHeight, c.roundTableTopThickness, 'redonda'],
+        [rect, c.rectTableChairsPerTable, 12, c.rectTableCount, c.rectTableHeight, c.rectTableTopThickness, 'retangular'],
+    ] as const)
+        if (active) {
+            if (!Number.isInteger(count) || count < 1 || count > max)
+                throw new Error(`Mesa ${label}: use de 1 a ${max} cadeiras por mesa.`);
+            if (c.tableChairSeatHeight + .05 >= tableHeight - thickness)
+                throw new Error(`O assento das cadeiras deve ficar abaixo da face inferior do tampo da mesa ${label}.`);
+            total += count * tableCount;
+        }
+    if (total > 1000)
+        throw new Error('Os conjuntos de mesas podem gerar até 1.000 cadeiras. Reduza as quantidades.');
+}
+/** Geometria e orientação de um conjunto; +Y é a frente da cadeira. */
+export function tableChairFootprint(c: TableSeatingContext, kind: 'round' | 'rect') {
+    validateTableChairs(c);
+    const count = kind === 'round' ? c.roundTableChairsPerTable : c.rectTableChairsPerTable;
+    const offsets: [
+        number,
+        number,
+        number
+    ][] = [];
+    const w = c.tableChairWidth, d = c.tableChairDepth, gap = c.tableChairTableGap;
+    if (kind === 'round') {
+        const r = c.roundTableDiameter / 2 + gap + d / 2;
+        // Círculos que envolvem cada assento garantem separação, mesmo com rotação.
+        if (count > 1 && 2 * r * Math.sin(Math.PI / count) + 1e-9 < Math.hypot(w, d) + c.tableChairGap)
+            throw new Error('As cadeiras ficam próximas demais ao redor da mesa redonda. Reduza a quantidade por mesa ou aumente a distância até a mesa.');
+        for (let i = 0; i < count; i++) {
+            const a = -Math.PI / 2 + 2 * Math.PI * i / count;
+            const x = Math.cos(a) * r, y = Math.sin(a) * r;
+            offsets.push([x, y, Math.atan2(x, -y)]);
+        }
+        const outer = Math.hypot(r + d / 2, w / 2);
+        return { width: 2 * outer, depth: 2 * outer, offsets };
+    }
+    // Retangulares: cadeiras distribuídas nos dois lados paralelos à largura.
+    const south = Math.ceil(count / 2), north = count - south;
+    for (const [n, sign] of [[south, -1], [north, 1]]) {
+        const occupied = n * w + Math.max(0, n - 1) * c.tableChairGap;
+        if (occupied > c.rectTableWidth + 1e-9)
+            throw new Error('As cadeiras não cabem nos lados da mesa retangular. Aumente a largura da mesa ou reduza as cadeiras e seus vãos.');
+        for (let i = 0; i < n; i++)
+            offsets.push([-occupied / 2 + w / 2 + i * (w + c.tableChairGap), sign * (c.rectTableDepth / 2 + gap + d / 2), sign < 0 ? 0 : Math.PI]);
+    }
+    return { width: c.rectTableWidth, depth: c.rectTableDepth + 2 * (gap + d), offsets };
+}
+/** Reserva um retângulo para mesa e cadeiras; não encolhe os espaços. */
+export function layoutTablesWithChairs(c: TableSeatingContext, kind: 'round' | 'rect', reserved: ReservedArea[]) {
+    const count = kind === 'round' ? c.roundTableCount : c.rectTableCount;
+    // Reaproveita as validações dos parâmetros da mesa com uma unidade.
+    if (kind === 'round')
+        layoutRoundTables({ ...c, roundTableCount: 1 }, []);
+    else
+        layoutRectTables({ ...c, rectTableCount: 1 }, []);
+    if (!Number.isInteger(count) || count < 1 || count > 100)
+        throw new Error('Use de 1 a 100 mesas por tipo.');
+    const footprint = tableChairFootprint(c, kind);
+    const gap = Math.max(kind === 'round' ? c.roundTableGap : c.rectTableGap, c.tableChairGap);
+    const columns = Math.floor((c.width + gap + 1e-9) / (footprint.width + gap));
+    const rows = Math.floor((c.depth + gap + 1e-9) / (footprint.depth + gap));
+    const fullW = columns * footprint.width + Math.max(0, columns - 1) * gap;
+    const fullD = rows * footprint.depth + Math.max(0, rows - 1) * gap;
+    const positions: [
+        number,
+        number
+    ][] = [];
+    for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < columns; col++) {
+            const x = -fullW / 2 + footprint.width / 2 + col * (footprint.width + gap);
+            const y = -fullD / 2 + footprint.depth / 2 + row * (footprint.depth + gap);
+            if (reserved.some(a => Math.abs(x - a.centerX) < (footprint.width + a.width) / 2 && Math.abs(y - a.centerY) < (footprint.depth + a.depth) / 2))
+                continue;
+            positions.push([x, y]);
+            if (positions.length === count)
+                break;
+        }
+        if (positions.length === count)
+            break;
+    }
+    if (positions.length !== count)
+        throw new Error(`Foram solicitados ${count} conjuntos de mesa ${kind === 'round' ? 'redonda' : 'retangular'} com cadeiras, mas esta grade comporta ${positions.length}. Ajuste as medidas ou as quantidades.`);
+    const chairs: TableChairLayout = { positions: [], rotations: [], rows: 0, generatedCount: 0 };
+    for (const [x, y] of positions)
+        for (const [dx, dy, angle] of footprint.offsets) {
+            chairs.positions.push([x + dx, y + dy]);
+            chairs.rotations.push(angle);
+        }
+    chairs.generatedCount = chairs.positions.length;
+    return { tables: { positions, generatedCount: positions.length }, chairs, footprint };
 }
