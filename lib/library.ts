@@ -1,6 +1,12 @@
 /** Catálogo dos componentes que já possuem geração no Code Buddy. */
 import type { MaterialKind } from "./generator";
 export const libraryCatalog = [
+    { id: 'shelving', label: 'Estantes expositoras', projectTypes: ['stand', 'palco'] },
+    { id: 'backdrops', label: 'Backdrops', projectTypes: ['stand', 'palco'] },
+    { id: 'touchScreens', label: 'Telas touch', projectTypes: ['stand', 'palco'] },
+    { id: 'cabinets', label: 'Armários', projectTypes: ['stand', 'palco'] },
+    { id: 'openCubes', label: 'Cubos vazados', projectTypes: ['stand', 'palco'] },
+    { id: 'roundRugs', label: 'Tapetes circulares', projectTypes: ['stand', 'palco'] },
     { id: 'showcases', label: 'Vitrines expositoras', projectTypes: ['stand', 'palco'] },
     { id: 'coffeeTables', label: 'Mesas de centro', projectTypes: ['stand', 'palco'] },
     { id: 'armchairs', label: 'Poltronas', projectTypes: ['stand', 'palco'] },
@@ -1371,4 +1377,201 @@ export function layoutShowcases(c: ShowcaseConfig & {
             throw new Error(error.message.replace(/Foram solicitados/g, 'Foram solicitadas').replace(/pedestais/gi, 'vitrines').replace(/pedestal/gi, 'vitrine'));
         throw error;
     }
+}
+export type ExtraObjectsConfig = {
+    shelving: boolean;
+    shelfMat: MaterialKind;
+    shelfCount: number;
+    shelfWidth: number;
+    shelfDepth: number;
+    shelfHeight: number;
+    shelfShelfCount: number;
+    shelfGap: number;
+    backdrops: boolean;
+    backdropMat: MaterialKind;
+    backdropCount: number;
+    backdropWidth: number;
+    backdropHeight: number;
+    backdropThickness: number;
+    backdropBaseDepth: number;
+    backdropGap: number;
+    touchScreens: boolean;
+    touchMat: MaterialKind;
+    touchCount: number;
+    touchWidth: number;
+    touchHeight: number;
+    touchScreenHeight: number;
+    touchBaseDepth: number;
+    touchGap: number;
+    cabinets: boolean;
+    cabinetMat: MaterialKind;
+    cabinetCount: number;
+    cabinetWidth: number;
+    cabinetDepth: number;
+    cabinetHeight: number;
+    cabinetShelfCount: number;
+    cabinetGap: number;
+    openCubes: boolean;
+    openCubeMat: MaterialKind;
+    openCubeCount: number;
+    openCubeWidth: number;
+    openCubeDepth: number;
+    openCubeHeight: number;
+    openCubeWallThickness: number;
+    openCubeGap: number;
+    roundRugs: boolean;
+    rugMat: MaterialKind;
+    rugCount: number;
+    rugDiameter: number;
+    rugGap: number;
+};
+export const extraObjectDefaults: ExtraObjectsConfig = {
+    shelving: false, shelfMat: 'wood',
+    shelfCount: 1,
+    shelfWidth: 1,
+    shelfDepth: 0.4,
+    shelfHeight: 1.8,
+    shelfShelfCount: 4,
+    shelfGap: 0.5,
+    backdrops: false, backdropMat: 'brand',
+    backdropCount: 1,
+    backdropWidth: 3,
+    backdropHeight: 2.5,
+    backdropThickness: 0.06,
+    backdropBaseDepth: 0.6,
+    backdropGap: 0.5,
+    touchScreens: false, touchMat: 'metal',
+    touchCount: 1,
+    touchWidth: 0.65,
+    touchHeight: 1.7,
+    touchScreenHeight: 0.95,
+    touchBaseDepth: 0.45,
+    touchGap: 0.5,
+    cabinets: false, cabinetMat: 'white',
+    cabinetCount: 1,
+    cabinetWidth: 0.9,
+    cabinetDepth: 0.45,
+    cabinetHeight: 1,
+    cabinetShelfCount: 1,
+    cabinetGap: 0.5,
+    openCubes: false, openCubeMat: 'brand',
+    openCubeCount: 1,
+    openCubeWidth: 0.5,
+    openCubeDepth: 0.4,
+    openCubeHeight: 0.5,
+    openCubeWallThickness: 0.04,
+    openCubeGap: 0.5,
+    roundRugs: false, rugMat: 'brand',
+    rugCount: 1,
+    rugDiameter: 2,
+    rugGap: 0.5,
+};
+export const extraObjectDefinitions = [{ "id": "shelving", "label": "Estantes expositoras", "description": "Estantes abertas com prateleiras", "materialKey": "shelfMat", "fields": [{ "key": "shelfCount", "label": "Quantidade", "min": 1, "max": 100, "unit": "un" }, { "key": "shelfWidth", "label": "Largura", "min": 0.4, "max": 3 }, { "key": "shelfDepth", "label": "Profundidade", "min": 0.25, "max": 1.5 }, { "key": "shelfHeight", "label": "Altura", "min": 0.4, "max": 3 }, { "key": "shelfShelfCount", "label": "Prateleiras internas", "min": 0, "max": 6, "unit": "un" }, { "key": "shelfGap", "label": "Vão livre entre unidades", "min": 0, "max": 3 }] }, { "id": "backdrops", "label": "Backdrops", "description": "Painéis de fundo com bases de apoio", "materialKey": "backdropMat", "fields": [{ "key": "backdropCount", "label": "Quantidade", "min": 1, "max": 100, "unit": "un" }, { "key": "backdropWidth", "label": "Largura", "min": 1, "max": 6 }, { "key": "backdropHeight", "label": "Altura", "min": 0.8, "max": 3 }, { "key": "backdropThickness", "label": "Espessura do painel", "min": 0.02, "max": 0.2, "step": 0.01 }, { "key": "backdropBaseDepth", "label": "Profundidade das bases", "min": 0.3, "max": 1.5 }, { "key": "backdropGap", "label": "Vão livre entre unidades", "min": 0, "max": 3 }] }, { "id": "touchScreens", "label": "Telas touch", "description": "Modelo 3D de tela vertical com suporte", "materialKey": "touchMat", "fields": [{ "key": "touchCount", "label": "Quantidade", "min": 1, "max": 100, "unit": "un" }, { "key": "touchWidth", "label": "Largura da tela", "min": 0.3, "max": 1.5 }, { "key": "touchHeight", "label": "Altura total", "min": 0.8, "max": 2.5 }, { "key": "touchScreenHeight", "label": "Altura da tela", "min": 0.4, "max": 1.6 }, { "key": "touchBaseDepth", "label": "Profundidade da base", "min": 0.3, "max": 1 }, { "key": "touchGap", "label": "Vão livre entre unidades", "min": 0, "max": 3 }] }, { "id": "cabinets", "label": "Armários", "description": "Armários com duas portas e prateleiras", "materialKey": "cabinetMat", "fields": [{ "key": "cabinetCount", "label": "Quantidade", "min": 1, "max": 100, "unit": "un" }, { "key": "cabinetWidth", "label": "Largura", "min": 0.4, "max": 3 }, { "key": "cabinetDepth", "label": "Profundidade do corpo", "min": 0.3, "max": 1.2 }, { "key": "cabinetHeight", "label": "Altura", "min": 0.4, "max": 3 }, { "key": "cabinetShelfCount", "label": "Prateleiras internas", "min": 0, "max": 6, "unit": "un" }, { "key": "cabinetGap", "label": "Vão livre entre unidades", "min": 0, "max": 3 }] }, { "id": "openCubes", "label": "Cubos vazados", "description": "Módulos abertos na frente e atrás", "materialKey": "openCubeMat", "fields": [{ "key": "openCubeCount", "label": "Quantidade", "min": 1, "max": 100, "unit": "un" }, { "key": "openCubeWidth", "label": "Largura", "min": 0.2, "max": 2 }, { "key": "openCubeDepth", "label": "Profundidade", "min": 0.2, "max": 1.5 }, { "key": "openCubeHeight", "label": "Altura", "min": 0.2, "max": 2 }, { "key": "openCubeWallThickness", "label": "Espessura das placas", "min": 0.015, "max": 0.1, "step": 0.005 }, { "key": "openCubeGap", "label": "Vão livre entre unidades", "min": 0, "max": 3 }] }, { "id": "roundRugs", "label": "Tapetes circulares", "description": "Piso decorativo que permite móveis sobre ele", "materialKey": "rugMat", "fields": [{ "key": "rugCount", "label": "Quantidade", "min": 1, "max": 100, "unit": "un" }, { "key": "rugDiameter", "label": "Diâmetro", "min": 0.4, "max": 10 }, { "key": "rugGap", "label": "Vão livre entre unidades", "min": 0, "max": 3 }] }] as const;
+export type ExtraObjectId = typeof extraObjectDefinitions[number]['id'];
+export type ExtraSceneConfig = ExtraObjectsConfig & {
+    width: number;
+    depth: number;
+    height: number;
+};
+export type ExtraObjectSpec = {
+    count: number;
+    width: number;
+    depth: number;
+    height: number;
+    gap: number;
+    circle: boolean;
+    floor: boolean;
+};
+export type ExtraObjectLayout = {
+    positions: [
+        number,
+        number
+    ][];
+    generatedCount: number;
+};
+export type ExtraObjectLayouts = Record<ExtraObjectId, ExtraObjectLayout>;
+export function extraObjectSpec(c: ExtraSceneConfig, id: ExtraObjectId): ExtraObjectSpec {
+    switch (id) {
+        case 'shelving': return { count: c.shelfCount, width: c.shelfWidth, depth: c.shelfDepth, height: c.shelfHeight, gap: c.shelfGap, circle: false, floor: false };
+        case 'backdrops': return { count: c.backdropCount, width: c.backdropWidth, depth: c.backdropBaseDepth, height: c.backdropHeight, gap: c.backdropGap, circle: false, floor: false };
+        case 'touchScreens': return { count: c.touchCount, width: c.touchWidth + .1, depth: c.touchBaseDepth, height: c.touchHeight, gap: c.touchGap, circle: false, floor: false };
+        case 'cabinets': return { count: c.cabinetCount, width: c.cabinetWidth, depth: c.cabinetDepth + .08, height: c.cabinetHeight, gap: c.cabinetGap, circle: false, floor: false };
+        case 'openCubes': return { count: c.openCubeCount, width: c.openCubeWidth, depth: c.openCubeDepth, height: c.openCubeHeight, gap: c.openCubeGap, circle: false, floor: false };
+        case 'roundRugs': return { count: c.rugCount, width: c.rugDiameter, depth: c.rugDiameter, height: .008, gap: c.rugGap, circle: true, floor: true };
+    }
+}
+export function layoutExtraObjects(c: ExtraSceneConfig, baseReserved: (gap: number) => ReservedArea[]): ExtraObjectLayouts {
+    const result = {} as ExtraObjectLayouts;
+    const previous: {
+        spec: ExtraObjectSpec;
+        positions: [
+            number,
+            number
+        ][];
+    }[] = [];
+    for (const def of extraObjectDefinitions) {
+        result[def.id] = { positions: [], generatedCount: 0 };
+        if (typeof c[def.id] !== 'boolean')
+            throw new Error('Seleção de objetos da biblioteca inválida.');
+        if (!c[def.id])
+            continue;
+        for (const field of def.fields) {
+            const value = c[field.key];
+            if (!Number.isFinite(value) || value < field.min || value > field.max || ('unit' in field && field.unit === 'un' && !Number.isInteger(value)))
+                throw new Error(`${def.label} — ${field.label}: use ${'unit' in field && field.unit === 'un' ? 'um inteiro' : 'um valor'} entre ${field.min} e ${field.max}.`);
+        }
+        const spec = extraObjectSpec(c, def.id);
+        if (spec.height > c.height)
+            throw new Error(`${def.label}: a altura deve caber na montagem.`);
+        if (def.id === 'shelving' && (c.shelfHeight - .06) / (c.shelfShelfCount + 1) < .1)
+            throw new Error('Estante: reduza as prateleiras ou aumente a altura para deixar espaço entre elas.');
+        if (def.id === 'cabinets' && (c.cabinetHeight - .06) / (c.cabinetShelfCount + 1) < .1)
+            throw new Error('Armário: reduza as prateleiras ou aumente a altura.');
+        if (def.id === 'touchScreens' && c.touchHeight - c.touchScreenHeight < .2)
+            throw new Error('Tela touch: deixe pelo menos 0,20 m entre o piso e a parte inferior da tela.');
+        if (def.id === 'openCubes' && Math.min(c.openCubeWidth, c.openCubeHeight) - 2 * c.openCubeWallThickness < .1)
+            throw new Error('Cubo vazado: deixe pelo menos 0,10 m de abertura interna.');
+        let reserved: ReservedArea[];
+        if (spec.floor) {
+            // Tapetes podem ficar sob móveis, mas permanecem dentro da área.
+            reserved = [
+                { centerX: -c.width / 2 + .1, centerY: 0, width: .2, depth: c.depth },
+                { centerX: c.width / 2 - .1, centerY: 0, width: .2, depth: c.depth },
+                { centerX: 0, centerY: -c.depth / 2 + .1, width: c.width, depth: .2 },
+                { centerX: 0, centerY: c.depth / 2 - .1, width: c.width, depth: .2 },
+            ];
+        }
+        else {
+            reserved = [...baseReserved(spec.gap)];
+            for (const p of previous) {
+                const gap = Math.max(spec.gap, p.spec.gap);
+                for (const [x, y] of p.positions)
+                    reserved.push({ centerX: x, centerY: y, width: p.spec.width + 2 * gap, depth: p.spec.depth + 2 * gap });
+            }
+        }
+        const cols = Math.floor((c.width + spec.gap + 1e-9) / (spec.width + spec.gap)), rows = Math.floor((c.depth + spec.gap + 1e-9) / (spec.depth + spec.gap));
+        const fullW = cols * spec.width + Math.max(0, cols - 1) * spec.gap, fullD = rows * spec.depth + Math.max(0, rows - 1) * spec.gap;
+        const positions: [
+            number,
+            number
+        ][] = [];
+        for (let row = 0; row < rows; row++) {
+            for (let col = 0; col < cols; col++) {
+                const x = -fullW / 2 + spec.width / 2 + col * (spec.width + spec.gap), y = -fullD / 2 + spec.depth / 2 + row * (spec.depth + spec.gap);
+                if (reserved.some(a => Math.abs(x - a.centerX) < (spec.width + a.width) / 2 && Math.abs(y - a.centerY) < (spec.depth + a.depth) / 2))
+                    continue;
+                positions.push([x, y]);
+                if (positions.length === spec.count)
+                    break;
+            }
+            if (positions.length === spec.count)
+                break;
+        }
+        if (positions.length !== spec.count)
+            throw new Error(`${def.label}: foram solicitadas ${spec.count} unidades, mas esta grade comporta ${positions.length}. Ajuste as medidas, quantidades ou espaços livres.`);
+        result[def.id] = { positions, generatedCount: positions.length };
+        if (!spec.floor)
+            previous.push({ spec, positions });
+    }
+    return result;
 }

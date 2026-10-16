@@ -1,34 +1,15 @@
+import { blenderStandardObjects, maxStandardObjects } from './standard-object-exporters';
+import { blenderShowcases, maxShowcases } from './showcase-exporters';
 import { blenderLounge, maxLounge } from './lounge-exporters';
 import { blenderPedestals, maxPedestals } from './pedestal-exporters';
 import { generateMax } from './maxscript';
-import { chairDefaults, layoutChairs, roundTableDefaults, layoutRoundTables, rectTableDefaults, layoutRectTables, bistroTableDefaults, layoutBistroTables, stoolDefaults, layoutStools, validateStoolAssociation, layoutBistroStoolSets, tableChairDefaults, validateTableChairs, layoutTablesWithChairs, pedestalDefaults, layoutPedestals, loungeDefaults, validateLounge, layoutArmchairs, layoutPuffs, coffeeTableDefaults, layoutCoffeeTables, loungeSetDefaults, layoutLoungeSets, showcaseDefaults, layoutShowcases } from './library';
-import type { ChairConfig, ReservedArea, RoundTableConfig, RectTableConfig, BistroTableConfig, StoolConfig, TableChairConfig, TableChairLayout, PedestalConfig, LoungeConfig, CoffeeTableConfig, LoungeSetConfig, ShowcaseConfig } from './library';
+import { chairDefaults, layoutChairs, roundTableDefaults, layoutRoundTables, rectTableDefaults, layoutRectTables, bistroTableDefaults, layoutBistroTables, stoolDefaults, layoutStools, validateStoolAssociation, layoutBistroStoolSets, tableChairDefaults, validateTableChairs, layoutTablesWithChairs, pedestalDefaults, layoutPedestals, loungeDefaults, validateLounge, layoutArmchairs, layoutPuffs, coffeeTableDefaults, layoutCoffeeTables, loungeSetDefaults, layoutLoungeSets, showcaseDefaults, layoutShowcases, extraObjectDefaults, layoutExtraObjects } from './library';
+import type { ChairConfig, ReservedArea, RoundTableConfig, RectTableConfig, BistroTableConfig, StoolConfig, TableChairConfig, TableChairLayout, PedestalConfig, LoungeConfig, CoffeeTableConfig, LoungeSetConfig, ShowcaseConfig, ExtraObjectsConfig } from './library';
 import { blenderChairs, maxChairs } from './chair-exporters';
 import { blenderRoundTables, maxRoundTables } from './round-table-exporters';
 import { blenderRectTables, maxRectTables, } from './react-table-exporters';
 import { blenderBistroTables, maxBistroTables } from './bistro-table-exporters';
 import { blenderStools, maxStools } from './stool-exporters';
-function blenderShowcases(c: Config, layout: { positions: [number, number][] }): string {
-    return layout.positions.map(([x, y], index) => {
-        const baseHeight = Math.min(0.12, c.showcaseHeight * 0.15);
-        const glassHeight = c.showcaseHeight - baseHeight;
-        const z = 0.1 + baseHeight + glassHeight / 2;
-        const name = `Vitrine_${index + 1}`;
-        return [
-            `caixa('${name}_Base', (${c.showcaseWidth}, ${c.showcaseDepth}, ${baseHeight}), (${x}, ${y}, ${0.1 + baseHeight / 2}), acabamento('${c.showcaseBaseMat}'))`,
-            `caixa('${name}_Frente', (${c.showcaseWidth}, 0.025, ${glassHeight}), (${x}, ${y - c.showcaseDepth / 2}, ${z}), acabamento('glass'))`,
-            `caixa('${name}_Fundo', (${c.showcaseWidth}, 0.025, ${glassHeight}), (${x}, ${y + c.showcaseDepth / 2}, ${z}), acabamento('glass'))`,
-            `caixa('${name}_Lateral_E', (0.025, ${c.showcaseDepth}, ${glassHeight}), (${x - c.showcaseWidth / 2}, ${y}, ${z}), acabamento('glass'))`,
-            `caixa('${name}_Lateral_D', (0.025, ${c.showcaseDepth}, ${glassHeight}), (${x + c.showcaseWidth / 2}, ${y}, ${z}), acabamento('glass'))`,
-        ].join('\n');
-    }).join('\n');
-}
-function maxShowcases(c: Config, layout: { positions: [number, number][] }): string {
-    const baseHeight = Math.min(0.12, c.showcaseHeight * 0.15);
-    return layout.positions.map(([x, y], index) =>
-        `box name:\"Vitrine_${index + 1}_Base\" width:${c.showcaseWidth} length:${c.showcaseDepth} height:${baseHeight} pos:[${x},${y},${0.1 + baseHeight / 2}]`
-    ).join('\n');
-}
 export type MaterialKind = 'white' | 'brand' | 'wood' | 'metal' | 'glass' | 'concrete' | 'plastic';
 export type ProjectType = 'stand' | 'palco';
 export type Target = 'blender' | 'max';
@@ -42,7 +23,7 @@ export const materials: {
     { value: 'glass', label: 'Vidro', color: '#81bfce' }, { value: 'concrete', label: 'Concreto', color: '#747b86' },
     { value: 'plastic', label: 'Plástico', color: '#c4d1e1' }
 ];
-export type Config = ChairConfig & RoundTableConfig & RectTableConfig & BistroTableConfig & StoolConfig & TableChairConfig & PedestalConfig & LoungeConfig & CoffeeTableConfig & LoungeSetConfig & ShowcaseConfig & {
+export type Config = ChairConfig & RoundTableConfig & RectTableConfig & BistroTableConfig & StoolConfig & TableChairConfig & PedestalConfig & LoungeConfig & CoffeeTableConfig & LoungeSetConfig & ShowcaseConfig & ExtraObjectsConfig & {
     projectType: ProjectType;
     name: string;
     width: number;
@@ -110,6 +91,7 @@ export const defaults: Config = {
     ...coffeeTableDefaults,
     ...loungeSetDefaults,
     ...showcaseDefaults,
+    ...extraObjectDefaults,
     name: 'Meu primeiro stand', width: 10, depth: 5, height: 3.5, color: '#5268ff', target: 'blender', back: true, left: false, right: false, led: true, counter: true, stage: false, totem: false, spots: true,
     ledWidth: 4, ledHeight: 2, ledBottom: .65, counterWidth: 2, counterDepth: .65, counterHeight: 1, counterCount: 1,
     stageWidth: 4.5, stageDepth: 1.4, stageHeight: .3, totemWidth: .55, totemDepth: .25, totemHeight: 1.8, totemCount: 1, spotsCount: 3,
@@ -415,16 +397,11 @@ export function coffeeTableGeometry(c: Config) {
     return layoutCoffeeTables(c, reserved);
 }
 /** Vitrines são distribuídas depois de todos os móveis e conjuntos. */
-export function showcaseGeometry(c: Config) {
-    if (!c.showcases)
-        return { positions: [] as [
-                number,
-                number
-            ][], generatedCount: 0 };
-    const reserved = furnitureReservedAreas(c, c.showcaseGap);
+function showcaseReservedAreas(c: Config, objectGap: number): ReservedArea[] {
+    const reserved = furnitureReservedAreas(c, objectGap);
     const pedestals = pedestalGeometry(c), lounge = loungeGeometry(c), coffee = coffeeTableGeometry(c);
     function reserve(x: number, y: number, w: number, d: number, gap: number) {
-        const spacing = Math.max(c.showcaseGap, gap);
+        const spacing = Math.max(objectGap, gap);
         reserved.push({ centerX: x, centerY: y, width: w + 2 * spacing, depth: d + 2 * spacing });
     }
     if (c.pedestals)
@@ -457,7 +434,23 @@ export function showcaseGeometry(c: Config) {
             });
         }
     }
-    return layoutShowcases(c, reserved);
+    return reserved;
+}
+export function showcaseGeometry(c: Config) { if (!c.showcases)
+    return { positions: [] as [
+            number,
+            number
+        ][], generatedCount: 0 }; return layoutShowcases(c, showcaseReservedAreas(c, c.showcaseGap)); }
+export function extraObjectGeometry(c: Config) {
+    return layoutExtraObjects(c, (gap) => {
+        const reserved = showcaseReservedAreas(c, gap);
+        if (c.showcases) {
+            const s = showcaseGeometry(c), space = Math.max(gap, c.showcaseGap);
+            for (const [x, y] of s.positions)
+                reserved.push({ centerX: x, centerY: y, width: c.showcaseWidth + 2 * space, depth: c.showcaseDepth + 2 * space });
+        }
+        return reserved;
+    });
 }
 export function validate(c: Config) {
     if (c.loungeMode !== 'free' && c.loungeMode !== 'set')
@@ -483,13 +476,13 @@ export function validate(c: Config) {
         throw new Error('Escolha uma cor válida.');
     if (!['blender', 'max'].includes(c.target))
         throw new Error('Escolha Blender ou 3ds Max.');
-    for (const k of ['back', 'left', 'right', 'led', 'counter', 'stage', 'totem', 'spots', 'chairs', 'roundTables', 'rectTables', 'bistroTables', 'stools', 'roundTableChairs', 'rectTableChairs', 'pedestals', 'armchairs', 'puffs', 'coffeeTables', 'showcases'] as const)
+    for (const k of ['back', 'left', 'right', 'led', 'counter', 'stage', 'totem', 'spots', 'chairs', 'roundTables', 'rectTables', 'bistroTables', 'stools', 'roundTableChairs', 'rectTableChairs', 'pedestals', 'armchairs', 'puffs', 'coffeeTables', 'showcases', 'shelving', 'backdrops', 'touchScreens', 'cabinets', 'openCubes', 'roundRugs'] as const)
         if (typeof c[k] !== 'boolean')
             throw new Error('Seleção de elementos inválida.');
     for (const [key, initial] of Object.entries(defaults))
         if (typeof initial === 'number' && (!Number.isFinite(c[key as keyof Config] as number)))
             throw new Error('Confira os parâmetros dos elementos: todas as medidas e quantidades devem conter números.');
-    for (const k of ['floorMat', 'wallMat', 'counterMat', 'stageMat', 'totemMat', 'roundTableMat', 'rectTableMat', 'bistroTableMat', 'stoolMat', 'pedestalMat', 'armchairMat', 'puffMat', 'coffeeTableMat', 'showcaseBaseMat'] as const)
+    for (const k of ['floorMat', 'wallMat', 'counterMat', 'stageMat', 'totemMat', 'roundTableMat', 'rectTableMat', 'bistroTableMat', 'stoolMat', 'pedestalMat', 'armchairMat', 'puffMat', 'coffeeTableMat', 'showcaseBaseMat', 'shelfMat', 'backdropMat', 'touchMat', 'cabinetMat', 'openCubeMat', 'rugMat'] as const)
         if (!materials.some(m => m.value === c[k]))
             throw new Error('Material inválido.');
     const check = (keys: (keyof Config)[], label: string) => {
@@ -603,6 +596,7 @@ export function validate(c: Config) {
     loungeGeometry(c);
     coffeeTableGeometry(c);
     showcaseGeometry(c);
+    extraObjectGeometry(c);
     return c;
 }
 export function filename(c: Config) { return (c.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'stand') + (c.target === 'max' ? '.ms' : '.py'); }
@@ -617,6 +611,7 @@ export function generate(c: Config, options: {
     const lounge = loungeGeometry(c);
     const coffeeTables = coffeeTableGeometry(c);
     const showcases = showcaseGeometry(c);
+    const extraObjects = extraObjectGeometry(c);
     const diningConfig = {
         ...c, chairs: true,
         chairWidth: c.tableChairWidth, chairDepth: c.tableChairDepth,
@@ -637,7 +632,7 @@ export function generate(c: Config, options: {
             blenderRectTables(c, tables.rectTables) +
             blenderBistroTables(c, tables.bistroTables) +
             blenderStools(c, stools) +
-            blenderPedestals(c, pedestals) + blenderLounge(c, lounge) + blenderCoffeeTables(c, coffeeTables) + blenderShowcases(c, showcases));
+            blenderPedestals(c, pedestals) + blenderLounge(c, lounge) + blenderCoffeeTables(c, coffeeTables) + blenderShowcases(c, showcases) + blenderStandardObjects(c, extraObjects));
     }
     const script = generateMax(c);
     const additions = maxChairs(c, chairLayout, { group: "audience" }) +
@@ -646,7 +641,7 @@ export function generate(c: Config, options: {
         maxRectTables(c, tables.rectTables) +
         maxBistroTables(c, tables.bistroTables) +
         maxStools(c, stools) +
-        maxPedestals(c, pedestals) + maxLounge(c, lounge) + maxCoffeeTables(c, coffeeTables) + maxShowcases(c, showcases);
+        maxPedestals(c, pedestals) + maxLounge(c, lounge) + maxCoffeeTables(c, coffeeTables) + maxShowcases(c, showcases) + maxStandardObjects(c, extraObjects);
     if (!additions) {
         return script;
     }

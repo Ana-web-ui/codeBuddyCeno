@@ -5,11 +5,53 @@ import { Box, Layers, Download, Copy, Check, Code2, Ruler, Monitor, LampDesk, Pa
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
-import { materials, generate, geometry, filename, validate, tableGeometry, stoolGeometry, pedestalGeometry, loungeGeometry, coffeeTableGeometry, showcaseGeometry, } from '@/lib/generator';
+import { materials, generate, geometry, filename, validate, tableGeometry, stoolGeometry, pedestalGeometry, loungeGeometry, coffeeTableGeometry, showcaseGeometry, extraObjectGeometry, } from '@/lib/generator';
 import type { MaterialKind, Target, Config, ProjectType } from '@/lib/generator';
 import { projectTypes, createProjectConfig } from '@/lib/project-types';
-import { libraryCatalog, layoutChairs } from '@/lib/library';
+import { libraryCatalog, layoutChairs, extraObjectDefinitions, extraObjectSpec } from '@/lib/library';
+const MAX_PROJECT_BYTES = 4 * 1024 * 1024;
+function serializeProject(config: Config): string {
+    const text = JSON.stringify({ config }, null, 2);
+    if (new TextEncoder().encode(text).length > MAX_PROJECT_BYTES) {
+        throw new Error('O projeto excede o limite de 4 MB.');
+    }
+    return text;
+}
+function parseProject(text: string): Config {
+    if (new TextEncoder().encode(text).length > MAX_PROJECT_BYTES) {
+        throw new Error('O arquivo de projeto excede o limite de 4 MB.');
+    }
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(text);
+    } catch {
+        throw new Error('O arquivo de projeto não contém um JSON válido.');
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('O arquivo de projeto é inválido.');
+    }
+    const root = parsed as Record<string, unknown>;
+    const data = root.config && typeof root.config === 'object' && !Array.isArray(root.config)
+        ? root.config as Record<string, unknown>
+        : root;
+    if (data.projectType !== 'stand' && data.projectType !== 'palco') {
+        throw new Error('Tipo de projeto inválido.');
+    }
+    const config = { ...createProjectConfig(data.projectType), ...data } as Config;
+    validate(config);
+    return config;
+}
+function projectFilename(config: Config): string {
+    const name = config.name.trim().replace(/[<>:"/\\|?*\x00-\x1f]/g, '-').replace(/[. ]+$/g, '');
+    return `${name || 'projeto'}.json`;
+}
 const elements = [
+    { key: 'shelving', title: 'Estantes expositoras', text: 'Estantes abertas com prateleiras', icon: Layers },
+    { key: 'backdrops', title: 'Backdrops', text: 'Painéis de fundo com bases de apoio', icon: PanelTop },
+    { key: 'touchScreens', title: 'Telas touch', text: 'Modelo 3D de tela vertical com suporte', icon: Monitor },
+    { key: 'cabinets', title: 'Armários', text: 'Armários com duas portas e prateleiras', icon: Box },
+    { key: 'openCubes', title: 'Cubos vazados', text: 'Módulos abertos na frente e atrás', icon: Square },
+    { key: 'roundRugs', title: 'Tapetes circulares', text: 'Piso decorativo que permite móveis sobre ele', icon: Circle },
     { key: 'showcases', title: 'Vitrines expositoras', text: 'Base, fechamento de vidro e prateleiras', icon: RectangleVertical },
     { key: 'coffeeTables', title: 'Mesas de centro', text: 'Mesas baixas com tampo retangular e quatro pernas', icon: PanelTop },
     { key: 'armchairs', title: 'Poltronas', text: 'Assento, encosto, braços e base', icon: Armchair },
@@ -30,13 +72,14 @@ type NumberKey = {
     [K in keyof Config]: Config[K] extends number ? K : never;
 }[keyof Config];
 type ParameterField = {
+    step?: number;
     key: NumberKey;
     label: string;
     unit?: string;
     min?: number;
     max?: number;
 };
-const parameterFields: Record<'led' | 'counter' | 'stage' | 'totem' | 'spots' | 'chairs' | 'roundTables' | 'rectTables' | 'bistroTables' | 'stools' | 'pedestals' | 'armchairs' | 'puffs' | 'coffeeTables' | 'showcases', ParameterField[]> = {
+const parameterFields: Record<'led' | 'counter' | 'stage' | 'totem' | 'spots' | 'chairs' | 'roundTables' | 'rectTables' | 'bistroTables' | 'stools' | 'pedestals' | 'armchairs' | 'puffs' | 'coffeeTables' | 'showcases' | 'shelving' | 'backdrops' | 'touchScreens' | 'cabinets' | 'openCubes' | 'roundRugs', ParameterField[]> = {
     led: [{ key: 'ledWidth', label: 'Largura' }, { key: 'ledHeight', label: 'Altura' }, { key: 'ledBottom', label: 'Base sobre o piso', max: 8 }],
     counter: [{ key: 'counterWidth', label: 'Largura' }, { key: 'counterDepth', label: 'Profundidade' }, { key: 'counterHeight', label: 'Altura' }, { key: 'counterCount', label: 'Quantidade', unit: 'un', min: 1, max: 6 }],
     stage: [{ key: 'stageWidth', label: 'Largura' }, { key: 'stageDepth', label: 'Profundidade' }, { key: 'stageHeight', label: 'Altura', max: 1 }],
@@ -145,11 +188,17 @@ const parameterFields: Record<'led' | 'counter' | 'stage' | 'totem' | 'spots' | 
         { key: 'showcaseGlassThickness', label: 'Espessura do vidro', min: .004, max: .03 },
         { key: 'showcaseGap', label: 'Vão livre entre vitrines', min: 0, max: 3 },
     ],
+    shelving: [{ "key": "shelfCount", "label": "Quantidade", "min": 1, "max": 100, "unit": "un" }, { "key": "shelfWidth", "label": "Largura", "min": 0.4, "max": 3 }, { "key": "shelfDepth", "label": "Profundidade", "min": 0.25, "max": 1.5 }, { "key": "shelfHeight", "label": "Altura", "min": 0.4, "max": 3 }, { "key": "shelfShelfCount", "label": "Prateleiras internas", "min": 0, "max": 6, "unit": "un" }, { "key": "shelfGap", "label": "Vão livre entre unidades", "min": 0, "max": 3 }],
+    backdrops: [{ "key": "backdropCount", "label": "Quantidade", "min": 1, "max": 100, "unit": "un" }, { "key": "backdropWidth", "label": "Largura", "min": 1, "max": 6 }, { "key": "backdropHeight", "label": "Altura", "min": 0.8, "max": 3 }, { "key": "backdropThickness", "label": "Espessura do painel", "min": 0.02, "max": 0.2, "step": 0.01 }, { "key": "backdropBaseDepth", "label": "Profundidade das bases", "min": 0.3, "max": 1.5 }, { "key": "backdropGap", "label": "Vão livre entre unidades", "min": 0, "max": 3 }],
+    touchScreens: [{ "key": "touchCount", "label": "Quantidade", "min": 1, "max": 100, "unit": "un" }, { "key": "touchWidth", "label": "Largura da tela", "min": 0.3, "max": 1.5 }, { "key": "touchHeight", "label": "Altura total", "min": 0.8, "max": 2.5 }, { "key": "touchScreenHeight", "label": "Altura da tela", "min": 0.4, "max": 1.6 }, { "key": "touchBaseDepth", "label": "Profundidade da base", "min": 0.3, "max": 1 }, { "key": "touchGap", "label": "Vão livre entre unidades", "min": 0, "max": 3 }],
+    cabinets: [{ "key": "cabinetCount", "label": "Quantidade", "min": 1, "max": 100, "unit": "un" }, { "key": "cabinetWidth", "label": "Largura", "min": 0.4, "max": 3 }, { "key": "cabinetDepth", "label": "Profundidade do corpo", "min": 0.3, "max": 1.2 }, { "key": "cabinetHeight", "label": "Altura", "min": 0.4, "max": 3 }, { "key": "cabinetShelfCount", "label": "Prateleiras internas", "min": 0, "max": 6, "unit": "un" }, { "key": "cabinetGap", "label": "Vão livre entre unidades", "min": 0, "max": 3 }],
+    openCubes: [{ "key": "openCubeCount", "label": "Quantidade", "min": 1, "max": 100, "unit": "un" }, { "key": "openCubeWidth", "label": "Largura", "min": 0.2, "max": 2 }, { "key": "openCubeDepth", "label": "Profundidade", "min": 0.2, "max": 1.5 }, { "key": "openCubeHeight", "label": "Altura", "min": 0.2, "max": 2 }, { "key": "openCubeWallThickness", "label": "Espessura das placas", "min": 0.015, "max": 0.1, "step": 0.005 }, { "key": "openCubeGap", "label": "Vão livre entre unidades", "min": 0, "max": 3 }],
+    roundRugs: [{ "key": "rugCount", "label": "Quantidade", "min": 1, "max": 100, "unit": "un" }, { "key": "rugDiameter", "label": "Diâmetro", "min": 0.4, "max": 10 }, { "key": "rugGap", "label": "Vão livre entre unidades", "min": 0, "max": 3 }],
 };
 const materialFields: {
-    key: 'floorMat' | 'wallMat' | 'counterMat' | 'stageMat' | 'totemMat' | 'roundTableMat' | 'rectTableMat' | 'bistroTableMat' | 'stoolMat' | 'pedestalMat' | 'armchairMat' | 'puffMat' | 'coffeeTableMat' | 'showcaseBaseMat';
+    key: 'floorMat' | 'wallMat' | 'counterMat' | 'stageMat' | 'totemMat' | 'roundTableMat' | 'rectTableMat' | 'bistroTableMat' | 'stoolMat' | 'pedestalMat' | 'armchairMat' | 'puffMat' | 'coffeeTableMat' | 'showcaseBaseMat' | 'shelfMat' | 'backdropMat' | 'touchMat' | 'cabinetMat' | 'openCubeMat' | 'rugMat';
     label: string;
-    enabled?: 'counter' | 'stage' | 'totem' | 'roundTables' | 'rectTables' | 'bistroTables' | 'stools' | 'pedestals' | 'armchairs' | 'puffs' | 'coffeeTables' | 'showcases';
+    enabled?: 'counter' | 'stage' | 'totem' | 'roundTables' | 'rectTables' | 'bistroTables' | 'stools' | 'pedestals' | 'armchairs' | 'puffs' | 'coffeeTables' | 'showcases' | 'shelving' | 'backdrops' | 'touchScreens' | 'cabinets' | 'openCubes' | 'roundRugs';
 }[] = [{ key: 'floorMat', label: 'Piso' },
     { key: 'wallMat', label: 'Paredes' },
     { key: 'counterMat', label: 'Corpo do balcão', enabled: 'counter' },
@@ -163,7 +212,13 @@ const materialFields: {
     { key: 'armchairMat', label: 'Poltronas — assento, encosto e braços', enabled: 'armchairs' },
     { key: 'puffMat', label: 'Puffs', enabled: 'puffs' },
     { key: 'coffeeTableMat', label: 'Tampo das mesas de centro', enabled: 'coffeeTables' },
-    { key: 'showcaseBaseMat', label: 'Base das vitrines expositoras', enabled: 'showcases' }];
+    { key: 'showcaseBaseMat', label: 'Base das vitrines expositoras', enabled: 'showcases' },
+    { key: 'shelfMat', label: 'Estantes expositoras', enabled: 'shelving' },
+    { key: 'backdropMat', label: 'Backdrops', enabled: 'backdrops' },
+    { key: 'touchMat', label: 'Telas touch', enabled: 'touchScreens' },
+    { key: 'cabinetMat', label: 'Armários', enabled: 'cabinets' },
+    { key: 'openCubeMat', label: 'Cubos vazados', enabled: 'openCubes' },
+    { key: 'rugMat', label: 'Tapetes circulares', enabled: 'roundRugs' }];
 const num = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
 function Plan({ c }: {
     c: Config;
@@ -182,6 +237,8 @@ function Plan({ c }: {
     const lounge = loungeGeometry(c);
     const coffeeTables = coffeeTableGeometry(c);
     const showcases = showcaseGeometry(c);
+    const extraObjects = extraObjectGeometry(c);
+    const extraColor = (kind: MaterialKind) => kind === 'brand' ? c.color : materials.find(m => m.value === kind)?.color ?? '#c8cedb';
     const showcaseColor = c.showcaseBaseMat === 'brand' ? c.color : materials.find(m => m.value === c.showcaseBaseMat)?.color ?? '#c8cedb';
     const coffeeColor = c.coffeeTableMat === 'brand' ? c.color : materials.find(m => m.value === c.coffeeTableMat)?.color ?? '#c8cedb';
     const loungeColor = (kind: MaterialKind) => kind === 'brand' ? c.color : materials.find(m => m.value === kind)?.color ?? '#c8cedb';
@@ -206,6 +263,11 @@ function Plan({ c }: {
     <path d={`M ${x + w + 24} ${y} V ${y + h} M ${x + w + 17} ${y} h 14 M ${x + w + 17} ${y + h} h 14`} stroke="#67758e" fill="none"/>
     <text x={x + w + 40} y={y + h / 2} transform={`rotate(90 ${x + w + 40} ${y + h / 2})`} textAnchor="middle" fill="#b6c3d7" fontSize="14">{num(c.depth)} m</text>
     <rect x={x} y={y} width={w} height={h} fill={(c.floorMat === 'brand' ? c.color : materials.find(m => m.value === c.floorMat)?.color) + '25'} stroke="#687695" strokeDasharray="5 5"/>
+    {c.roundRugs && (<g aria-label={`${extraObjects.roundRugs.generatedCount} tapetes circulares`}>
+      {extraObjects.roundRugs.positions.map(([cx, cy], i) => (<g key={`rug-${i}`}>
+        <circle cx={px(cx)} cy={py(cy)} r={c.rugDiameter * s / 2} fill={extraColor(c.rugMat)} fillOpacity="0.45" stroke="#8795ad" strokeWidth="1"/>
+        <text x={px(cx)} y={py(cy)} textAnchor="middle" fill="#dce6ff" fontSize="9">TC{i + 1}</text>
+      </g>))}</g>)}
     {c.back && <rect x={x} y={y} width={w} height={Math.max(5, .15 * s)} fill={c.wallMat === 'brand' ? c.color : materials.find(m => m.value === c.wallMat)?.color}/>}
     {c.left && <rect x={x} y={y} width={Math.max(5, .15 * s)} height={h} fill={c.wallMat === 'brand' ? c.color : materials.find(m => m.value === c.wallMat)?.color}/>}
     {c.right && <rect x={x + w - Math.max(5, .15 * s)} y={y} width={Math.max(5, .15 * s)} height={h} fill={c.wallMat === 'brand' ? c.color : materials.find(m => m.value === c.wallMat)?.color}/>}
@@ -285,6 +347,17 @@ function Plan({ c }: {
             <text x={px(cx)} y={py(cy)} textAnchor="middle" dominantBaseline="middle" fill="#dce6ff" fontSize="9">V{index + 1}</text>
           </g>))}
       </g>)}
+    {extraObjectDefinitions.filter(def => def.id !== 'roundRugs' && c[def.id]).map(def => {
+            const spec = extraObjectSpec(c, def.id), color = extraColor(c[def.materialKey]);
+            const tags = { shelving: 'E', backdrops: 'BD', touchScreens: 'TT', cabinets: 'AR', openCubes: 'CV', roundRugs: 'TC' };
+            return <g key={def.id} aria-label={`${extraObjects[def.id].generatedCount} ${def.label}`}>
+        {extraObjects[def.id].positions.map(([cx, cy], i) => (<g key={i}>
+          <rect x={px(cx - spec.width / 2)} y={py(cy + spec.depth / 2)} width={spec.width * s} height={spec.depth * s} fill={color} fillOpacity={def.id === 'openCubes' ? .25 : 1} stroke="#dce6ff" strokeWidth="1"/>
+          {def.id === 'openCubes' && <rect x={px(cx - spec.width / 2 + c.openCubeWallThickness)} y={py(cy + spec.depth / 2)} width={(spec.width - 2 * c.openCubeWallThickness) * s} height={spec.depth * s} fill="none" stroke="#687695" strokeDasharray="2 2"/>}
+          <text x={px(cx)} y={py(cy)} textAnchor="middle" dominantBaseline="middle" fill="#111827" fontSize="9">{tags[def.id]}{i + 1}</text>
+        </g>))}
+      </g>;
+        })}
     {c.counter && g.counterXs.map((cx, i) => <g key={i}><rect x={px(cx - (g.counterW + .08) / 2)} y={py(g.counterY + (c.counterDepth + .08) / 2)} width={(g.counterW + .08) * s} height={(c.counterDepth + .08) * s} rx="3" fill={c.counterMat === 'brand' ? c.color : materials.find(m => m.value === c.counterMat)?.color}/><text x={px(cx)} y={py(g.counterY) + 5} textAnchor="middle" fill="white" fontSize="12">Balcão</text></g>)}
     {c.totem && g.totemXs.map((tx, i) => <g key={i}><rect x={px(tx - (c.totemWidth + .15) / 2)} y={py(g.totemY + (c.totemDepth + .2) / 2)} width={(c.totemWidth + .15) * s} height={(c.totemDepth + .2) * s} rx="2" fill={c.totemMat === 'brand' ? c.color : materials.find(m => m.value === c.totemMat)?.color}/><text x={px(tx)} y={py(g.totemY) + 27} textAnchor="middle" fill="#cdd7ec" fontSize="12">Totem</text></g>)}
     {c.spots && [-1, 1].map(sign => <g key={sign}><path d={`M ${px(sign * (c.width / 2 - .35))} ${py(c.depth / 2 - .25)} V ${py(-c.depth / 2 + .25)}`} stroke="#b49a67" strokeWidth="2"/>{g.spotYs.map((sy, i) => <circle key={i} cx={px(sign * (c.width / 2 - .35))} cy={py(sy)} r="4" fill="#f0ca85"/>)}</g>)}
@@ -312,6 +385,9 @@ export default function Home() {
     const current = useRef(c);
     current.current = c;
     const imageRequest = useRef(0);
+    const projectInput = useRef<HTMLInputElement>(null);
+    const projectRequest = useRef(0);
+    const [openingProject, setOpeningProject] = useState(false);
     const validationMessage: string = (() => {
         try {
             validate(c);
@@ -360,6 +436,60 @@ export default function Home() {
         a.click();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
         setNotice(output.config.target === 'max' ? 'Arquivo .ms baixado. Execute no 3ds Max.' : 'Arquivo .py baixado. Abra no Blender.');
+    }
+    function saveProject() {
+        try {
+            const text = serializeProject(c);
+            const url = URL.createObjectURL(new Blob([text], { type: 'application/json;charset=utf-8' }));
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = projectFilename(c);
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            setError('');
+            setNotice('Projeto salvo em JSON. Guarde esse arquivo para continuar a edição depois.');
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Não foi possível salvar o projeto.');
+            setNotice('');
+        }
+    }
+    async function openProject(event: ChangeEvent<HTMLInputElement>) {
+        const file = event.target.files?.[0];
+        event.target.value = '';
+        if (!file) return;
+        const requestId = ++projectRequest.current;
+        const original = JSON.stringify(current.current);
+        setOpeningProject(true);
+        setError('');
+        setNotice('');
+        try {
+            if (!/\.json$/i.test(file.name) || file.size > MAX_PROJECT_BYTES) {
+                throw new Error('Escolha um arquivo .json do Code Buddy de até 4 MB.');
+            }
+            const loaded = parseProject(await file.text());
+            if (requestId !== projectRequest.current) return;
+            if (JSON.stringify(current.current) !== original) {
+                throw new Error('O projeto foi alterado durante a leitura. Abra o arquivo novamente para carregá-lo.');
+            }
+            imageRequest.current += 1;
+            const previous = current.current;
+            projectDrafts.current[previous.projectType] = { ...previous };
+            projectDrafts.current[loaded.projectType as ProjectType] = { ...loaded };
+            current.current = loaded;
+            confirmedPartialRef.current = null;
+            setConfirmedPartial(null);
+            setC(loaded);
+            setOutput(null);
+            setCopied(false);
+            setTab('plan');
+            setNotice('Projeto aberto. Confira a planta e gere um novo script quando quiser.');
+        } catch (e) {
+            if (requestId === projectRequest.current) {
+                setError(e instanceof Error ? e.message : 'Não foi possível ler o arquivo de projeto.');
+            }
+        } finally {
+            if (requestId === projectRequest.current) setOpeningProject(false);
+        }
     }
     async function handleImage(event: ChangeEvent<HTMLInputElement>) {
         const file = event.target.files?.[0];
@@ -463,6 +593,12 @@ export default function Home() {
     <header className="topbar"><a href="/" className="brand"><span className="brand-mark"><Box size={24}/></span><span>code<span className="brand-light">buddy</span><small>CENOGRAFIA</small></span></a><div className="topbar-right"><span className="version">V3 · Blender + Max</span><span className="group-name">GRUPO <b>TV1</b></span></div></header>
     <main><div className="page-heading"><div><div className="eyebrow">SEU ESTÚDIO DE CENOGRAFIA</div><h1>Da ideia ao primeiro projeto<span>.</span></h1><p>Defina as medidas. Escolha os elementos. Leve para o Blender ou 3ds Max.</p></div><div className="format"><Code2 size={20}/><span>SAÍDA DO PROJETO<strong>{c.target === 'max' ? 'MaxScript para 3ds Max' : 'Python para Blender'}</strong></span></div></div>
     <div className="workspace"><section className="config-panel" aria-label="Configuração do projeto"><div className="section-title"><span className="step">01</span><h2>Configure seu projeto</h2></div>
+      <div className="project-file-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '12px 0' }}>
+        <button type="button" className="generate-button" onClick={saveProject} disabled={openingProject} style={{ flex: 1 }}>Salvar projeto JSON</button>
+        <button type="button" className="generate-button" onClick={() => projectInput.current?.click()} disabled={openingProject} style={{ flex: 1 }}>{openingProject ? 'Abrindo projeto…' : 'Abrir projeto JSON'}</button>
+        <input ref={projectInput} type="file" accept=".json,application/json" aria-label="Arquivo de projeto Code Buddy" onChange={openProject} hidden />
+      </div>
+      <p className="tab-help">O JSON guarda este projeto para editar depois, incluindo a imagem da tela. Abrir um arquivo substitui o projeto exibido; salve o atual antes, se quiser guardá-lo.</p>
       <div className="field engine-label">
         <span>Tipo de projeto</span>
         <Select value={c.projectType} onValueChange={(value) => changeProjectType(value as ProjectType)}>
@@ -602,7 +738,7 @@ export default function Home() {
                     return false;
                 const isQuantityField = field.key === 'attendeeCount' || field.key === 'chairExtraCount';
                 return c.chairGenerationMode !== 'fill' || !isQuantityField;
-            }).map(field => <label className="field" key={field.key}>{field.key === 'coffeeTableCount' && c.loungeMode === 'set' ? 'Quantidade de conjuntos' : field.label}<div className="unit-input"><input type="number" inputMode={field.unit === 'un' ? 'numeric' : 'decimal'} min={field.min ?? .1} max={field.max ?? 30} step={field.unit === 'un' ? 1 : field.key === "showcaseGlassThickness" ? .001 : field.key === "roundTableTopThickness" || field.key === "rectTableTopThickness" || field.key === "bistroTableTopThickness" || field.key === "coffeeTableTopThickness" || field.key === "stoolSeatThickness" || field.key === "stoolBistroGap" ? 0.01 : 0.05} value={Number.isNaN(c[field.key]) ? '' : c[field.key] as number} onChange={e => update(field.key, e.target.value === '' ? NaN : Number(e.target.value))}/><span>{field.unit ?? 'm'}</span></div></label>)}</div></div>)}
+            }).map(field => <label className="field" key={field.key}>{field.key === 'coffeeTableCount' && c.loungeMode === 'set' ? 'Quantidade de conjuntos' : field.label}<div className="unit-input"><input type="number" inputMode={field.unit === 'un' ? 'numeric' : 'decimal'} min={field.min ?? .1} max={field.max ?? 30} step={field.step ?? (field.unit === 'un' ? 1 : field.key === "showcaseGlassThickness" ? .001 : field.key === "roundTableTopThickness" || field.key === "rectTableTopThickness" || field.key === "bistroTableTopThickness" || field.key === "coffeeTableTopThickness" || field.key === "stoolSeatThickness" || field.key === "stoolBistroGap" ? 0.01 : 0.05)} value={Number.isNaN(c[field.key]) ? '' : c[field.key] as number} onChange={e => update(field.key, e.target.value === '' ? NaN : Number(e.target.value))}/><span>{field.unit ?? 'm'}</span></div></label>)}</div></div>)}
       {!availableElements.some(f => c[f.key]) && <p className="tab-help">Selecione um elemento na aba Projeto para ajustar suas medidas.</p>}
       {c.led && <div className="texture-section"><h3>Textura da TV / LED</h3><p>Escolha a arte que vai aparecer na tela. A imagem inteira é ajustada às medidas do LED.</p><label className="upload-label" htmlFor="tv-image">Escolher imagem JPG ou PNG<input id="tv-image" type="file" accept="image/png,image/jpeg" onChange={handleImage}/></label><small>Até 2 MB · incorporada ao script · imagem estática</small>{c.screenImage ? <div className="texture-preview"><img src={c.screenImage} alt="Arte selecionada para a tela de TV"/><span>{c.screenName}</span><button onClick={() => { imageRequest.current += 1; setC(prev => ({ ...prev, screenImage: '', screenName: '' })); setNotice('Imagem removida.'); }}>Remover imagem</button></div> : <p className="tab-help">Sem imagem, a tela usa a cor de destaque.</p>}</div>}
       </TabsContent><TabsContent value="materials"><p className="tab-help">Escolha o acabamento de cada parte. Madeira e concreto usam textura procedural; metal e vidro recebem propriedades de superfície.</p><div className="material-fields">{materialFields.filter((field) => {
