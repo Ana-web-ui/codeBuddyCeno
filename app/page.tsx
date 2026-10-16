@@ -5,10 +5,19 @@ import { Box, Layers, Download, Copy, Check, Code2, Ruler, Monitor, LampDesk, Pa
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
-import { materials, generate, geometry, filename, validate, tableGeometry, stoolGeometry, pedestalGeometry, loungeGeometry, coffeeTableGeometry, showcaseGeometry, extraObjectGeometry, } from '@/lib/generator';
+import { materials, generate, geometry, filename, validate, tableGeometry, stoolGeometry, pedestalGeometry, loungeGeometry, coffeeTableGeometry, showcaseGeometry, extraObjectGeometry, assemblyGeometry, } from '@/lib/generator';
 import type { MaterialKind, Target, Config, ProjectType } from '@/lib/generator';
 import { projectTypes, createProjectConfig } from '@/lib/project-types';
 import { libraryCatalog, layoutChairs, extraObjectDefinitions, extraObjectSpec } from '@/lib/library';
+type ObjectTransform = { x: number; y: number; rotation: number };
+function unitTransform(c: Config, unit: ReturnType<typeof assemblyGeometry>[number]): ObjectTransform {
+    const transform = c.objectTransforms[unit.id];
+    return {
+        x: transform?.x ?? unit.x,
+        y: transform?.y ?? unit.y,
+        rotation: unit.rotation + (transform?.rotation ?? 0),
+    };
+}
 const MAX_PROJECT_BYTES = 4 * 1024 * 1024;
 function serializeProject(config: Config): string {
     const text = JSON.stringify({ config }, null, 2);
@@ -69,8 +78,8 @@ const elements = [
     { key: 'stools', title: 'Banquetas', text: 'Assentos altos com base central', icon: Armchair },
 ] as const;
 type NumberKey = {
-    [K in keyof Config]: Config[K] extends number ? K : never;
-}[keyof Config];
+    [K in Extract<keyof Config, string>]: Config[K] extends number ? K : never;
+}[Extract<keyof Config, string>];
 type ParameterField = {
     step?: number;
     key: NumberKey;
@@ -220,41 +229,34 @@ const materialFields: {
     { key: 'openCubeMat', label: 'Cubos vazados', enabled: 'openCubes' },
     { key: 'rugMat', label: 'Tapetes circulares', enabled: 'roundRugs' }];
 const num = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
-function Plan({ c }: {
-    c: Config;
+function Plan({ c, selectedId, onSelect }: {
+    c: Config; selectedId?: string | null; onSelect?: (id: string) => void;
 }) {
+    const units = assemblyGeometry(c);
+    const drawUnits = (floor: boolean) => units.filter(unit => unit.floor === floor).map(unit => {
+        const t = unitTransform(c, unit), selected = selectedId === unit.id;
+        return <g key={unit.id} role="button" tabIndex={0} aria-label={`Selecionar ${unit.label}`} aria-pressed={selected}
+          onClick={() => onSelect?.(unit.id)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect?.(unit.id); } }}
+          style={{ cursor: 'pointer', outline: 'none' }} transform={`translate(${px(t.x)} ${py(t.y)}) rotate(${-t.rotation})`}>
+          <title>{`${unit.label} — clique para ajustar`}</title>
+          {unit.members.map((m: { x: number; y: number; material: string; role: string; index: any; rotation: number; circle: any; width: number; depth: number; }) => {
+              const mx = (m.x - unit.x) * s, my = -(m.y - unit.y) * s;
+              const fill = m.material === 'brand' ? c.color : materials.find(mat => mat.value === m.material)?.color ?? '#c8cedb';
+              return <g key={`${m.role}:${m.index}`} transform={`translate(${mx} ${my}) rotate(${-m.rotation})`}>
+                {m.circle ? <circle r={m.width * s / 2} fill={fill} fillOpacity={floor ? .45 : 1} stroke={selected ? '#ffce57' : '#dce6ff'} strokeWidth={selected ? 2.5 : 1} />
+                  : <rect x={-m.width * s / 2} y={-m.depth * s / 2} width={m.width * s} height={m.depth * s} rx="1" fill={fill} fillOpacity={m.role === 'showcases' ? .4 : m.role === 'openCubes' ? .25 : 1} stroke={selected ? '#ffce57' : '#dce6ff'} strokeWidth={selected ? 2.5 : 1} />}
+                {m.role === 'openCubes' && <rect x={(-m.width / 2 + c.openCubeWallThickness) * s} y={-m.depth * s / 2} width={(m.width - 2 * c.openCubeWallThickness) * s} height={m.depth * s} fill="none" stroke="#8795ad" strokeDasharray="2 2" />}
+                {!m.circle && <path d={`M ${-m.width * s / 3} ${-m.depth * s / 2} H ${m.width * s / 3}`} stroke="#fff" strokeWidth="2" />}
+              </g>;
+          })}
+          <text x="0" y="3" textAnchor="middle" fontSize="9" fill={selected ? '#ffce57' : '#101827'} stroke={selected ? '#101827' : 'none'} strokeWidth=".4">{unit.label.replace(/ [0-9]+$/, '').slice(0, 2).toUpperCase()}{Number(unit.id.split(':')[1]) + 1}</text>
+        </g>;
+    });
     const g = geometry(c);
     const seating = layoutChairs(c, g.stageY);
     const s = Math.min(440 / c.width, 280 / c.depth);
     const w = c.width * s, h = c.depth * s, x = (600 - w) / 2, y = (390 - h) / 2;
     const px = (v: number) => x + w / 2 + v * s, py = (v: number) => y + h / 2 - v * s;
-    const tableLayouts = tableGeometry(c);
-    const tables = tableLayouts.roundTables;
-    const rectTables = tableLayouts.rectTables;
-    const bistroTables = tableLayouts.bistroTables;
-    const stools = stoolGeometry(c);
-    const pedestals = pedestalGeometry(c);
-    const lounge = loungeGeometry(c);
-    const coffeeTables = coffeeTableGeometry(c);
-    const showcases = showcaseGeometry(c);
-    const extraObjects = extraObjectGeometry(c);
-    const extraColor = (kind: MaterialKind) => kind === 'brand' ? c.color : materials.find(m => m.value === kind)?.color ?? '#c8cedb';
-    const showcaseColor = c.showcaseBaseMat === 'brand' ? c.color : materials.find(m => m.value === c.showcaseBaseMat)?.color ?? '#c8cedb';
-    const coffeeColor = c.coffeeTableMat === 'brand' ? c.color : materials.find(m => m.value === c.coffeeTableMat)?.color ?? '#c8cedb';
-    const loungeColor = (kind: MaterialKind) => kind === 'brand' ? c.color : materials.find(m => m.value === kind)?.color ?? '#c8cedb';
-    const pedestalColor = c.pedestalMat === 'brand' ? c.color : materials.find(m => m.value === c.pedestalMat)?.color ?? '#c8cedb';
-    const bistroTableColor = c.bistroTableMat === 'brand'
-        ? c.color
-        : materials.find(material => material.value === c.bistroTableMat)?.color ?? '#c8cedb';
-    const rectTableColor = c.rectTableMat === 'brand'
-        ? c.color
-        : materials.find(material => material.value === c.rectTableMat)?.color ?? '#c8cedb';
-    const tableColor = c.roundTableMat === "brand"
-        ? c.color
-        : materials.find((material) => material.value === c.roundTableMat)?.color ?? "#c8cedb";
-    const stoolColor = c.stoolMat === "brand"
-        ? c.color
-        : materials.find((material) => material.value === c.stoolMat)?.color ?? "#c8cedb";
     return <svg viewBox="0 0 600 430" role="img" aria-label={`Planta esquemática da área de montagem de ${num(c.width)} por ${num(c.depth)} metros`}>
       <defs><pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M 20 0 L 0 0 0 20" fill="none" stroke="#252d40" strokeWidth=".5"/></pattern></defs>
     <rect width="600" height="430" fill="url(#grid)"/>
@@ -263,11 +265,7 @@ function Plan({ c }: {
     <path d={`M ${x + w + 24} ${y} V ${y + h} M ${x + w + 17} ${y} h 14 M ${x + w + 17} ${y + h} h 14`} stroke="#67758e" fill="none"/>
     <text x={x + w + 40} y={y + h / 2} transform={`rotate(90 ${x + w + 40} ${y + h / 2})`} textAnchor="middle" fill="#b6c3d7" fontSize="14">{num(c.depth)} m</text>
     <rect x={x} y={y} width={w} height={h} fill={(c.floorMat === 'brand' ? c.color : materials.find(m => m.value === c.floorMat)?.color) + '25'} stroke="#687695" strokeDasharray="5 5"/>
-    {c.roundRugs && (<g aria-label={`${extraObjects.roundRugs.generatedCount} tapetes circulares`}>
-      {extraObjects.roundRugs.positions.map(([cx, cy], i) => (<g key={`rug-${i}`}>
-        <circle cx={px(cx)} cy={py(cy)} r={c.rugDiameter * s / 2} fill={extraColor(c.rugMat)} fillOpacity="0.45" stroke="#8795ad" strokeWidth="1"/>
-        <text x={px(cx)} y={py(cy)} textAnchor="middle" fill="#dce6ff" fontSize="9">TC{i + 1}</text>
-      </g>))}</g>)}
+    {drawUnits(true)}
     {c.back && <rect x={x} y={y} width={w} height={Math.max(5, .15 * s)} fill={c.wallMat === 'brand' ? c.color : materials.find(m => m.value === c.wallMat)?.color}/>}
     {c.left && <rect x={x} y={y} width={Math.max(5, .15 * s)} height={h} fill={c.wallMat === 'brand' ? c.color : materials.find(m => m.value === c.wallMat)?.color}/>}
     {c.right && <rect x={x + w - Math.max(5, .15 * s)} y={y} width={Math.max(5, .15 * s)} height={h} fill={c.wallMat === 'brand' ? c.color : materials.find(m => m.value === c.wallMat)?.color}/>}
@@ -276,88 +274,7 @@ function Plan({ c }: {
     {c.chairs && (<g aria-label={`${seating.positions.length} cadeiras`}>
     {seating.positions.map(([cx, cy], index) => (<rect key={index} x={px(cx - c.chairWidth / 2)} y={py(cy + c.chairDepth / 2)} width={c.chairWidth * s} height={c.chairDepth * s} fill={c.color} stroke="#dce6ff" strokeWidth="0.5"/>))}
   </g>)}
-  {c.roundTables && (<g aria-label={`${tables.generatedCount} mesas redondas`}>
-    {tables.positions.map(([cx, cy], index) => (<g key={`round-table-${index}`}>
-        <circle cx={px(cx)} cy={py(cy)} r={(c.roundTableDiameter / 2) * s} fill={tableColor} stroke="#dce6ff" strokeWidth="1"/>
-
-        <text x={px(cx)} y={py(cy)} textAnchor="middle" dominantBaseline="middle" fill="#111827" fontSize="9">
-          {index + 1}
-        </text>
-      </g>))}
-  </g>)}
-    {c.rectTables && (<g aria-label={`${rectTables.generatedCount} mesas retangulares`}>
-        {rectTables.positions.map(([cx, cy], index) => (<g key={`rect-table-${index}`}>
-            <rect x={px(cx - c.rectTableWidth / 2)} y={py(cy + c.rectTableDepth / 2)} width={c.rectTableWidth * s} height={c.rectTableDepth * s} fill={rectTableColor} stroke="#dce6ff" strokeWidth="1"/>
-            <text x={px(cx)} y={py(cy)} textAnchor="middle" dominantBaseline="middle" fill="#111827" fontSize="9">
-              {index + 1}
-            </text>
-          </g>))}
-      </g>)}
-    {c.bistroTables && (<g aria-label={`${bistroTables.generatedCount} mesas bistrô`}>
-        {bistroTables.positions.map(([cx, cy], index) => (<g key={`bistro-table-${index}`}>
-            <circle cx={px(cx)} cy={py(cy)} r={(c.bistroTableDiameter / 2) * s} fill={bistroTableColor} stroke="#dce6ff" strokeWidth="1"/>
-            <text x={px(cx)} y={py(cy)} textAnchor="middle" dominantBaseline="middle" fill="#111827" fontSize="9">
-              B{index + 1}
-            </text>
-          </g>))}
-      </g>)}
-   {c.stools && (<g aria-label={`${stools.generatedCount} banquetas`}>
-    {stools.positions.map(([cx, cy], index) => (<g key={`stool-${index}`}>
-        <circle cx={px(cx)} cy={py(cy)} r={(c.stoolSeatDiameter / 2) * s} fill={stoolColor} stroke="#dce6ff" strokeWidth="1"/>
-
-        <text x={px(cx)} y={py(cy)} textAnchor="middle" dominantBaseline="middle" fill="#111827" fontSize="8">
-          BN{index + 1}
-        </text>
-      </g>))}
-  </g>)}
-    {tableLayouts.tableChairs.generatedCount > 0 && (<g aria-label={`${tableLayouts.tableChairs.generatedCount} cadeiras das mesas`}>
-        {tableLayouts.tableChairs.positions.map(([cx, cy], index) => (<g key={`table-chair-${index}`} transform={`translate(${px(cx)} ${py(cy)}) rotate(${-tableLayouts.tableChairs.rotations[index] * 180 / Math.PI})`}>
-            <rect x={-c.tableChairWidth * s / 2} y={-c.tableChairDepth * s / 2} width={c.tableChairWidth * s} height={c.tableChairDepth * s} fill={c.color} stroke="#dce6ff" strokeWidth="0.6"/>
-            <path d={`M ${-c.tableChairWidth * s / 2} ${c.tableChairDepth * s / 2} H ${c.tableChairWidth * s / 2}`} stroke="#ffffff" strokeWidth="2"/>
-          </g>))}
-      </g>)}
-    {c.pedestals && (<g aria-label={`${pedestals.generatedCount} pedestais expositores`}>
-        {pedestals.positions.map(([cx, cy], index) => (<g key={`pedestal-${index}`}>
-            <rect x={px(cx - c.pedestalWidth / 2)} y={py(cy + c.pedestalDepth / 2)} width={c.pedestalWidth * s} height={c.pedestalDepth * s} fill={pedestalColor} stroke="#dce6ff" strokeWidth="1"/>
-            <text x={px(cx)} y={py(cy)} textAnchor="middle" dominantBaseline="middle" fill="#111827" fontSize="9">P{index + 1}</text>
-          </g>))}
-      </g>)}
-    {c.armchairs && (<g aria-label={`${lounge.armchairs.generatedCount} poltronas`}>
-        {lounge.armchairs.positions.map(([cx, cy], index) => (<g key={`armchair-${index}`} transform={`rotate(${-(lounge.armchairs.rotations?.[index] ?? 0) * 180 / Math.PI} ${px(cx)} ${py(cy)})`}>
-            <rect x={px(cx - c.armchairWidth / 2)} y={py(cy + c.armchairDepth / 2)} width={c.armchairWidth * s} height={c.armchairDepth * s} rx="2" fill={loungeColor(c.armchairMat)} stroke="#dce6ff" strokeWidth="1"/>
-            <path d={`M ${px(cx - c.armchairWidth / 2 + .1)} ${py(cy + c.armchairDepth / 2)} V ${py(cy - c.armchairDepth / 2 + .12)} H ${px(cx + c.armchairWidth / 2 - .1)} V ${py(cy + c.armchairDepth / 2)}`} fill="none" stroke="#687695" strokeWidth="1"/>
-            <text x={px(cx)} y={py(cy)} textAnchor="middle" dominantBaseline="middle" fill="#111827" fontSize="9">PL{index + 1}</text>
-          </g>))}
-      </g>)}
-    {c.puffs && (<g aria-label={`${lounge.puffs.generatedCount} puffs`}>
-        {lounge.puffs.positions.map(([cx, cy], index) => (<g key={`puff-${index}`} transform={`rotate(${-(lounge.puffs.rotations?.[index] ?? 0) * 180 / Math.PI} ${px(cx)} ${py(cy)})`}>
-            <rect x={px(cx - c.puffWidth / 2)} y={py(cy + c.puffDepth / 2)} width={c.puffWidth * s} height={c.puffDepth * s} rx="3" fill={loungeColor(c.puffMat)} stroke="#dce6ff" strokeWidth="1"/>
-            <text x={px(cx)} y={py(cy)} textAnchor="middle" dominantBaseline="middle" fill="#111827" fontSize="9">PF{index + 1}</text>
-          </g>))}
-      </g>)}
-    {c.coffeeTables && (<g aria-label={`${coffeeTables.generatedCount} mesas de centro`}>
-        {coffeeTables.positions.map(([cx, cy], index) => (<g key={`coffee-table-${index}`}>
-            <rect x={px(cx - c.coffeeTableWidth / 2)} y={py(cy + c.coffeeTableDepth / 2)} width={c.coffeeTableWidth * s} height={c.coffeeTableDepth * s} fill={coffeeColor} stroke="#dce6ff" strokeWidth="1"/>
-            <text x={px(cx)} y={py(cy)} textAnchor="middle" dominantBaseline="middle" fill="#111827" fontSize="9">MC{index + 1}</text>
-          </g>))}
-      </g>)}
-    {c.showcases && (<g aria-label={`${showcases.generatedCount} vitrines expositoras`}>
-        {showcases.positions.map(([cx, cy], index) => (<g key={`showcase-${index}`}>
-            <rect x={px(cx - c.showcaseWidth / 2)} y={py(cy + c.showcaseDepth / 2)} width={c.showcaseWidth * s} height={c.showcaseDepth * s} fill={showcaseColor} fillOpacity="0.35" stroke="#81bfce" strokeWidth="2"/>
-            <text x={px(cx)} y={py(cy)} textAnchor="middle" dominantBaseline="middle" fill="#dce6ff" fontSize="9">V{index + 1}</text>
-          </g>))}
-      </g>)}
-    {extraObjectDefinitions.filter(def => def.id !== 'roundRugs' && c[def.id]).map(def => {
-            const spec = extraObjectSpec(c, def.id), color = extraColor(c[def.materialKey]);
-            const tags = { shelving: 'E', backdrops: 'BD', touchScreens: 'TT', cabinets: 'AR', openCubes: 'CV', roundRugs: 'TC' };
-            return <g key={def.id} aria-label={`${extraObjects[def.id].generatedCount} ${def.label}`}>
-        {extraObjects[def.id].positions.map(([cx, cy], i) => (<g key={i}>
-          <rect x={px(cx - spec.width / 2)} y={py(cy + spec.depth / 2)} width={spec.width * s} height={spec.depth * s} fill={color} fillOpacity={def.id === 'openCubes' ? .25 : 1} stroke="#dce6ff" strokeWidth="1"/>
-          {def.id === 'openCubes' && <rect x={px(cx - spec.width / 2 + c.openCubeWallThickness)} y={py(cy + spec.depth / 2)} width={(spec.width - 2 * c.openCubeWallThickness) * s} height={spec.depth * s} fill="none" stroke="#687695" strokeDasharray="2 2"/>}
-          <text x={px(cx)} y={py(cy)} textAnchor="middle" dominantBaseline="middle" fill="#111827" fontSize="9">{tags[def.id]}{i + 1}</text>
-        </g>))}
-      </g>;
-        })}
+    {drawUnits(false)}
     {c.counter && g.counterXs.map((cx, i) => <g key={i}><rect x={px(cx - (g.counterW + .08) / 2)} y={py(g.counterY + (c.counterDepth + .08) / 2)} width={(g.counterW + .08) * s} height={(c.counterDepth + .08) * s} rx="3" fill={c.counterMat === 'brand' ? c.color : materials.find(m => m.value === c.counterMat)?.color}/><text x={px(cx)} y={py(g.counterY) + 5} textAnchor="middle" fill="white" fontSize="12">Balcão</text></g>)}
     {c.totem && g.totemXs.map((tx, i) => <g key={i}><rect x={px(tx - (c.totemWidth + .15) / 2)} y={py(g.totemY + (c.totemDepth + .2) / 2)} width={(c.totemWidth + .15) * s} height={(c.totemDepth + .2) * s} rx="2" fill={c.totemMat === 'brand' ? c.color : materials.find(m => m.value === c.totemMat)?.color}/><text x={px(tx)} y={py(g.totemY) + 27} textAnchor="middle" fill="#cdd7ec" fontSize="12">Totem</text></g>)}
     {c.spots && [-1, 1].map(sign => <g key={sign}><path d={`M ${px(sign * (c.width / 2 - .35))} ${py(c.depth / 2 - .25)} V ${py(-c.depth / 2 + .25)}`} stroke="#b49a67" strokeWidth="2"/>{g.spotYs.map((sy, i) => <circle key={i} cx={px(sign * (c.width / 2 - .35))} cy={py(sy)} r="4" fill="#f0ca85"/>)}</g>)}
@@ -382,6 +299,9 @@ export default function Home() {
     const [error, setError] = useState('');
     const [copied, setCopied] = useState(false);
     const [notice, setNotice] = useState('');
+    const [selectedId, setSelectedId] = useState<string | null>(null);
+    const [transformDraft, setTransformDraft] = useState({ x: '', y: '', rotation: '' });
+    const [assemblyError, setAssemblyError] = useState('');
     const current = useRef(c);
     current.current = c;
     const imageRequest = useRef(0);
@@ -405,9 +325,43 @@ export default function Home() {
     const configurationKey = JSON.stringify(c);
     const needsPartialConfirmation = Boolean(seating && seating.missingCount > 0);
     const partialConfirmed = confirmedPartial === configurationKey;
+    const assemblyUnits = valid ? assemblyGeometry(c) : [];
+    const selectedUnit = assemblyUnits.find(unit => unit.id === selectedId);
+    useEffect(() => {
+        if (!selectedUnit) { setSelectedId(null); setAssemblyError(''); return; }
+        const t = unitTransform(c, selectedUnit);
+        setTransformDraft({ x: String(Number(t.x.toFixed(6))), y: String(Number(t.y.toFixed(6))), rotation: String(t.rotation) });
+        setAssemblyError('');
+    }, [selectedId, c]);
+    function commitTransforms(transforms: Config['objectTransforms']) {
+        try {
+            const next = { ...c, objectTransforms: transforms };
+            validate(next);
+            setC(next);
+            setAssemblyError(''); setError('');
+            setNotice('Montagem atualizada. Gere novamente o script para exportar os ajustes.');
+        } catch (e) { setAssemblyError(e instanceof Error ? e.message : 'Não foi possível aplicar o ajuste.'); }
+    }
+    function applySelectedTransform() {
+        if (!selectedUnit) return;
+        if (Object.values(transformDraft).some(value => !value.trim())) {
+            setAssemblyError('Preencha X, Y e rotação.'); return;
+        }
+        const transform: ObjectTransform = { x: Number(transformDraft.x), y: Number(transformDraft.y), rotation: Number(transformDraft.rotation) };
+        commitTransforms({ ...c.objectTransforms, [selectedUnit.id]: transform });
+    }
+    function resetSelectedTransform() {
+        if (!selectedUnit) return;
+        const next = { ...c.objectTransforms }; delete next[selectedUnit.id]; commitTransforms(next);
+    }
     const display = c;
     const dirty = output && JSON.stringify(output.config) !== JSON.stringify(c);
-    const update = <K extends keyof Config>(key: K, value: Config[K]) => { setC(prev => ({ ...prev, [key]: value })); setError(''); setNotice(''); };
+    const update = <K extends keyof Config>(key: K, value: Config[K]) => {
+        const preservesLayout = typeof key === 'string' && (['name', 'target', 'color', 'screenImage', 'screenName'].includes(key) || key.endsWith('Mat'));
+        setC(prev => ({ ...prev, [key]: value, objectTransforms: preservesLayout ? prev.objectTransforms : {} }));
+        setError(''); setAssemblyError('');
+        setNotice(!preservesLayout && Object.keys(c.objectTransforms).length ? 'As medidas, quantidades ou distribuição mudaram. Os ajustes individuais foram restaurados para a nova distribuição automática.' : '');
+    };
     const build = () => {
         try {
             validate(c);
@@ -473,9 +427,10 @@ export default function Home() {
             }
             imageRequest.current += 1;
             const previous = current.current;
-            projectDrafts.current[previous.projectType] = { ...previous };
+            projectDrafts.current[previous.projectType as ProjectType] = { ...previous };
             projectDrafts.current[loaded.projectType as ProjectType] = { ...loaded };
             current.current = loaded;
+            setSelectedId(null); setAssemblyError('');
             confirmedPartialRef.current = null;
             setConfirmedPartial(null);
             setC(loaded);
@@ -520,7 +475,7 @@ export default function Home() {
             image.onload = () => {
                 if (!isCurrent())
                     return;
-                setC(prev => ({ ...prev, screenImage: data, screenName: file.name }));
+                setC((prev: any) => ({ ...prev, screenImage: data, screenName: file.name }));
                 setError('');
                 setNotice('Textura da TV adicionada. Gere o script para incluir a imagem.');
             };
@@ -574,7 +529,8 @@ export default function Home() {
         if (type === c.projectType)
             return;
         imageRequest.current += 1;
-        const currentProjectType = c.projectType;
+        setSelectedId(null); setAssemblyError('');
+        const currentProjectType = c.projectType as ProjectType;
         // Guarda o preenchimento do projeto atual.
         projectDrafts.current[currentProjectType] = { ...c };
         // Recupera o preenchimento do próximo projeto.
@@ -740,7 +696,7 @@ export default function Home() {
                 return c.chairGenerationMode !== 'fill' || !isQuantityField;
             }).map(field => <label className="field" key={field.key}>{field.key === 'coffeeTableCount' && c.loungeMode === 'set' ? 'Quantidade de conjuntos' : field.label}<div className="unit-input"><input type="number" inputMode={field.unit === 'un' ? 'numeric' : 'decimal'} min={field.min ?? .1} max={field.max ?? 30} step={field.step ?? (field.unit === 'un' ? 1 : field.key === "showcaseGlassThickness" ? .001 : field.key === "roundTableTopThickness" || field.key === "rectTableTopThickness" || field.key === "bistroTableTopThickness" || field.key === "coffeeTableTopThickness" || field.key === "stoolSeatThickness" || field.key === "stoolBistroGap" ? 0.01 : 0.05)} value={Number.isNaN(c[field.key]) ? '' : c[field.key] as number} onChange={e => update(field.key, e.target.value === '' ? NaN : Number(e.target.value))}/><span>{field.unit ?? 'm'}</span></div></label>)}</div></div>)}
       {!availableElements.some(f => c[f.key]) && <p className="tab-help">Selecione um elemento na aba Projeto para ajustar suas medidas.</p>}
-      {c.led && <div className="texture-section"><h3>Textura da TV / LED</h3><p>Escolha a arte que vai aparecer na tela. A imagem inteira é ajustada às medidas do LED.</p><label className="upload-label" htmlFor="tv-image">Escolher imagem JPG ou PNG<input id="tv-image" type="file" accept="image/png,image/jpeg" onChange={handleImage}/></label><small>Até 2 MB · incorporada ao script · imagem estática</small>{c.screenImage ? <div className="texture-preview"><img src={c.screenImage} alt="Arte selecionada para a tela de TV"/><span>{c.screenName}</span><button onClick={() => { imageRequest.current += 1; setC(prev => ({ ...prev, screenImage: '', screenName: '' })); setNotice('Imagem removida.'); }}>Remover imagem</button></div> : <p className="tab-help">Sem imagem, a tela usa a cor de destaque.</p>}</div>}
+      {c.led && <div className="texture-section"><h3>Textura da TV / LED</h3><p>Escolha a arte que vai aparecer na tela. A imagem inteira é ajustada às medidas do LED.</p><label className="upload-label" htmlFor="tv-image">Escolher imagem JPG ou PNG<input id="tv-image" type="file" accept="image/png,image/jpeg" onChange={handleImage}/></label><small>Até 2 MB · incorporada ao script · imagem estática</small>{c.screenImage ? <div className="texture-preview"><img src={c.screenImage} alt="Arte selecionada para a tela de TV"/><span>{c.screenName}</span><button onClick={() => { imageRequest.current += 1; setC((prev: any) => ({ ...prev, screenImage: '', screenName: '' })); setNotice('Imagem removida.'); }}>Remover imagem</button></div> : <p className="tab-help">Sem imagem, a tela usa a cor de destaque.</p>}</div>}
       </TabsContent><TabsContent value="materials"><p className="tab-help">Escolha o acabamento de cada parte. Madeira e concreto usam textura procedural; metal e vidro recebem propriedades de superfície.</p><div className="material-fields">{materialFields.filter((field) => {
             if (field.key === 'wallMat')
                 return c.back || c.left || c.right;
@@ -790,8 +746,34 @@ export default function Home() {
             (needsPartialConfirmation &&
                 !partialConfirmed)}><Sparkles size={18}/>Gerar {c.target === 'max' ? 'MaxScript' : 'script Blender'}</button><p className="generation-note">Piso, câmera frontal e iluminação incluídos.</p>{error && <p role="alert" className="error">{error}</p>}
     </section>
-    <section className="result-panel" aria-label="Visualização e script"><Tabs value={tab} onValueChange={setTab}><div className="result-header"><TabsList className="view-tabs"><TabsTrigger value="plan"><Square size={16}/>Planta</TabsTrigger><TabsTrigger value="code"><Code2 size={17}/>{c.target === 'max' ? 'MaxScript' : 'Script Python'}</TabsTrigger></TabsList><span className="plan-scale">{valid ? `${num(c.width)} × ${num(c.depth)} m` : 'Confira as medidas'}</span></div>
-      <TabsContent value="plan"><div className="plan-title"><span>VISTA SUPERIOR</span><small>Planta esquemática · sem perspectiva</small></div><div className="drawing">{valid ? <Plan c={display}/> : <div className="empty"><Ruler size={32}/><p>{validationMessage}</p></div>}</div><div className="legend">{(c.back || c.left || c.right) && <span><i className="legend-wall"/>Parede</span>}<span><i style={{ background: c.color }}/>Elementos</span><span><i className="legend-light"/>Spots</span></div><div className="model-info"><div><span>ÁREA TOTAL</span><strong>{valid ? num(c.width * c.depth) : '—'} <small>m²</small></strong></div><div><span>ALTURA DE MONTAGEM</span><strong>{valid ? num(c.height) : '—'} <small>m</small></strong></div><div><span>{c.target === 'max' ? 'EXPORTAÇÃO' : 'RENDER'}</span><strong>{c.target === 'max' ? '3ds Max' : 'Cycles'} <small>{c.target === 'max' ? '.ms' : '64 samples'}</small></strong></div></div></TabsContent>
+    <section className="result-panel" aria-label="Visualização e script">
+      <div className="config-panel" style={{ marginBottom: 16, padding: 16 }}>
+        <h3 style={{ marginTop: 0 }}>Ajustar montagem</h3>
+        <p className="tab-help">Clique em um móvel na planta ou escolha abaixo. Mesas e seus assentos vinculados se movem juntos. Palco, estrutura e plateia continuam automáticos.</p>
+        <label className="field">Objeto ou conjunto
+          <select aria-label="Selecionar objeto da montagem" value={selectedId ?? ''} onChange={event => setSelectedId(event.target.value || null)} style={{ width: '100%', padding: 10, marginTop: 8, background: '#0e1524', color: '#edf1fc', border: '1px solid #34405a', borderRadius: 6 }}>
+            <option value="">Selecione um objeto</option>
+            {assemblyUnits.map(unit => <option key={unit.id} value={unit.id}>{unit.label}{Object.hasOwn(c.objectTransforms, unit.id) ? ' · ajustado' : ''}</option>)}
+          </select>
+        </label>
+        {selectedUnit && <>
+          <p className="tab-help">X: esquerda (−) / direita (+). Y: entrada (−) / fundo (+). Posição medida no centro; rotação adicional em relação à distribuição inicial.</p>
+          <div className="dimensions">
+            {(['x', 'y', 'rotation'] as const).map(key => <label className="field" key={key}>{key === 'rotation' ? 'Rotação (°)' : `${key.toUpperCase()} (m)`}
+              <input aria-label={key === 'rotation' ? 'Rotação do objeto' : `Posição ${key.toUpperCase()} do objeto`} type="number" min={key === 'rotation' ? -360 : -30} max={key === 'rotation' ? 360 : 30} step={key === 'rotation' ? 5 : .1} value={transformDraft[key]} onChange={event => setTransformDraft(prev => ({ ...prev, [key]: event.target.value }))} />
+            </label>)}
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+            <button type="button" className="generate-button" onClick={applySelectedTransform}>Aplicar ajuste</button>
+            <button type="button" className="generate-button" onClick={resetSelectedTransform}>Restaurar objeto</button>
+          </div>
+        </>}
+        {Object.keys(c.objectTransforms).length > 0 && <button type="button" className="generate-button" onClick={() => commitTransforms({})}>Restaurar toda a distribuição</button>}
+        <p className="tab-help">Alterar medidas, quantidades ou distribuição restaura os ajustes individuais. Materiais e cores preservam as posições.</p>
+        {assemblyError && <p role="alert" className="error">{assemblyError}</p>}
+      </div>
+      <Tabs value={tab} onValueChange={setTab}><div className="result-header"><TabsList className="view-tabs"><TabsTrigger value="plan"><Square size={16}/>Planta</TabsTrigger><TabsTrigger value="code"><Code2 size={17}/>{c.target === 'max' ? 'MaxScript' : 'Script Python'}</TabsTrigger></TabsList><span className="plan-scale">{valid ? `${num(c.width)} × ${num(c.depth)} m` : 'Confira as medidas'}</span></div>
+      <TabsContent value="plan"><div className="plan-title"><span>VISTA SUPERIOR</span><small>Planta esquemática · sem perspectiva</small></div><div className="drawing">{valid ? <Plan c={display} selectedId={selectedId} onSelect={setSelectedId}/> : <div className="empty"><Ruler size={32}/><p>{validationMessage}</p></div>}</div><div className="legend">{(c.back || c.left || c.right) && <span><i className="legend-wall"/>Parede</span>}<span><i style={{ background: c.color }}/>Elementos</span><span><i className="legend-light"/>Spots</span></div><div className="model-info"><div><span>ÁREA TOTAL</span><strong>{valid ? num(c.width * c.depth) : '—'} <small>m²</small></strong></div><div><span>ALTURA DE MONTAGEM</span><strong>{valid ? num(c.height) : '—'} <small>m</small></strong></div><div><span>{c.target === 'max' ? 'EXPORTAÇÃO' : 'RENDER'}</span><strong>{c.target === 'max' ? '3ds Max' : 'Cycles'} <small>{c.target === 'max' ? '.ms' : '64 samples'}</small></strong></div></div></TabsContent>
       <TabsContent value="code"><div className="code-toolbar"><span>{output ? filename(output.config) : 'Seu script aparecerá aqui'}</span><div><button onClick={copy} disabled={!output || !!dirty} aria-label="Copiar script">{copied ? <Check size={16}/> : <Copy size={16}/>} {copied ? 'Copiado' : 'Copiar'}</button><button onClick={download} disabled={!output || !!dirty}><Download size={16}/>Baixar {output?.config.target === 'max' ? '.ms' : '.py'}</button></div></div>{dirty && <div className="stale" role="status">Você alterou o projeto. Clique em “Gerar script” para atualizar o arquivo.</div>}{output ? <pre className="code"><code>{output.code.replace(/data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+/g, '[imagem incorporada — baixe ou copie o script completo]').replace(/local IMAGEM_TV = "[A-Za-z0-9+/=]+"/g, 'local IMAGEM_TV = "[imagem incorporada — baixe ou copie o script completo]"')}</code></pre> : <div className="empty"><Code2 size={38}/><h3>Seu projeto, em código.</h3><p>Escolha os elementos ao lado e clique em<br />“Gerar script”.</p></div>}</TabsContent>
     </Tabs><p className="notice" role="status" aria-live="polite">{notice}</p>
       <div className="blender-guide"><div className="guide-icon"><Box size={22}/></div><div><h3>Como abrir no {c.target === 'max' ? '3ds Max' : 'Blender'}</h3>{c.target === 'max' ? <ol><li><b>1</b>Baixe o arquivo <strong>.ms</strong>.</li><li><b>2</b>Abra o 3ds Max e entre em <strong>Scripting → Run Script</strong>.</li><li><b>3</b>Escolha o arquivo. Use <strong>CB_Camera_Frontal</strong> para visualizar.</li></ol> : <ol><li><b>1</b>Comece com uma cena vazia e entre em <strong>Scripting</strong>.</li><li><b>2</b>Em <strong>Open</strong>, abra o arquivo .py baixado.</li><li><b>3</b>Clique em <strong>Run Script</strong>. Use <strong>F12</strong> para renderizar.</li></ol>}</div></div>

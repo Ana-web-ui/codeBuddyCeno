@@ -1,3 +1,6 @@
+import { buildAssembly, validateAssembly, unitTransform, checkTransforms } from './assembly.js';
+import type { AssemblyConfig, AssemblyScene, AssemblyUnit } from './assembly.js';
+import { wrapBlenderUnit, wrapMaxUnit } from './assembly-exporters.js';
 import { blenderStandardObjects, maxStandardObjects } from './standard-object-exporters';
 import { blenderShowcases, maxShowcases } from './showcase-exporters';
 import { blenderLounge, maxLounge } from './lounge-exporters';
@@ -23,7 +26,7 @@ export const materials: {
     { value: 'glass', label: 'Vidro', color: '#81bfce' }, { value: 'concrete', label: 'Concreto', color: '#747b86' },
     { value: 'plastic', label: 'Plástico', color: '#c4d1e1' }
 ];
-export type Config = ChairConfig & RoundTableConfig & RectTableConfig & BistroTableConfig & StoolConfig & TableChairConfig & PedestalConfig & LoungeConfig & CoffeeTableConfig & LoungeSetConfig & ShowcaseConfig & ExtraObjectsConfig & {
+export type Config = AssemblyConfig & ChairConfig & RoundTableConfig & RectTableConfig & BistroTableConfig & StoolConfig & TableChairConfig & PedestalConfig & LoungeConfig & CoffeeTableConfig & LoungeSetConfig & ShowcaseConfig & ExtraObjectsConfig & {
     projectType: ProjectType;
     name: string;
     width: number;
@@ -71,15 +74,11 @@ function blenderCoffeeTables(c: Config, layout: {
 }): string {
     return layout.positions.map(([x, y], index) => `caixa('Mesa_Centro_${index + 1}', (${c.coffeeTableWidth}, ${c.coffeeTableDepth}, ${c.coffeeTableHeight}), (${x}, ${y}, ${0.1 + c.coffeeTableHeight / 2}), acabamento('${c.coffeeTableMat}'))`).join('\n');
 }
-function maxCoffeeTables(c: Config, layout: {
-    positions: [
-        number,
-        number
-    ][];
-}): string {
-    return layout.positions.map(([x, y], index) => `box name:\"Mesa_Centro_${index + 1}\" width:${c.coffeeTableWidth} length:${c.coffeeTableDepth} height:${c.coffeeTableHeight} pos:[${x},${y},${0.1 + c.coffeeTableHeight / 2}]`).join('\n');
+function maxCoffeeTables(c: Config, layout: { positions: [number, number][] }): string {
+    return layout.positions.map(([x, y], index) => `cbCaixa "Mesa_Centro_${index + 1}" ${c.coffeeTableWidth} ${c.coffeeTableDepth} ${c.coffeeTableHeight} ${x} ${y} ${0.1 + c.coffeeTableHeight / 2} (cbMaterial "${c.coffeeTableMat}")`).join('\n');
 }
 export const defaults: Config = {
+    objectTransforms: {},
     ...chairDefaults,
     ...roundTableDefaults,
     ...rectTableDefaults,
@@ -453,6 +452,7 @@ export function extraObjectGeometry(c: Config) {
     });
 }
 export function validate(c: Config) {
+    checkTransforms(c.objectTransforms);
     if (c.loungeMode !== 'free' && c.loungeMode !== 'set')
         throw new Error('Selecione um modo válido para o lounge.');
     if (!c.name.trim() || c.name.length > 80)
@@ -597,7 +597,62 @@ export function validate(c: Config) {
     coffeeTableGeometry(c);
     showcaseGeometry(c);
     extraObjectGeometry(c);
+    if (Object.keys(c.objectTransforms).length) validateAssembly(c, assemblyGeometry(c), tableReservedAreas(c));
     return c;
+}
+/** Posições automáticas são a base dos ajustes; não chama validate para evitar recursão. */
+export function assemblyScene(c: Config): AssemblyScene {
+    const tables = tableGeometry(c), lounge = loungeGeometry(c);
+    return { roundTables: tables.roundTables, rectTables: tables.rectTables, bistroTables: tables.bistroTables,
+        tableChairs: tables.tableChairs, stools: stoolGeometry(c), pedestals: pedestalGeometry(c),
+        armchairs: lounge.armchairs, puffs: lounge.puffs, coffeeTables: coffeeTableGeometry(c),
+        showcases: showcaseGeometry(c), ...extraObjectGeometry(c) };
+}
+export function assemblyGeometry(c: Config): AssemblyUnit[] {
+    return buildAssembly(c, assemblyScene(c));
+}
+function assemblyScript(c: Config): string {
+    const scene = assemblyScene(c), units = buildAssembly(c, scene), blender = c.target === 'blender';
+    const extraBase = extraObjectGeometry(c);
+    const subset = <T extends { positions: [number, number][]; rotations?: number[] }>(layout: T, indices: number[]): T => ({
+        ...layout, positions: indices.map(i => layout.positions[i]), rotations: indices.map(i => layout.rotations?.[i] ?? 0),
+        generatedCount: indices.length, rows: 0,
+    });
+    const dining = { ...c, chairs: true, chairWidth: c.tableChairWidth, chairDepth: c.tableChairDepth,
+        chairHeight: c.tableChairHeight, chairSeatHeight: c.tableChairSeatHeight };
+    return units.map(unit => {
+        const roles = [...new Set(unit.members.map(m => m.role))];
+        const code = roles.map(role => {
+            const indices = unit.members.filter(m => m.role === role).map(m => m.index);
+            const layout = subset(scene[role], indices);
+            // Os exportadores existentes precisam apenas das posições, rotação e contagem.
+            const positions = { ...layout, generatedCount: indices.length, rows: 0 };
+            switch (role) {
+                case 'roundTables': return blender ? blenderRoundTables(c, positions) : maxRoundTables(c, positions);
+                case 'rectTables': return blender ? blenderRectTables(c, positions) : maxRectTables(c, positions);
+                case 'bistroTables': return blender ? blenderBistroTables(c, positions) : maxBistroTables(c, positions);
+                case 'tableChairs': return blender ? blenderChairs(dining, positions, { group: 'tables' }) : maxChairs(dining, positions, { group: 'tables' });
+                case 'stools': return blender ? blenderStools(c, positions) : maxStools(c, positions);
+                case 'pedestals': return blender ? blenderPedestals(c, positions) : maxPedestals(c, positions);
+                case 'coffeeTables': return blender ? blenderCoffeeTables(c, positions) : maxCoffeeTables(c, positions);
+                case 'showcases': return blender ? blenderShowcases(c, positions) : maxShowcases(c, positions);
+                case 'armchairs': case 'puffs': {
+                    const empty = { positions: [] as [number, number][], rotations: [] as number[], generatedCount: 0 };
+                    const lounge = { armchairs: empty, puffs: empty, [role]: positions };
+                    return blender ? blenderLounge(c, lounge) : maxLounge(c, lounge);
+                }
+                default: {
+                    const extras = { ...extraBase };
+                    for (const id of Object.keys(extras) as (keyof typeof extras)[]) {
+                        extras[id] = { ...extras[id], positions: id === role ? positions.positions : [], generatedCount: id === role ? indices.length : 0 };
+                    }
+                    return blender ? blenderStandardObjects(c, extras) : maxStandardObjects(c, extras);
+                }
+            }
+        }).join('\n');
+        const t = unitTransform(c, unit);
+        return blender ? wrapBlenderUnit(unit, t, code) : wrapMaxUnit(unit, t, code);
+    }).join('\n');
 }
 export function filename(c: Config) { return (c.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'stand') + (c.target === 'max' ? '.ms' : '.py'); }
 export function generate(c: Config, options: {
@@ -623,6 +678,13 @@ export function generate(c: Config, options: {
         throw new Error(`Você solicitou ${chairLayout.requestedCount} cadeiras, ` +
             `mas cabem ${chairLayout.generatedCount}. ` +
             "Confirme a geração parcial antes de continuar.");
+    }
+    if (Object.keys(c.objectTransforms).length) {
+        const units = assemblyScript(c);
+        if (c.target === 'blender') return generateBlender(c) + blenderChairs(c, chairLayout, { group: 'audience' }) + units;
+        const script = generateMax(c), marker = 'select criados';
+        if (!script.includes(marker)) throw new Error('Não encontrei o ponto de inserção dos objetos no MaxScript.');
+        return script.replace(marker, maxChairs(c, chairLayout, { group: 'audience' }) + units + '\n' + marker);
     }
     if (c.target === "blender") {
         return (generateBlender(c) +
