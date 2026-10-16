@@ -5,11 +5,13 @@ import { Box, Layers, Download, Copy, Check, Code2, Ruler, Monitor, LampDesk, Pa
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
-import { materials, generate, geometry, filename, validate, tableGeometry, stoolGeometry, pedestalGeometry, } from '@/lib/generator';
+import { materials, generate, geometry, filename, validate, tableGeometry, stoolGeometry, pedestalGeometry, loungeGeometry, } from '@/lib/generator';
 import type { MaterialKind, Target, Config, ProjectType } from '@/lib/generator';
 import { projectTypes, createProjectConfig } from '@/lib/project-types';
 import { libraryCatalog, layoutChairs } from '@/lib/library';
 const elements = [
+    { key: 'armchairs', title: 'Poltronas', text: 'Assento, encosto, braços e base', icon: Armchair },
+    { key: 'puffs', title: 'Puffs', text: 'Assentos baixos com formato quadrado', icon: Square },
     { key: 'pedestals', title: 'Pedestais expositores', text: 'Bases para exposição de produtos', icon: Box },
     { key: 'bistroTables', title: 'Mesas bistrô', text: 'Mesas altas com tampo circular e base central', icon: Circle },
     { key: 'led', title: 'Painel de LED', text: 'Tela central com moldura', icon: Monitor },
@@ -32,7 +34,7 @@ type ParameterField = {
     min?: number;
     max?: number;
 };
-const parameterFields: Record<'led' | 'counter' | 'stage' | 'totem' | 'spots' | 'chairs' | 'roundTables' | 'rectTables' | 'bistroTables' | 'stools' | 'pedestals', ParameterField[]> = {
+const parameterFields: Record<'led' | 'counter' | 'stage' | 'totem' | 'spots' | 'chairs' | 'roundTables' | 'rectTables' | 'bistroTables' | 'stools' | 'pedestals' | 'armchairs' | 'puffs', ParameterField[]> = {
     led: [{ key: 'ledWidth', label: 'Largura' }, { key: 'ledHeight', label: 'Altura' }, { key: 'ledBottom', label: 'Base sobre o piso', max: 8 }],
     counter: [{ key: 'counterWidth', label: 'Largura' }, { key: 'counterDepth', label: 'Profundidade' }, { key: 'counterHeight', label: 'Altura' }, { key: 'counterCount', label: 'Quantidade', unit: 'un', min: 1, max: 6 }],
     stage: [{ key: 'stageWidth', label: 'Largura' }, { key: 'stageDepth', label: 'Profundidade' }, { key: 'stageHeight', label: 'Altura', max: 1 }],
@@ -103,11 +105,26 @@ const parameterFields: Record<'led' | 'counter' | 'stage' | 'totem' | 'spots' | 
         { key: 'pedestalHeight', label: 'Altura', min: .2, max: 3 },
         { key: 'pedestalGap', label: 'Vão livre entre pedestais', min: 0, max: 3 },
     ],
+    armchairs: [
+        { key: 'armchairCount', label: 'Quantidade', unit: 'un', min: 1, max: 100 },
+        { key: 'armchairWidth', label: 'Largura total', min: .6, max: 1.5 },
+        { key: 'armchairDepth', label: 'Profundidade total', min: .6, max: 1.5 },
+        { key: 'armchairHeight', label: 'Altura total', min: .7, max: 1.5 },
+        { key: 'armchairSeatHeight', label: 'Altura até o topo do assento', min: .3, max: .65 },
+        { key: 'armchairGap', label: 'Vão livre entre poltronas', min: 0, max: 3 },
+    ],
+    puffs: [
+        { key: 'puffCount', label: 'Quantidade', unit: 'un', min: 1, max: 100 },
+        { key: 'puffWidth', label: 'Largura', min: .3, max: 2 },
+        { key: 'puffDepth', label: 'Profundidade', min: .3, max: 2 },
+        { key: 'puffHeight', label: 'Altura', min: .2, max: .8 },
+        { key: 'puffGap', label: 'Vão livre entre puffs', min: 0, max: 3 },
+    ],
 };
 const materialFields: {
-    key: 'floorMat' | 'wallMat' | 'counterMat' | 'stageMat' | 'totemMat' | 'roundTableMat' | 'rectTableMat' | 'bistroTableMat' | 'stoolMat' | 'pedestalMat';
+    key: 'floorMat' | 'wallMat' | 'counterMat' | 'stageMat' | 'totemMat' | 'roundTableMat' | 'rectTableMat' | 'bistroTableMat' | 'stoolMat' | 'pedestalMat' | 'armchairMat' | 'puffMat';
     label: string;
-    enabled?: 'counter' | 'stage' | 'totem' | 'roundTables' | 'rectTables' | 'bistroTables' | 'stools' | 'pedestals';
+    enabled?: 'counter' | 'stage' | 'totem' | 'roundTables' | 'rectTables' | 'bistroTables' | 'stools' | 'pedestals' | 'armchairs' | 'puffs';
 }[] = [{ key: 'floorMat', label: 'Piso' },
     { key: 'wallMat', label: 'Paredes' },
     { key: 'counterMat', label: 'Corpo do balcão', enabled: 'counter' },
@@ -117,7 +134,9 @@ const materialFields: {
     { key: 'rectTableMat', label: 'Tampo das mesas retangulares', enabled: 'rectTables' },
     { key: 'bistroTableMat', label: 'Tampo das mesas bistrô', enabled: 'bistroTables' },
     { key: 'stoolMat', label: 'Assento das banquetas', enabled: 'stools' },
-    { key: 'pedestalMat', label: 'Pedestais expositores', enabled: 'pedestals' }];
+    { key: 'pedestalMat', label: 'Pedestais expositores', enabled: 'pedestals' },
+    { key: 'armchairMat', label: 'Poltronas — assento, encosto e braços', enabled: 'armchairs' },
+    { key: 'puffMat', label: 'Puffs', enabled: 'puffs' }];
 const num = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
 function Plan({ c }: {
     c: Config;
@@ -133,6 +152,8 @@ function Plan({ c }: {
     const bistroTables = tableLayouts.bistroTables;
     const stools = stoolGeometry(c);
     const pedestals = pedestalGeometry(c);
+    const lounge = loungeGeometry(c);
+    const loungeColor = (kind: MaterialKind) => kind === 'brand' ? c.color : materials.find(m => m.value === kind)?.color ?? '#c8cedb';
     const pedestalColor = c.pedestalMat === 'brand' ? c.color : materials.find(m => m.value === c.pedestalMat)?.color ?? '#c8cedb';
     const bistroTableColor = c.bistroTableMat === 'brand'
         ? c.color
@@ -206,6 +227,19 @@ function Plan({ c }: {
         {pedestals.positions.map(([cx, cy], index) => (<g key={`pedestal-${index}`}>
             <rect x={px(cx - c.pedestalWidth / 2)} y={py(cy + c.pedestalDepth / 2)} width={c.pedestalWidth * s} height={c.pedestalDepth * s} fill={pedestalColor} stroke="#dce6ff" strokeWidth="1"/>
             <text x={px(cx)} y={py(cy)} textAnchor="middle" dominantBaseline="middle" fill="#111827" fontSize="9">P{index + 1}</text>
+          </g>))}
+      </g>)}
+    {c.armchairs && (<g aria-label={`${lounge.armchairs.generatedCount} poltronas`}>
+        {lounge.armchairs.positions.map(([cx, cy], index) => (<g key={`armchair-${index}`}>
+            <rect x={px(cx - c.armchairWidth / 2)} y={py(cy + c.armchairDepth / 2)} width={c.armchairWidth * s} height={c.armchairDepth * s} rx="2" fill={loungeColor(c.armchairMat)} stroke="#dce6ff" strokeWidth="1"/>
+            <path d={`M ${px(cx - c.armchairWidth / 2 + .1)} ${py(cy + c.armchairDepth / 2)} V ${py(cy - c.armchairDepth / 2 + .12)} H ${px(cx + c.armchairWidth / 2 - .1)} V ${py(cy + c.armchairDepth / 2)}`} fill="none" stroke="#687695" strokeWidth="1"/>
+            <text x={px(cx)} y={py(cy)} textAnchor="middle" dominantBaseline="middle" fill="#111827" fontSize="9">PL{index + 1}</text>
+          </g>))}
+      </g>)}
+    {c.puffs && (<g aria-label={`${lounge.puffs.generatedCount} puffs`}>
+        {lounge.puffs.positions.map(([cx, cy], index) => (<g key={`puff-${index}`}>
+            <rect x={px(cx - c.puffWidth / 2)} y={py(cy + c.puffDepth / 2)} width={c.puffWidth * s} height={c.puffDepth * s} rx="3" fill={loungeColor(c.puffMat)} stroke="#dce6ff" strokeWidth="1"/>
+            <text x={px(cx)} y={py(cy)} textAnchor="middle" dominantBaseline="middle" fill="#111827" fontSize="9">PF{index + 1}</text>
           </g>))}
       </g>)}
     {c.counter && g.counterXs.map((cx, i) => <g key={i}><rect x={px(cx - (g.counterW + .08) / 2)} y={py(g.counterY + (c.counterDepth + .08) / 2)} width={(g.counterW + .08) * s} height={(c.counterDepth + .08) * s} rx="3" fill={c.counterMat === 'brand' ? c.color : materials.find(m => m.value === c.counterMat)?.color}/><text x={px(cx)} y={py(g.counterY) + 5} textAnchor="middle" fill="white" fontSize="12">Balcão</text></g>)}

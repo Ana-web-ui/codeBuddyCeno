@@ -1,7 +1,8 @@
+import { blenderLounge, maxLounge } from './lounge-exporters';
 import { blenderPedestals, maxPedestals } from './pedestal-exporters';
 import { generateMax } from './maxscript';
-import { chairDefaults, layoutChairs, roundTableDefaults, layoutRoundTables, rectTableDefaults, layoutRectTables, bistroTableDefaults, layoutBistroTables, stoolDefaults, layoutStools, validateStoolAssociation, layoutBistroStoolSets, tableChairDefaults, validateTableChairs, layoutTablesWithChairs, pedestalDefaults, layoutPedestals } from './library';
-import type { ChairConfig, ReservedArea, RoundTableConfig, RectTableConfig, BistroTableConfig, StoolConfig, TableChairConfig, TableChairLayout, PedestalConfig } from './library';
+import { chairDefaults, layoutChairs, roundTableDefaults, layoutRoundTables, rectTableDefaults, layoutRectTables, bistroTableDefaults, layoutBistroTables, stoolDefaults, layoutStools, validateStoolAssociation, layoutBistroStoolSets, tableChairDefaults, validateTableChairs, layoutTablesWithChairs, pedestalDefaults, layoutPedestals, loungeDefaults, validateLounge, layoutArmchairs, layoutPuffs } from './library';
+import type { ChairConfig, ReservedArea, RoundTableConfig, RectTableConfig, BistroTableConfig, StoolConfig, TableChairConfig, TableChairLayout, PedestalConfig, LoungeConfig } from './library';
 import { blenderChairs, maxChairs } from './chair-exporters';
 import { blenderRoundTables, maxRoundTables } from './round-table-exporters';
 import { blenderRectTables, maxRectTables, } from './react-table-exporters';
@@ -20,7 +21,7 @@ export const materials: {
     { value: 'glass', label: 'Vidro', color: '#81bfce' }, { value: 'concrete', label: 'Concreto', color: '#747b86' },
     { value: 'plastic', label: 'Plástico', color: '#c4d1e1' }
 ];
-export type Config = ChairConfig & RoundTableConfig & RectTableConfig & BistroTableConfig & StoolConfig & TableChairConfig & PedestalConfig & {
+export type Config = ChairConfig & RoundTableConfig & RectTableConfig & BistroTableConfig & StoolConfig & TableChairConfig & PedestalConfig & LoungeConfig & {
     projectType: ProjectType;
     name: string;
     width: number;
@@ -68,6 +69,7 @@ export const defaults: Config = {
     ...stoolDefaults,
     ...tableChairDefaults,
     ...pedestalDefaults,
+    ...loungeDefaults,
     name: 'Meu primeiro stand', width: 10, depth: 5, height: 3.5, color: '#5268ff', target: 'blender', back: true, left: false, right: false, led: true, counter: true, stage: false, totem: false, spots: true,
     ledWidth: 4, ledHeight: 2, ledBottom: .65, counterWidth: 2, counterDepth: .65, counterHeight: 1, counterCount: 1,
     stageWidth: 4.5, stageDepth: 1.4, stageHeight: .3, totemWidth: .55, totemDepth: .25, totemHeight: 1.8, totemCount: 1, spotsCount: 3,
@@ -268,12 +270,7 @@ export function stoolGeometry(c: Config) {
     return layoutStools(c, reserved);
 }
 /** Pedestais usam as posições livres depois das mesas e dos assentos. */
-export function pedestalGeometry(c: Config) {
-    if (!c.pedestals)
-        return { positions: [] as [
-                number,
-                number
-            ][], generatedCount: 0 };
+function furnitureReservedAreas(c: Config, furnitureGap: number): ReservedArea[] {
     const reserved = tableReservedAreas(c);
     const tables = tableGeometry(c);
     const stools = stoolGeometry(c);
@@ -285,17 +282,57 @@ export function pedestalGeometry(c: Config) {
             reserved.push({ centerX: x, centerY: y, width: w + 2 * gap, depth: d + 2 * gap });
     }
     if (c.roundTables)
-        reserve(tables.roundTables.positions, tables.roundFootprint.width, tables.roundFootprint.depth, Math.max(c.pedestalGap, c.roundTableGap, c.roundTableChairs ? c.tableChairGap : 0));
+        reserve(tables.roundTables.positions, tables.roundFootprint.width, tables.roundFootprint.depth, Math.max(furnitureGap, c.roundTableGap, c.roundTableChairs ? c.tableChairGap : 0));
     if (c.rectTables)
-        reserve(tables.rectTables.positions, tables.rectFootprint.width, tables.rectFootprint.depth, Math.max(c.pedestalGap, c.rectTableGap, c.rectTableChairs ? c.tableChairGap : 0));
+        reserve(tables.rectTables.positions, tables.rectFootprint.width, tables.rectFootprint.depth, Math.max(furnitureGap, c.rectTableGap, c.rectTableChairs ? c.tableChairGap : 0));
     if (c.bistroTables) {
         const grouped = c.stools && c.stoolDistribution === 'bistro';
         const diameter = grouped ? c.bistroTableDiameter + 2 * c.stoolBistroGap + 2 * c.stoolSeatDiameter : c.bistroTableDiameter;
-        reserve(tables.bistroTables.positions, diameter, diameter, Math.max(c.pedestalGap, c.bistroTableGap, grouped ? c.stoolGap : 0));
+        reserve(tables.bistroTables.positions, diameter, diameter, Math.max(furnitureGap, c.bistroTableGap, grouped ? c.stoolGap : 0));
     }
     if (c.stools && c.stoolDistribution === 'free')
-        reserve(stools.positions, c.stoolSeatDiameter, c.stoolSeatDiameter, Math.max(c.pedestalGap, c.stoolGap));
-    return layoutPedestals(c, reserved);
+        reserve(stools.positions, c.stoolSeatDiameter, c.stoolSeatDiameter, Math.max(furnitureGap, c.stoolGap));
+    return reserved;
+}
+export function pedestalGeometry(c: Config) {
+    if (!c.pedestals)
+        return { positions: [] as [
+                number,
+                number
+            ][], generatedCount: 0 };
+    return layoutPedestals(c, furnitureReservedAreas(c, c.pedestalGap));
+}
+/** Ordem: mesas e assentos, pedestais, poltronas e puffs. */
+export function loungeGeometry(c: Config) {
+    if (!c.armchairs && !c.puffs)
+        return { armchairs: { positions: [] as [
+                    number,
+                    number
+                ][], generatedCount: 0 }, puffs: { positions: [] as [
+                    number,
+                    number
+                ][], generatedCount: 0 } };
+    validateLounge(c);
+    const pedestals = pedestalGeometry(c);
+    function base(gap: number) {
+        const areas = furnitureReservedAreas(c, gap);
+        if (c.pedestals)
+            for (const [x, y] of pedestals.positions)
+                areas.push({
+                    centerX: x, centerY: y, width: c.pedestalWidth + 2 * Math.max(gap, c.pedestalGap), depth: c.pedestalDepth + 2 * Math.max(gap, c.pedestalGap)
+                });
+        return areas;
+    }
+    const armchairs = layoutArmchairs(c, c.armchairs ? base(c.armchairGap) : []);
+    const puffReserved = c.puffs ? base(c.puffGap) : [];
+    if (c.armchairs && c.puffs)
+        for (const [x, y] of armchairs.positions)
+            puffReserved.push({
+                centerX: x, centerY: y, width: c.armchairWidth + 2 * Math.max(c.armchairGap, c.puffGap),
+                depth: c.armchairDepth + 2 * Math.max(c.armchairGap, c.puffGap)
+            });
+    const puffs = layoutPuffs(c, puffReserved);
+    return { armchairs, puffs };
 }
 export function validate(c: Config) {
     if (!c.name.trim() || c.name.length > 80)
@@ -319,13 +356,13 @@ export function validate(c: Config) {
         throw new Error('Escolha uma cor válida.');
     if (!['blender', 'max'].includes(c.target))
         throw new Error('Escolha Blender ou 3ds Max.');
-    for (const k of ['back', 'left', 'right', 'led', 'counter', 'stage', 'totem', 'spots', 'chairs', 'roundTables', 'rectTables', 'bistroTables', 'stools', 'roundTableChairs', 'rectTableChairs', 'pedestals'] as const)
+    for (const k of ['back', 'left', 'right', 'led', 'counter', 'stage', 'totem', 'spots', 'chairs', 'roundTables', 'rectTables', 'bistroTables', 'stools', 'roundTableChairs', 'rectTableChairs', 'pedestals', 'armchairs', 'puffs'] as const)
         if (typeof c[k] !== 'boolean')
             throw new Error('Seleção de elementos inválida.');
     for (const [key, initial] of Object.entries(defaults))
         if (typeof initial === 'number' && (!Number.isFinite(c[key as keyof Config] as number)))
             throw new Error('Confira os parâmetros dos elementos: todas as medidas e quantidades devem conter números.');
-    for (const k of ['floorMat', 'wallMat', 'counterMat', 'stageMat', 'totemMat', 'roundTableMat', 'rectTableMat', 'bistroTableMat', 'stoolMat', 'pedestalMat'] as const)
+    for (const k of ['floorMat', 'wallMat', 'counterMat', 'stageMat', 'totemMat', 'roundTableMat', 'rectTableMat', 'bistroTableMat', 'stoolMat', 'pedestalMat', 'armchairMat', 'puffMat'] as const)
         if (!materials.some(m => m.value === c[k]))
             throw new Error('Material inválido.');
     const check = (keys: (keyof Config)[], label: string) => {
@@ -436,6 +473,7 @@ export function validate(c: Config) {
     tableGeometry(c);
     stoolGeometry(c);
     pedestalGeometry(c);
+    loungeGeometry(c);
     return c;
 }
 export function filename(c: Config) { return (c.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'stand') + (c.target === 'max' ? '.ms' : '.py'); }
@@ -447,6 +485,7 @@ export function generate(c: Config, options: {
     const tables = tableGeometry(c);
     const stools = stoolGeometry(c);
     const pedestals = pedestalGeometry(c);
+    const lounge = loungeGeometry(c);
     const diningConfig = {
         ...c, chairs: true,
         chairWidth: c.tableChairWidth, chairDepth: c.tableChairDepth,
@@ -467,7 +506,7 @@ export function generate(c: Config, options: {
             blenderRectTables(c, tables.rectTables) +
             blenderBistroTables(c, tables.bistroTables) +
             blenderStools(c, stools) +
-            blenderPedestals(c, pedestals));
+            blenderPedestals(c, pedestals) + blenderLounge(c, lounge));
     }
     const script = generateMax(c);
     const additions = maxChairs(c, chairLayout, { group: "audience" }) +
@@ -476,7 +515,7 @@ export function generate(c: Config, options: {
         maxRectTables(c, tables.rectTables) +
         maxBistroTables(c, tables.bistroTables) +
         maxStools(c, stools) +
-        maxPedestals(c, pedestals);
+        maxPedestals(c, pedestals) + maxLounge(c, lounge);
     if (!additions) {
         return script;
     }

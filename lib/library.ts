@@ -1,6 +1,8 @@
 /** Catálogo dos componentes que já possuem geração no Code Buddy. */
 import type { MaterialKind } from "./generator";
 export const libraryCatalog = [
+    { id: 'armchairs', label: 'Poltronas', projectTypes: ['stand', 'palco'] },
+    { id: 'puffs', label: 'Puffs', projectTypes: ['stand', 'palco'] },
     { id: 'pedestals', label: 'Pedestais expositores', projectTypes: ['stand', 'palco'] },
     { id: "led", label: "Painel de LED", projectTypes: ["stand", "palco"] },
     { id: "counter", label: "Balcão", projectTypes: ["stand"] },
@@ -1061,4 +1063,99 @@ export function layoutPedestals(c: PedestalConfig & {
         }
     }
     throw new Error(`Foram solicitados ${c.pedestalCount} pedestais, mas esta distribuição comporta ${positions.length}. Ajuste a quantidade, as medidas ou os espaços livres.`);
+}
+export type LoungeConfig = {
+    armchairs: boolean;
+    armchairCount: number;
+    armchairWidth: number;
+    armchairDepth: number;
+    armchairHeight: number;
+    armchairSeatHeight: number;
+    armchairGap: number;
+    armchairMat: MaterialKind;
+    puffs: boolean;
+    puffCount: number;
+    puffWidth: number;
+    puffDepth: number;
+    puffHeight: number;
+    puffGap: number;
+    puffMat: MaterialKind;
+};
+export const loungeDefaults: LoungeConfig = {
+    armchairs: false, armchairCount: 1, armchairWidth: .85, armchairDepth: .8,
+    armchairHeight: .9, armchairSeatHeight: .45, armchairGap: .6, armchairMat: 'plastic',
+    puffs: false, puffCount: 2, puffWidth: .5, puffDepth: .5, puffHeight: .45, puffGap: .4, puffMat: 'plastic',
+};
+export type LoungeLayout = {
+    positions: [
+        number,
+        number
+    ][];
+    generatedCount: number;
+};
+type LoungeContext = LoungeConfig & {
+    width: number;
+    depth: number;
+    height: number;
+};
+export function validateLounge(c: LoungeContext) {
+    for (const [active, count, label] of [[c.armchairs, c.armchairCount, 'Poltronas'], [c.puffs, c.puffCount, 'Puffs']] as const) {
+        if (typeof active !== 'boolean')
+            throw new Error('Seleção de poltronas e puffs inválida.');
+        if (active && (!Number.isInteger(count) || count < 1 || count > 100))
+            throw new Error(`${label}: use uma quantidade inteira de 1 a 100.`);
+    }
+    const check = (value: number, min: number, max: number, label: string) => {
+        if (!Number.isFinite(value) || value < min || value > max)
+            throw new Error(`${label}: use um valor entre ${min} e ${max} m.`);
+    };
+    if (c.armchairs) {
+        check(c.armchairWidth, .6, 1.5, 'Largura da poltrona');
+        check(c.armchairDepth, .6, 1.5, 'Profundidade da poltrona');
+        check(c.armchairHeight, .7, 1.5, 'Altura total da poltrona');
+        check(c.armchairSeatHeight, .3, .65, 'Altura do assento da poltrona');
+        check(c.armchairGap, 0, 3, 'Vão entre poltronas');
+        if (c.armchairHeight < c.armchairSeatHeight + .2)
+            throw new Error('A altura total da poltrona deve ser pelo menos 0,20 m maior que a altura do assento.');
+        if (c.armchairHeight > c.height)
+            throw new Error('A poltrona deve caber na altura da montagem.');
+    }
+    if (c.puffs) {
+        check(c.puffWidth, .3, 2, 'Largura do puff');
+        check(c.puffDepth, .3, 2, 'Profundidade do puff');
+        check(c.puffHeight, .2, .8, 'Altura do puff');
+        check(c.puffGap, 0, 3, 'Vão entre puffs');
+        if (c.puffHeight > c.height)
+            throw new Error('O puff deve caber na altura da montagem.');
+    }
+}
+export function layoutArmchairs(c: LoungeContext, reserved: ReservedArea[]): LoungeLayout {
+    if (!c.armchairs)
+        return { positions: [], generatedCount: 0 };
+    validateLounge(c);
+    try {
+        return layoutPedestals({ width: c.width, depth: c.depth, height: c.height, pedestals: true,
+            pedestalCount: c.armchairCount, pedestalWidth: c.armchairWidth, pedestalDepth: c.armchairDepth,
+            pedestalHeight: c.armchairHeight, pedestalGap: c.armchairGap, pedestalMat: c.armchairMat }, reserved);
+    }
+    catch (error) {
+        if (error instanceof Error)
+            throw new Error(error.message.replace(/Foram solicitados/g, 'Foram solicitadas').replace(/pedestais/gi, 'poltronas').replace(/pedestal/gi, 'poltrona'));
+        throw error;
+    }
+}
+export function layoutPuffs(c: LoungeContext, reserved: ReservedArea[]): LoungeLayout {
+    if (!c.puffs)
+        return { positions: [], generatedCount: 0 };
+    validateLounge(c);
+    try {
+        return layoutPedestals({ width: c.width, depth: c.depth, height: c.height, pedestals: true,
+            pedestalCount: c.puffCount, pedestalWidth: c.puffWidth, pedestalDepth: c.puffDepth,
+            pedestalHeight: c.puffHeight, pedestalGap: c.puffGap, pedestalMat: c.puffMat }, reserved);
+    }
+    catch (error) {
+        if (error instanceof Error)
+            throw new Error(error.message.replace(/pedestais/gi, 'puffs').replace(/pedestal/gi, 'puff'));
+        throw error;
+    }
 }
