@@ -5,11 +5,12 @@ import { Box, Layers, Download, Copy, Check, Code2, Ruler, Monitor, LampDesk, Pa
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
-import { materials, generate, geometry, filename, validate, roundTableGeometry, rectTableGeometry, } from '@/lib/generator';
+import { materials, generate, geometry, filename, validate, tableGeometry, } from '@/lib/generator';
 import type { MaterialKind, Target, Config, ProjectType } from '@/lib/generator';
 import { projectTypes, createProjectConfig } from '@/lib/project-types';
 import { libraryCatalog, layoutChairs } from '@/lib/library';
 const elements = [
+    { key: 'bistroTables', title: 'Mesas bistrô', text: 'Mesas altas com tampo circular e base central', icon: Circle },
     { key: 'led', title: 'Painel de LED', text: 'Tela central com moldura', icon: Monitor },
     { key: 'counter', title: 'Balcão', text: 'Recepção com tampo branco', icon: PanelTop },
     { key: 'stage', title: 'Palco', text: 'Plataforma com altura ajustável', icon: Layers },
@@ -29,7 +30,7 @@ type ParameterField = {
     min?: number;
     max?: number;
 };
-const parameterFields: Record<'led' | 'counter' | 'stage' | 'totem' | 'spots' | 'chairs' | 'roundTables' | 'rectTables', ParameterField[]> = {
+const parameterFields: Record<'led' | 'counter' | 'stage' | 'totem' | 'spots' | 'chairs' | 'roundTables' | 'rectTables' | 'bistroTables', ParameterField[]> = {
     led: [{ key: 'ledWidth', label: 'Largura' }, { key: 'ledHeight', label: 'Altura' }, { key: 'ledBottom', label: 'Base sobre o piso', max: 8 }],
     counter: [{ key: 'counterWidth', label: 'Largura' }, { key: 'counterDepth', label: 'Profundidade' }, { key: 'counterHeight', label: 'Altura' }, { key: 'counterCount', label: 'Quantidade', unit: 'un', min: 1, max: 6 }],
     stage: [{ key: 'stageWidth', label: 'Largura' }, { key: 'stageDepth', label: 'Profundidade' }, { key: 'stageHeight', label: 'Altura', max: 1 }],
@@ -63,18 +64,26 @@ const parameterFields: Record<'led' | 'counter' | 'stage' | 'totem' | 'spots' | 
         { key: "rectTableTopThickness", label: "Espessura do tampo", min: 0.01, max: 0.15, },
         { key: "rectTableGap", label: "Vão livre entre mesas", min: 0, max: 5, },
     ],
+    bistroTables: [
+        { key: 'bistroTableCount', label: 'Quantidade', unit: 'un', min: 1, max: 100 },
+        { key: 'bistroTableDiameter', label: 'Diâmetro', min: 0.4, max: 3 },
+        { key: 'bistroTableHeight', label: 'Altura', min: 0.4, max: 1.2 },
+        { key: 'bistroTableTopThickness', label: 'Espessura do tampo', min: 0.01, max: 0.15 },
+        { key: 'bistroTableGap', label: 'Vão livre entre mesas', min: 0, max: 5 },
+    ],
 };
 const materialFields: {
-    key: 'floorMat' | 'wallMat' | 'counterMat' | 'stageMat' | 'totemMat' | 'roundTableMat' | 'rectTableMat';
+    key: 'floorMat' | 'wallMat' | 'counterMat' | 'stageMat' | 'totemMat' | 'roundTableMat' | 'rectTableMat' | 'bistroTableMat';
     label: string;
-    enabled?: 'counter' | 'stage' | 'totem' | 'roundTables' | 'rectTables';
+    enabled?: 'counter' | 'stage' | 'totem' | 'roundTables' | 'rectTables' | 'bistroTables';
 }[] = [{ key: 'floorMat', label: 'Piso' },
     { key: 'wallMat', label: 'Paredes' },
     { key: 'counterMat', label: 'Corpo do balcão', enabled: 'counter' },
     { key: 'stageMat', label: 'Palco', enabled: 'stage' },
     { key: 'totemMat', label: 'Totem', enabled: 'totem' },
     { key: 'roundTableMat', label: 'Tampo das mesas redondas', enabled: 'roundTables' },
-    { key: 'rectTableMat', label: 'Tampo das mesas retangulares', enabled: 'rectTables' }];
+    { key: 'rectTableMat', label: 'Tampo das mesas retangulares', enabled: 'rectTables' },
+    { key: 'bistroTableMat', label: 'Tampo das mesas bistrô', enabled: 'bistroTables' }];
 const num = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
 function Plan({ c }: {
     c: Config;
@@ -84,8 +93,13 @@ function Plan({ c }: {
     const s = Math.min(440 / c.width, 280 / c.depth);
     const w = c.width * s, h = c.depth * s, x = (600 - w) / 2, y = (390 - h) / 2;
     const px = (v: number) => x + w / 2 + v * s, py = (v: number) => y + h / 2 - v * s;
-    const tables = roundTableGeometry(c);
-    const rectTables = rectTableGeometry(c);
+    const tableLayouts = tableGeometry(c);
+    const tables = tableLayouts.roundTables;
+    const rectTables = tableLayouts.rectTables;
+    const bistroTables = tableLayouts.bistroTables;
+    const bistroTableColor = c.bistroTableMat === 'brand'
+        ? c.color
+        : materials.find(material => material.value === c.bistroTableMat)?.color ?? '#c8cedb';
     const rectTableColor = c.rectTableMat === 'brand'
         ? c.color
         : materials.find(material => material.value === c.rectTableMat)?.color ?? '#c8cedb';
@@ -122,6 +136,14 @@ function Plan({ c }: {
             <rect x={px(cx - c.rectTableWidth / 2)} y={py(cy + c.rectTableDepth / 2)} width={c.rectTableWidth * s} height={c.rectTableDepth * s} fill={rectTableColor} stroke="#dce6ff" strokeWidth="1"/>
             <text x={px(cx)} y={py(cy)} textAnchor="middle" dominantBaseline="middle" fill="#111827" fontSize="9">
               {index + 1}
+            </text>
+          </g>))}
+      </g>)}
+    {c.bistroTables && (<g aria-label={`${bistroTables.generatedCount} mesas bistrô`}>
+        {bistroTables.positions.map(([cx, cy], index) => (<g key={`bistro-table-${index}`}>
+            <circle cx={px(cx)} cy={py(cy)} r={(c.bistroTableDiameter / 2) * s} fill={bistroTableColor} stroke="#dce6ff" strokeWidth="1"/>
+            <text x={px(cx)} y={py(cy)} textAnchor="middle" dominantBaseline="middle" fill="#111827" fontSize="9">
+              B{index + 1}
             </text>
           </g>))}
       </g>)}
@@ -380,7 +402,7 @@ export default function Home() {
   </div>)}<div className="param-grid">{parameterFields[f.key].filter(field => {
                 const isQuantityField = field.key === 'attendeeCount' || field.key === 'chairExtraCount';
                 return c.chairGenerationMode !== 'fill' || !isQuantityField;
-            }).map(field => <label className="field" key={field.key}>{field.label}<div className="unit-input"><input type="number" inputMode={field.unit === 'un' ? 'numeric' : 'decimal'} min={field.min ?? .1} max={field.max ?? 30} step={field.unit === 'un' ? 1 : field.key === "roundTableTopThickness" || field.key === "rectTableTopThickness" ? 0.01 : 0.05} value={Number.isNaN(c[field.key]) ? '' : c[field.key] as number} onChange={e => update(field.key, e.target.value === '' ? NaN : Number(e.target.value))}/><span>{field.unit ?? 'm'}</span></div></label>)}</div></div>)}
+            }).map(field => <label className="field" key={field.key}>{field.label}<div className="unit-input"><input type="number" inputMode={field.unit === 'un' ? 'numeric' : 'decimal'} min={field.min ?? .1} max={field.max ?? 30} step={field.unit === 'un' ? 1 : field.key === "roundTableTopThickness" || field.key === "rectTableTopThickness" || field.key === "bistroTableTopThickness" ? 0.01 : 0.05} value={Number.isNaN(c[field.key]) ? '' : c[field.key] as number} onChange={e => update(field.key, e.target.value === '' ? NaN : Number(e.target.value))}/><span>{field.unit ?? 'm'}</span></div></label>)}</div></div>)}
       {!availableElements.some(f => c[f.key]) && <p className="tab-help">Selecione um elemento na aba Projeto para ajustar suas medidas.</p>}
       {c.led && <div className="texture-section"><h3>Textura da TV / LED</h3><p>Escolha a arte que vai aparecer na tela. A imagem inteira é ajustada às medidas do LED.</p><label className="upload-label" htmlFor="tv-image">Escolher imagem JPG ou PNG<input id="tv-image" type="file" accept="image/png,image/jpeg" onChange={handleImage}/></label><small>Até 2 MB · incorporada ao script · imagem estática</small>{c.screenImage ? <div className="texture-preview"><img src={c.screenImage} alt="Arte selecionada para a tela de TV"/><span>{c.screenName}</span><button onClick={() => { imageRequest.current += 1; setC(prev => ({ ...prev, screenImage: '', screenName: '' })); setNotice('Imagem removida.'); }}>Remover imagem</button></div> : <p className="tab-help">Sem imagem, a tela usa a cor de destaque.</p>}</div>}
       </TabsContent><TabsContent value="materials"><p className="tab-help">Escolha o acabamento de cada parte. Madeira e concreto usam textura procedural; metal e vidro recebem propriedades de superfície.</p><div className="material-fields">{materialFields.filter((field) => {

@@ -9,6 +9,7 @@ export const libraryCatalog = [
     { id: "chairs", label: "Cadeiras", projectTypes: ["palco"] },
     { id: "roundTables", label: "Mesas Redondas", projectTypes: ["stand", "palco"], },
     { id: "rectTables", label: "Mesas Retangulares", projectTypes: ["stand", "palco"], },
+    { id: "bistroTables", label: "Mesas Bistrô", projectTypes: ["stand", "palco"] },
 ] as const;
 export type ChairDistribution = "central" | "lateral";
 export type ChairGenerationMode = "quantity" | "fill";
@@ -560,4 +561,60 @@ export function layoutRectTables(c: RectTableContext, reservedAreas: ReservedAre
     throw new Error(`Foram solicitadas ${c.rectTableCount} mesas retangulares, ` +
         `mas esta distribuição comporta ${positions.length}. ` +
         "Ajuste a quantidade, as medidas ou os espaços livres.");
+}
+
+export type BistroTableConfig = {
+  bistroTables: boolean;
+  bistroTableCount: number;
+  bistroTableDiameter: number;
+  bistroTableHeight: number;
+  bistroTableTopThickness: number;
+  bistroTableGap: number;
+  bistroTableMat: MaterialKind;
+};
+
+export const bistroTableDefaults: BistroTableConfig = {
+  bistroTables: false,
+  bistroTableCount: 1,
+  bistroTableDiameter: 0.6,
+  bistroTableHeight: 1.05,
+  bistroTableTopThickness: 0.03,
+  bistroTableGap: 0.8,
+  bistroTableMat: "white",
+};
+export function layoutBistroTables(
+  c: BistroTableConfig & {
+    width: number;
+    depth: number;
+  },
+  reservedAreas: ReservedArea[],
+): RoundTableLayout {
+  const circularConfig: RoundTableContext = {
+    width: c.width,
+    depth: c.depth,
+
+    roundTables: c.bistroTables,
+    roundTableCount: c.bistroTableCount,
+    roundTableDiameter: c.bistroTableDiameter,
+    roundTableHeight: c.bistroTableHeight,
+    roundTableTopThickness: c.bistroTableTopThickness,
+    roundTableGap: c.bistroTableGap,
+    roundTableMat: c.bistroTableMat,
+  };
+
+  try {
+    return layoutRoundTables(
+      circularConfig,
+      reservedAreas,
+    );
+  } catch (error) {
+    if (error instanceof Error) {
+      throw new Error(
+        "Mesas bistrô: " + error.message.replace(/mesas redondas/gi, "mesas bistrô")
+          .replace(/mesa redonda/gi, "mesa bistrô"),
+      );
+    }
+
+    throw error;
+  }
 }

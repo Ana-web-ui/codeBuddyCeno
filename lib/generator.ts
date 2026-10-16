@@ -1,9 +1,10 @@
 import { generateMax } from './maxscript';
-import { chairDefaults, layoutChairs, roundTableDefaults, layoutRoundTables, rectTableDefaults, layoutRectTables, } from './library';
-import type { ChairConfig, ReservedArea, RoundTableConfig, RectTableConfig, } from './library';
+import { chairDefaults, layoutChairs, roundTableDefaults, layoutRoundTables, rectTableDefaults, layoutRectTables, bistroTableDefaults, layoutBistroTables } from './library';
+import type { ChairConfig, ReservedArea, RoundTableConfig, RectTableConfig, BistroTableConfig } from './library';
 import { blenderChairs, maxChairs } from './chair-exporters';
 import { blenderRoundTables, maxRoundTables } from './round-table-exporters';
 import { blenderRectTables, maxRectTables, } from './react-table-exporters';
+import { blenderBistroTables, maxBistroTables } from './bistro-table-exporters';
 export type MaterialKind = 'white' | 'brand' | 'wood' | 'metal' | 'glass' | 'concrete' | 'plastic';
 export type ProjectType = 'stand' | 'palco';
 export type Target = 'blender' | 'max';
@@ -17,7 +18,7 @@ export const materials: {
     { value: 'glass', label: 'Vidro', color: '#81bfce' }, { value: 'concrete', label: 'Concreto', color: '#747b86' },
     { value: 'plastic', label: 'Plástico', color: '#c4d1e1' }
 ];
-export type Config = ChairConfig & RoundTableConfig & RectTableConfig & {
+export type Config = ChairConfig & RoundTableConfig & RectTableConfig & BistroTableConfig & {
     projectType: ProjectType;
     name: string;
     width: number;
@@ -61,6 +62,7 @@ export const defaults: Config = {
     ...chairDefaults,
     ...roundTableDefaults,
     ...rectTableDefaults,
+    ...bistroTableDefaults,
     name: 'Meu primeiro stand', width: 10, depth: 5, height: 3.5, color: '#5268ff', target: 'blender', back: true, left: false, right: false, led: true, counter: true, stage: false, totem: false, spots: true,
     ledWidth: 4, ledHeight: 2, ledBottom: .65, counterWidth: 2, counterDepth: .65, counterHeight: 1, counterCount: 1,
     stageWidth: 4.5, stageDepth: 1.4, stageHeight: .3, totemWidth: .55, totemDepth: .25, totemHeight: 1.8, totemCount: 1, spotsCount: 3,
@@ -153,7 +155,7 @@ function tableReservedAreas(c: Config): ReservedArea[] {
     }
     return reserved;
 }
-/** Distribui mesas redondas antes das retangulares. */
+/** Distribui redondas, retangulares e bistrôs, nesta ordem. */
 export function tableGeometry(c: Config) {
     const reserved = tableReservedAreas(c);
     const roundTables = layoutRoundTables(c, reserved);
@@ -161,17 +163,37 @@ export function tableGeometry(c: Config) {
     if (c.roundTables && c.rectTables) {
         const mixedGap = Math.max(c.roundTableGap, c.rectTableGap);
         for (const [x, y] of roundTables.positions) {
-            // Aproximação conservadora: reserva um quadrado ao redor do círculo.
             rectReserved.push({
-                centerX: x,
-                centerY: y,
+                centerX: x, centerY: y,
                 width: c.roundTableDiameter + 2 * mixedGap,
                 depth: c.roundTableDiameter + 2 * mixedGap,
             });
         }
     }
     const rectTables = layoutRectTables(c, rectReserved);
-    return { roundTables, rectTables };
+    const bistroReserved: ReservedArea[] = [...reserved];
+    if (c.bistroTables && c.roundTables) {
+        const mixedGap = Math.max(c.bistroTableGap, c.roundTableGap);
+        for (const [x, y] of roundTables.positions) {
+            bistroReserved.push({
+                centerX: x, centerY: y,
+                width: c.roundTableDiameter + 2 * mixedGap,
+                depth: c.roundTableDiameter + 2 * mixedGap,
+            });
+        }
+    }
+    if (c.bistroTables && c.rectTables) {
+        const mixedGap = Math.max(c.bistroTableGap, c.rectTableGap);
+        for (const [x, y] of rectTables.positions) {
+            bistroReserved.push({
+                centerX: x, centerY: y,
+                width: c.rectTableWidth + 2 * mixedGap,
+                depth: c.rectTableDepth + 2 * mixedGap,
+            });
+        }
+    }
+    const bistroTables = layoutBistroTables(c, bistroReserved);
+    return { roundTables, rectTables, bistroTables };
 }
 /** Mantém compatibilidade com a planta e o exportador existentes. */
 export function roundTableGeometry(c: Config) {
@@ -179,6 +201,9 @@ export function roundTableGeometry(c: Config) {
 }
 export function rectTableGeometry(c: Config) {
     return tableGeometry(c).rectTables;
+}
+export function bistroTableGeometry(c: Config) {
+    return tableGeometry(c).bistroTables;
 }
 export function validate(c: Config) {
     if (!c.name.trim() || c.name.length > 80)
@@ -202,13 +227,13 @@ export function validate(c: Config) {
         throw new Error('Escolha uma cor válida.');
     if (!['blender', 'max'].includes(c.target))
         throw new Error('Escolha Blender ou 3ds Max.');
-    for (const k of ['back', 'left', 'right', 'led', 'counter', 'stage', 'totem', 'spots', 'chairs', 'roundTables', 'rectTables'] as const)
+    for (const k of ['back', 'left', 'right', 'led', 'counter', 'stage', 'totem', 'spots', 'chairs', 'roundTables', 'rectTables', 'bistroTables'] as const)
         if (typeof c[k] !== 'boolean')
             throw new Error('Seleção de elementos inválida.');
     for (const [key, initial] of Object.entries(defaults))
         if (typeof initial === 'number' && (!Number.isFinite(c[key as keyof Config] as number)))
             throw new Error('Confira os parâmetros dos elementos: todas as medidas e quantidades devem conter números.');
-    for (const k of ['floorMat', 'wallMat', 'counterMat', 'stageMat', 'totemMat', 'roundTableMat', 'rectTableMat'] as const)
+    for (const k of ['floorMat', 'wallMat', 'counterMat', 'stageMat', 'totemMat', 'roundTableMat', 'rectTableMat', 'bistroTableMat'] as const)
         if (!materials.some(m => m.value === c[k]))
             throw new Error('Material inválido.');
     const check = (keys: (keyof Config)[], label: string) => {
@@ -220,6 +245,27 @@ export function validate(c: Config) {
         if (!Number.isInteger(value) || value < 1 || value > max)
             throw new Error(label + ': use uma quantidade inteira de 1 a ' + max + '.');
     };
+    if (c.bistroTables) {
+        count(c.bistroTableCount, 'Mesas bistrô', 100);
+        const dimensions = [
+            ['bistroTableDiameter', 0.4, 3, 'Diâmetro da mesa bistrô'],
+            ['bistroTableHeight', 0.4, 1.2, 'Altura da mesa bistrô'],
+            ['bistroTableTopThickness', 0.01, 0.15, 'Espessura do tampo da mesa bistrô'],
+            ['bistroTableGap', 0, 5, 'Vão entre mesas bistrô'],
+        ] as const;
+        for (const [key, min, max, label] of dimensions) {
+            const value = c[key];
+            if (!Number.isFinite(value) || value < min || value > max) {
+                throw new Error(label + ': use um valor entre ' + min + ' e ' + max + ' m.');
+            }
+        }
+        if (c.bistroTableHeight > c.height) {
+            throw new Error('A mesa bistrô deve caber na altura da montagem.');
+        }
+        if (c.bistroTableDiameter > Math.min(c.width, c.depth)) {
+            throw new Error('O diâmetro da mesa bistrô deve caber na área de montagem.');
+        }
+    }
     if (c.led) {
         check(['ledWidth', 'ledHeight'], 'LED');
         if (!Number.isFinite(c.ledBottom) || c.ledBottom < .1 || c.ledBottom > 8)
@@ -293,12 +339,14 @@ export function generate(c: Config, options: {
         return (generateBlender(c) +
             blenderChairs(c, chairLayout) +
             blenderRoundTables(c, tables.roundTables) +
-            blenderRectTables(c, tables.rectTables));
+            blenderRectTables(c, tables.rectTables) +
+            blenderBistroTables(c, tables.bistroTables));
     }
     const script = generateMax(c);
     const additions = maxChairs(c, chairLayout) +
         maxRoundTables(c, tables.roundTables) +
-        maxRectTables(c, tables.rectTables);
+        maxRectTables(c, tables.rectTables) +
+        maxBistroTables(c, tables.bistroTables);
     if (!additions) {
         return script;
     }
