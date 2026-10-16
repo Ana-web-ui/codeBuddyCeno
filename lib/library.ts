@@ -1,6 +1,7 @@
 /** Catálogo dos componentes que já possuem geração no Code Buddy. */
 import type { MaterialKind } from "./generator";
 export const libraryCatalog = [
+    { id: 'showcases', label: 'Vitrines expositoras', projectTypes: ['stand', 'palco'] },
     { id: 'coffeeTables', label: 'Mesas de centro', projectTypes: ['stand', 'palco'] },
     { id: 'armchairs', label: 'Poltronas', projectTypes: ['stand', 'palco'] },
     { id: 'puffs', label: 'Puffs', projectTypes: ['stand', 'palco'] },
@@ -1312,4 +1313,62 @@ export function layoutLoungeSets(c: SetContext, reserved: ReservedArea[]) {
     for (const layout of [tables, armchairs, puffs])
         layout.generatedCount = layout.positions.length;
     return { tables, lounge: { armchairs, puffs } };
+}
+export type ShowcaseConfig = {
+    showcases: boolean;
+    showcaseCount: number;
+    showcaseWidth: number;
+    showcaseDepth: number;
+    showcaseHeight: number;
+    showcaseBaseHeight: number;
+    showcaseShelfCount: number;
+    showcaseGlassThickness: number;
+    showcaseGap: number;
+    showcaseBaseMat: MaterialKind;
+};
+export const showcaseDefaults: ShowcaseConfig = {
+    showcases: false, showcaseCount: 1, showcaseWidth: .8, showcaseDepth: .5,
+    showcaseHeight: 1.8, showcaseBaseHeight: .6, showcaseShelfCount: 2,
+    showcaseGlassThickness: .01, showcaseGap: .6, showcaseBaseMat: 'white',
+};
+export type ShowcaseLayout = {
+    positions: [
+        number,
+        number
+    ][];
+    generatedCount: number;
+};
+export function layoutShowcases(c: ShowcaseConfig & {
+    width: number;
+    depth: number;
+    height: number;
+}, reserved: ReservedArea[]): ShowcaseLayout {
+    if (!c.showcases)
+        return { positions: [], generatedCount: 0 };
+    if (!Number.isInteger(c.showcaseCount) || c.showcaseCount < 1 || c.showcaseCount > 100)
+        throw new Error('Vitrines: use uma quantidade inteira de 1 a 100.');
+    if (!Number.isInteger(c.showcaseShelfCount) || c.showcaseShelfCount < 0 || c.showcaseShelfCount > 6)
+        throw new Error('Prateleiras da vitrine: use uma quantidade inteira de 0 a 6.');
+    for (const [v, min, max, label] of [
+        [c.showcaseWidth, .3, 3, 'Largura da vitrine'], [c.showcaseDepth, .3, 2, 'Profundidade da vitrine'],
+        [c.showcaseHeight, .6, 3, 'Altura total da vitrine'], [c.showcaseBaseHeight, .1, 1.5, 'Altura da base da vitrine'],
+        [c.showcaseGlassThickness, .004, .03, 'Espessura do vidro'], [c.showcaseGap, 0, 3, 'Vão entre vitrines'],
+    ] as const)
+        if (!Number.isFinite(v) || v < min || v > max)
+            throw new Error(`${label}: use um valor entre ${min} e ${max} m.`);
+    const clearHeight = c.showcaseHeight - c.showcaseBaseHeight - c.showcaseGlassThickness;
+    if (clearHeight < .25)
+        throw new Error('Deixe pelo menos 0,25 m de altura interna acima da base da vitrine.');
+    if (clearHeight / (c.showcaseShelfCount + 1) < Math.max(.1, 2 * c.showcaseGlassThickness))
+        throw new Error('As prateleiras ficam próximas demais. Reduza sua quantidade ou aumente a altura livre da vitrine.');
+    try {
+        return layoutPedestals({ width: c.width, depth: c.depth, height: c.height, pedestals: true,
+            pedestalCount: c.showcaseCount, pedestalWidth: c.showcaseWidth, pedestalDepth: c.showcaseDepth,
+            pedestalHeight: c.showcaseHeight, pedestalGap: c.showcaseGap, pedestalMat: c.showcaseBaseMat }, reserved);
+    }
+    catch (error) {
+        if (error instanceof Error)
+            throw new Error(error.message.replace(/Foram solicitados/g, 'Foram solicitadas').replace(/pedestais/gi, 'vitrines').replace(/pedestal/gi, 'vitrine'));
+        throw error;
+    }
 }

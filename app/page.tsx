@@ -5,11 +5,12 @@ import { Box, Layers, Download, Copy, Check, Code2, Ruler, Monitor, LampDesk, Pa
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
-import { materials, generate, geometry, filename, validate, tableGeometry, stoolGeometry, pedestalGeometry, loungeGeometry, coffeeTableGeometry, } from '@/lib/generator';
+import { materials, generate, geometry, filename, validate, tableGeometry, stoolGeometry, pedestalGeometry, loungeGeometry, coffeeTableGeometry, showcaseGeometry, } from '@/lib/generator';
 import type { MaterialKind, Target, Config, ProjectType } from '@/lib/generator';
 import { projectTypes, createProjectConfig } from '@/lib/project-types';
 import { libraryCatalog, layoutChairs } from '@/lib/library';
 const elements = [
+    { key: 'showcases', title: 'Vitrines expositoras', text: 'Base, fechamento de vidro e prateleiras', icon: RectangleVertical },
     { key: 'coffeeTables', title: 'Mesas de centro', text: 'Mesas baixas com tampo retangular e quatro pernas', icon: PanelTop },
     { key: 'armchairs', title: 'Poltronas', text: 'Assento, encosto, braços e base', icon: Armchair },
     { key: 'puffs', title: 'Puffs', text: 'Assentos baixos com formato quadrado', icon: Square },
@@ -35,7 +36,7 @@ type ParameterField = {
     min?: number;
     max?: number;
 };
-const parameterFields: Record<'led' | 'counter' | 'stage' | 'totem' | 'spots' | 'chairs' | 'roundTables' | 'rectTables' | 'bistroTables' | 'stools' | 'pedestals' | 'armchairs' | 'puffs' | 'coffeeTables', ParameterField[]> = {
+const parameterFields: Record<'led' | 'counter' | 'stage' | 'totem' | 'spots' | 'chairs' | 'roundTables' | 'rectTables' | 'bistroTables' | 'stools' | 'pedestals' | 'armchairs' | 'puffs' | 'coffeeTables' | 'showcases', ParameterField[]> = {
     led: [{ key: 'ledWidth', label: 'Largura' }, { key: 'ledHeight', label: 'Altura' }, { key: 'ledBottom', label: 'Base sobre o piso', max: 8 }],
     counter: [{ key: 'counterWidth', label: 'Largura' }, { key: 'counterDepth', label: 'Profundidade' }, { key: 'counterHeight', label: 'Altura' }, { key: 'counterCount', label: 'Quantidade', unit: 'un', min: 1, max: 6 }],
     stage: [{ key: 'stageWidth', label: 'Largura' }, { key: 'stageDepth', label: 'Profundidade' }, { key: 'stageHeight', label: 'Altura', max: 1 }],
@@ -134,11 +135,21 @@ const parameterFields: Record<'led' | 'counter' | 'stage' | 'totem' | 'spots' | 
         { key: 'coffeeTableTopThickness', label: 'Espessura do tampo', min: .02, max: .12 },
         { key: 'coffeeTableGap', label: 'Vão livre entre mesas de centro', min: 0, max: 3 },
     ],
+    showcases: [
+        { key: 'showcaseCount', label: 'Quantidade', unit: 'un', min: 1, max: 100 },
+        { key: 'showcaseWidth', label: 'Largura', min: .3, max: 3 },
+        { key: 'showcaseDepth', label: 'Profundidade', min: .3, max: 2 },
+        { key: 'showcaseHeight', label: 'Altura total', min: .6, max: 3 },
+        { key: 'showcaseBaseHeight', label: 'Altura da base', min: .1, max: 1.5 },
+        { key: 'showcaseShelfCount', label: 'Prateleiras internas', unit: 'un', min: 0, max: 6 },
+        { key: 'showcaseGlassThickness', label: 'Espessura do vidro', min: .004, max: .03 },
+        { key: 'showcaseGap', label: 'Vão livre entre vitrines', min: 0, max: 3 },
+    ],
 };
 const materialFields: {
-    key: 'floorMat' | 'wallMat' | 'counterMat' | 'stageMat' | 'totemMat' | 'roundTableMat' | 'rectTableMat' | 'bistroTableMat' | 'stoolMat' | 'pedestalMat' | 'armchairMat' | 'puffMat' | 'coffeeTableMat';
+    key: 'floorMat' | 'wallMat' | 'counterMat' | 'stageMat' | 'totemMat' | 'roundTableMat' | 'rectTableMat' | 'bistroTableMat' | 'stoolMat' | 'pedestalMat' | 'armchairMat' | 'puffMat' | 'coffeeTableMat' | 'showcaseBaseMat';
     label: string;
-    enabled?: 'counter' | 'stage' | 'totem' | 'roundTables' | 'rectTables' | 'bistroTables' | 'stools' | 'pedestals' | 'armchairs' | 'puffs' | 'coffeeTables';
+    enabled?: 'counter' | 'stage' | 'totem' | 'roundTables' | 'rectTables' | 'bistroTables' | 'stools' | 'pedestals' | 'armchairs' | 'puffs' | 'coffeeTables' | 'showcases';
 }[] = [{ key: 'floorMat', label: 'Piso' },
     { key: 'wallMat', label: 'Paredes' },
     { key: 'counterMat', label: 'Corpo do balcão', enabled: 'counter' },
@@ -151,7 +162,8 @@ const materialFields: {
     { key: 'pedestalMat', label: 'Pedestais expositores', enabled: 'pedestals' },
     { key: 'armchairMat', label: 'Poltronas — assento, encosto e braços', enabled: 'armchairs' },
     { key: 'puffMat', label: 'Puffs', enabled: 'puffs' },
-    { key: 'coffeeTableMat', label: 'Tampo das mesas de centro', enabled: 'coffeeTables' }];
+    { key: 'coffeeTableMat', label: 'Tampo das mesas de centro', enabled: 'coffeeTables' },
+    { key: 'showcaseBaseMat', label: 'Base das vitrines expositoras', enabled: 'showcases' }];
 const num = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
 function Plan({ c }: {
     c: Config;
@@ -169,6 +181,8 @@ function Plan({ c }: {
     const pedestals = pedestalGeometry(c);
     const lounge = loungeGeometry(c);
     const coffeeTables = coffeeTableGeometry(c);
+    const showcases = showcaseGeometry(c);
+    const showcaseColor = c.showcaseBaseMat === 'brand' ? c.color : materials.find(m => m.value === c.showcaseBaseMat)?.color ?? '#c8cedb';
     const coffeeColor = c.coffeeTableMat === 'brand' ? c.color : materials.find(m => m.value === c.coffeeTableMat)?.color ?? '#c8cedb';
     const loungeColor = (kind: MaterialKind) => kind === 'brand' ? c.color : materials.find(m => m.value === kind)?.color ?? '#c8cedb';
     const pedestalColor = c.pedestalMat === 'brand' ? c.color : materials.find(m => m.value === c.pedestalMat)?.color ?? '#c8cedb';
@@ -263,6 +277,12 @@ function Plan({ c }: {
         {coffeeTables.positions.map(([cx, cy], index) => (<g key={`coffee-table-${index}`}>
             <rect x={px(cx - c.coffeeTableWidth / 2)} y={py(cy + c.coffeeTableDepth / 2)} width={c.coffeeTableWidth * s} height={c.coffeeTableDepth * s} fill={coffeeColor} stroke="#dce6ff" strokeWidth="1"/>
             <text x={px(cx)} y={py(cy)} textAnchor="middle" dominantBaseline="middle" fill="#111827" fontSize="9">MC{index + 1}</text>
+          </g>))}
+      </g>)}
+    {c.showcases && (<g aria-label={`${showcases.generatedCount} vitrines expositoras`}>
+        {showcases.positions.map(([cx, cy], index) => (<g key={`showcase-${index}`}>
+            <rect x={px(cx - c.showcaseWidth / 2)} y={py(cy + c.showcaseDepth / 2)} width={c.showcaseWidth * s} height={c.showcaseDepth * s} fill={showcaseColor} fillOpacity="0.35" stroke="#81bfce" strokeWidth="2"/>
+            <text x={px(cx)} y={py(cy)} textAnchor="middle" dominantBaseline="middle" fill="#dce6ff" fontSize="9">V{index + 1}</text>
           </g>))}
       </g>)}
     {c.counter && g.counterXs.map((cx, i) => <g key={i}><rect x={px(cx - (g.counterW + .08) / 2)} y={py(g.counterY + (c.counterDepth + .08) / 2)} width={(g.counterW + .08) * s} height={(c.counterDepth + .08) * s} rx="3" fill={c.counterMat === 'brand' ? c.color : materials.find(m => m.value === c.counterMat)?.color}/><text x={px(cx)} y={py(g.counterY) + 5} textAnchor="middle" fill="white" fontSize="12">Balcão</text></g>)}
@@ -582,7 +602,7 @@ export default function Home() {
                     return false;
                 const isQuantityField = field.key === 'attendeeCount' || field.key === 'chairExtraCount';
                 return c.chairGenerationMode !== 'fill' || !isQuantityField;
-            }).map(field => <label className="field" key={field.key}>{field.key === 'coffeeTableCount' && c.loungeMode === 'set' ? 'Quantidade de conjuntos' : field.label}<div className="unit-input"><input type="number" inputMode={field.unit === 'un' ? 'numeric' : 'decimal'} min={field.min ?? .1} max={field.max ?? 30} step={field.unit === 'un' ? 1 : field.key === "roundTableTopThickness" || field.key === "rectTableTopThickness" || field.key === "bistroTableTopThickness" || field.key === "coffeeTableTopThickness" || field.key === "stoolSeatThickness" || field.key === "stoolBistroGap" ? 0.01 : 0.05} value={Number.isNaN(c[field.key]) ? '' : c[field.key] as number} onChange={e => update(field.key, e.target.value === '' ? NaN : Number(e.target.value))}/><span>{field.unit ?? 'm'}</span></div></label>)}</div></div>)}
+            }).map(field => <label className="field" key={field.key}>{field.key === 'coffeeTableCount' && c.loungeMode === 'set' ? 'Quantidade de conjuntos' : field.label}<div className="unit-input"><input type="number" inputMode={field.unit === 'un' ? 'numeric' : 'decimal'} min={field.min ?? .1} max={field.max ?? 30} step={field.unit === 'un' ? 1 : field.key === "showcaseGlassThickness" ? .001 : field.key === "roundTableTopThickness" || field.key === "rectTableTopThickness" || field.key === "bistroTableTopThickness" || field.key === "coffeeTableTopThickness" || field.key === "stoolSeatThickness" || field.key === "stoolBistroGap" ? 0.01 : 0.05} value={Number.isNaN(c[field.key]) ? '' : c[field.key] as number} onChange={e => update(field.key, e.target.value === '' ? NaN : Number(e.target.value))}/><span>{field.unit ?? 'm'}</span></div></label>)}</div></div>)}
       {!availableElements.some(f => c[f.key]) && <p className="tab-help">Selecione um elemento na aba Projeto para ajustar suas medidas.</p>}
       {c.led && <div className="texture-section"><h3>Textura da TV / LED</h3><p>Escolha a arte que vai aparecer na tela. A imagem inteira é ajustada às medidas do LED.</p><label className="upload-label" htmlFor="tv-image">Escolher imagem JPG ou PNG<input id="tv-image" type="file" accept="image/png,image/jpeg" onChange={handleImage}/></label><small>Até 2 MB · incorporada ao script · imagem estática</small>{c.screenImage ? <div className="texture-preview"><img src={c.screenImage} alt="Arte selecionada para a tela de TV"/><span>{c.screenName}</span><button onClick={() => { imageRequest.current += 1; setC(prev => ({ ...prev, screenImage: '', screenName: '' })); setNotice('Imagem removida.'); }}>Remover imagem</button></div> : <p className="tab-help">Sem imagem, a tela usa a cor de destaque.</p>}</div>}
       </TabsContent><TabsContent value="materials"><p className="tab-help">Escolha o acabamento de cada parte. Madeira e concreto usam textura procedural; metal e vidro recebem propriedades de superfície.</p><div className="material-fields">{materialFields.filter((field) => {
