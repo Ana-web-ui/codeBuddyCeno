@@ -1,8 +1,9 @@
 import { generateMax } from './maxscript';
-import { chairDefaults, layoutChairs, roundTableDefaults, layoutRoundTables } from './library';
-import type { ChairConfig, ReservedArea, RoundTableConfig } from './library';
+import { chairDefaults, layoutChairs, roundTableDefaults, layoutRoundTables, rectTableDefaults, layoutRectTables, } from './library';
+import type { ChairConfig, ReservedArea, RoundTableConfig, RectTableConfig, } from './library';
 import { blenderChairs, maxChairs } from './chair-exporters';
 import { blenderRoundTables, maxRoundTables } from './round-table-exporters';
+import { blenderRectTables, maxRectTables, } from './react-table-exporters';
 export type MaterialKind = 'white' | 'brand' | 'wood' | 'metal' | 'glass' | 'concrete' | 'plastic';
 export type ProjectType = 'stand' | 'palco';
 export type Target = 'blender' | 'max';
@@ -16,7 +17,7 @@ export const materials: {
     { value: 'glass', label: 'Vidro', color: '#81bfce' }, { value: 'concrete', label: 'Concreto', color: '#747b86' },
     { value: 'plastic', label: 'Plástico', color: '#c4d1e1' }
 ];
-export type Config = ChairConfig & RoundTableConfig & {
+export type Config = ChairConfig & RoundTableConfig & RectTableConfig & {
     projectType: ProjectType;
     name: string;
     width: number;
@@ -59,6 +60,7 @@ export type Config = ChairConfig & RoundTableConfig & {
 export const defaults: Config = {
     ...chairDefaults,
     ...roundTableDefaults,
+    ...rectTableDefaults,
     name: 'Meu primeiro stand', width: 10, depth: 5, height: 3.5, color: '#5268ff', target: 'blender', back: true, left: false, right: false, led: true, counter: true, stage: false, totem: false, spots: true,
     ledWidth: 4, ledHeight: 2, ledBottom: .65, counterWidth: 2, counterDepth: .65, counterHeight: 1, counterCount: 1,
     stageWidth: 4.5, stageDepth: 1.4, stageHeight: .3, totemWidth: .55, totemDepth: .25, totemHeight: 1.8, totemCount: 1, spotsCount: 3,
@@ -88,161 +90,95 @@ export function geometry(c: Config) {
                 i * (c.depth * 0.54 / (c.spotsCount - 1))),
     };
 }
-
 /**
  * Calcula as posições das mesas usando as áreas
  * ocupadas pelos elementos existentes.
  */
+function tableReservedAreas(c: Config): ReservedArea[] {
+    const g = geometry(c);
+    const reserved: ReservedArea[] = [];
+    function reserve(centerX: number, centerY: number, width: number, depth: number, clearance = 0.1) {
+        reserved.push({
+            centerX,
+            centerY,
+            width: width + 2 * clearance,
+            depth: depth + 2 * clearance,
+        });
+    }
+    // Reserva uma faixa nas bordas da área.
+    const edgeMargin = 0.2;
+    reserve(-c.width / 2 + edgeMargin / 2, 0, edgeMargin, c.depth, 0);
+    reserve(c.width / 2 - edgeMargin / 2, 0, edgeMargin, c.depth, 0);
+    reserve(0, -c.depth / 2 + edgeMargin / 2, c.width, edgeMargin, 0);
+    reserve(0, c.depth / 2 - edgeMargin / 2, c.width, edgeMargin, 0);
+    if (c.stage) {
+        reserve(0, g.stageY, c.stageWidth, c.stageDepth);
+    }
+    if (c.counter) {
+        for (const x of g.counterXs) {
+            reserve(x, g.counterY, c.counterWidth + 0.08, c.counterDepth + 0.08);
+        }
+    }
+    if (c.totem) {
+        for (const x of g.totemXs) {
+            reserve(x, g.totemY, c.totemWidth + 0.15, c.totemDepth + 0.2);
+        }
+    }
+    if (c.led) {
+        const ledY = c.depth / 2 - 0.35;
+        // Projeção da moldura e da tela.
+        reserve(0, ledY, c.ledWidth + 0.12, 0.2);
+        // Bases dos suportes, quando não há parede de fundo.
+        if (!c.back) {
+            for (const sign of [-1, 1]) {
+                reserve(sign * c.ledWidth * 0.4, ledY, 0.45, 0.5);
+            }
+        }
+    }
+    if (c.spots) {
+        // Postes de sustentação no fundo da área.
+        for (const sign of [-1, 1]) {
+            reserve(sign * (c.width / 2 - 0.35), c.depth / 2 - 0.35, 0.07, 0.07);
+        }
+    }
+    if (c.chairs) {
+        const seating = layoutChairs(c, g.stageY);
+        if (seating.generatedCount > 0) {
+            const stageFront = g.stageY - c.stageDepth / 2;
+            const entranceY = -c.depth / 2;
+            // Protege toda a zona entre a entrada e o palco:
+            // cadeiras, corredores e afastamento do palco.
+            reserve(0, (entranceY + stageFront) / 2, c.width, stageFront - entranceY, 0);
+        }
+    }
+    return reserved;
+}
+/** Distribui mesas redondas antes das retangulares. */
+export function tableGeometry(c: Config) {
+    const reserved = tableReservedAreas(c);
+    const roundTables = layoutRoundTables(c, reserved);
+    const rectReserved: ReservedArea[] = [...reserved];
+    if (c.roundTables && c.rectTables) {
+        const mixedGap = Math.max(c.roundTableGap, c.rectTableGap);
+        for (const [x, y] of roundTables.positions) {
+            // Aproximação conservadora: reserva um quadrado ao redor do círculo.
+            rectReserved.push({
+                centerX: x,
+                centerY: y,
+                width: c.roundTableDiameter + 2 * mixedGap,
+                depth: c.roundTableDiameter + 2 * mixedGap,
+            });
+        }
+    }
+    const rectTables = layoutRectTables(c, rectReserved);
+    return { roundTables, rectTables };
+}
+/** Mantém compatibilidade com a planta e o exportador existentes. */
 export function roundTableGeometry(c: Config) {
-  if (!c.roundTables) {
-    return {
-      positions: [] as [number, number][],
-      generatedCount: 0,
-    };
-  }
-
-  const g = geometry(c);
-  const reserved: ReservedArea[] = [];
-
-  function reserve(
-    centerX: number,
-    centerY: number,
-    width: number,
-    depth: number,
-    clearance = 0.1,
-  ) {
-    reserved.push({
-      centerX,
-      centerY,
-      width: width + 2 * clearance,
-      depth: depth + 2 * clearance,
-    });
-  }
-
-  // Reserva uma faixa nas bordas da área.
-  const edgeMargin = 0.2;
-
-  reserve(
-    -c.width / 2 + edgeMargin / 2,
-    0,
-    edgeMargin,
-    c.depth,
-    0,
-  );
-
-  reserve(
-    c.width / 2 - edgeMargin / 2,
-    0,
-    edgeMargin,
-    c.depth,
-    0,
-  );
-
-  reserve(
-    0,
-    -c.depth / 2 + edgeMargin / 2,
-    c.width,
-    edgeMargin,
-    0,
-  );
-
-  reserve(
-    0,
-    c.depth / 2 - edgeMargin / 2,
-    c.width,
-    edgeMargin,
-    0,
-  );
-
-  if (c.stage) {
-    reserve(
-      0,
-      g.stageY,
-      c.stageWidth,
-      c.stageDepth,
-    );
-  }
-
-  if (c.counter) {
-    for (const x of g.counterXs) {
-      reserve(
-        x,
-        g.counterY,
-        c.counterWidth + 0.08,
-        c.counterDepth + 0.08,
-      );
-    }
-  }
-
-  if (c.totem) {
-    for (const x of g.totemXs) {
-      reserve(
-        x,
-        g.totemY,
-        c.totemWidth + 0.15,
-        c.totemDepth + 0.2,
-      );
-    }
-  }
-
-  if (c.led) {
-    const ledY = c.depth / 2 - 0.35;
-
-    // Projeção da moldura e da tela.
-    reserve(
-      0,
-      ledY,
-      c.ledWidth + 0.12,
-      0.2,
-    );
-
-    // Bases dos suportes, quando não há parede de fundo.
-    if (!c.back) {
-      for (const sign of [-1, 1]) {
-        reserve(
-          sign * c.ledWidth * 0.4,
-          ledY,
-          0.45,
-          0.5,
-        );
-      }
-    }
-  }
-
-  if (c.spots) {
-    // Postes de sustentação no fundo da área.
-    for (const sign of [-1, 1]) {
-      reserve(
-        sign * (c.width / 2 - 0.35),
-        c.depth / 2 - 0.35,
-        0.07,
-        0.07,
-      );
-    }
-  }
-
-  if (c.chairs) {
-    const seating = layoutChairs(c, g.stageY);
-
-    if (seating.generatedCount > 0) {
-      const stageFront =
-        g.stageY - c.stageDepth / 2;
-
-      const entranceY = -c.depth / 2;
-
-      // Protege toda a zona entre a entrada e o palco:
-      // cadeiras, corredores e afastamento do palco.
-      reserve(
-        0,
-        (entranceY + stageFront) / 2,
-        c.width,
-        stageFront - entranceY,
-        0,
-      );
-    }
-  }
-
-  return layoutRoundTables(c, reserved);
+    return tableGeometry(c).roundTables;
+}
+export function rectTableGeometry(c: Config) {
+    return tableGeometry(c).rectTables;
 }
 export function validate(c: Config) {
     if (!c.name.trim() || c.name.length > 80)
@@ -252,8 +188,8 @@ export function validate(c: Config) {
     if (c.projectType === 'palco') {
         if (!c.stage)
             throw new Error('Palco / plenária precisa incluir um palco.');
-        if (c.back || c.left || c.right || c.counter || c.totem || c.roundTables) {
-            throw new Error("Nesta versão, paredes, balcões, totens e mesas redondas ainda não estão disponíveis em Palco / plenária.");
+        if (c.back || c.left || c.right || c.counter || c.totem) {
+            throw new Error("Nesta versão, paredes, balcões e totens ainda não estão disponíveis em Palco / plenária.");
         }
     }
     for (const k of ['width', 'depth', 'height'] as const) {
@@ -266,20 +202,24 @@ export function validate(c: Config) {
         throw new Error('Escolha uma cor válida.');
     if (!['blender', 'max'].includes(c.target))
         throw new Error('Escolha Blender ou 3ds Max.');
-    for (const k of ['back', 'left', 'right', 'led', 'counter', 'stage', 'totem', 'spots', 'chairs', 'roundTables'] as const)
+    for (const k of ['back', 'left', 'right', 'led', 'counter', 'stage', 'totem', 'spots', 'chairs', 'roundTables', 'rectTables'] as const)
         if (typeof c[k] !== 'boolean')
             throw new Error('Seleção de elementos inválida.');
     for (const [key, initial] of Object.entries(defaults))
         if (typeof initial === 'number' && (!Number.isFinite(c[key as keyof Config] as number)))
             throw new Error('Confira os parâmetros dos elementos: todas as medidas e quantidades devem conter números.');
-    for (const k of ['floorMat', 'wallMat', 'counterMat', 'stageMat', 'totemMat', 'roundTableMat'] as const)
+    for (const k of ['floorMat', 'wallMat', 'counterMat', 'stageMat', 'totemMat', 'roundTableMat', 'rectTableMat'] as const)
         if (!materials.some(m => m.value === c[k]))
             throw new Error('Material inválido.');
-    const check = (keys: (keyof Config)[], label: string) => { for (const k of keys)
-        if (typeof c[k] !== 'number' || !Number.isFinite(c[k]) || (c[k] as number) < .1 || (c[k] as number) > 30)
-            throw new Error('Confira as medidas de ' + label + ' (mínimo 0,1 m).'); };
-    const count = (value: number, label: string, max: number) => { if (!Number.isInteger(value) || value < 1 || value > max)
-        throw new Error(label + ': use uma quantidade inteira de 1 a ' + max + '.'); };
+    const check = (keys: (keyof Config)[], label: string) => {
+        for (const k of keys)
+            if (typeof c[k] !== 'number' || !Number.isFinite(c[k]) || (c[k] as number) < .1 || (c[k] as number) > 30)
+                throw new Error('Confira as medidas de ' + label + ' (mínimo 0,1 m).');
+    };
+    const count = (value: number, label: string, max: number) => {
+        if (!Number.isInteger(value) || value < 1 || value > max)
+            throw new Error(label + ': use uma quantidade inteira de 1 a ' + max + '.');
+    };
     if (c.led) {
         check(['ledWidth', 'ledHeight'], 'LED');
         if (!Number.isFinite(c.ledBottom) || c.ledBottom < .1 || c.ledBottom > 8)
@@ -332,69 +272,42 @@ export function validate(c: Config) {
     if (c.screenImage && (!/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/]+={0,2}$/.test(c.screenImage) || c.screenImage.length > 2800000))
         throw new Error('Use uma imagem JPG ou PNG de até 2 MB.');
     layoutChairs(c, geometry(c).stageY);
-    roundTableGeometry(c);
+    tableGeometry(c);
     return c;
 }
 export function filename(c: Config) { return (c.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'stand') + (c.target === 'max' ? '.ms' : '.py'); }
-export function generate(
-  c: Config,
-  options: {
+export function generate(c: Config, options: {
     confirmedPartial?: string;
-  } = {},
-) {
-  validate(c);
-
-  const chairLayout = layoutChairs(
-    c,
-    geometry(c).stageY,
-  );
-
-  const tableLayout = roundTableGeometry(c);
-
-  const configurationKey = JSON.stringify(c);
-
-  if (
-    chairLayout.missingCount > 0 &&
-    options.confirmedPartial !== configurationKey
-  ) {
-    throw new Error(
-      `Você solicitou ${chairLayout.requestedCount} cadeiras, ` +
-        `mas cabem ${chairLayout.generatedCount}. ` +
-        "Confirme a geração parcial antes de continuar.",
-    );
-  }
-
-  if (c.target === "blender") {
-    return (
-      generateBlender(c) +
-      blenderChairs(c, chairLayout) +
-      blenderRoundTables(c, tableLayout)
-    );
-  }
-
-  const script = generateMax(c);
-
-  const additions =
-    maxChairs(c, chairLayout) +
-    maxRoundTables(c, tableLayout);
-
-  if (!additions) {
-    return script;
-  }
-
-  const marker = "select criados";
-
-  if (!script.includes(marker)) {
-    throw new Error(
-      "Não encontrei o ponto de inserção " +
-        "dos objetos no MaxScript.",
-    );
-  }
-
-  return script.replace(
-    marker,
-    additions + "\n" + marker,
-  );
+} = {}) {
+    validate(c);
+    const chairLayout = layoutChairs(c, geometry(c).stageY);
+    const tables = tableGeometry(c);
+    const configurationKey = JSON.stringify(c);
+    if (chairLayout.missingCount > 0 &&
+        options.confirmedPartial !== configurationKey) {
+        throw new Error(`Você solicitou ${chairLayout.requestedCount} cadeiras, ` +
+            `mas cabem ${chairLayout.generatedCount}. ` +
+            "Confirme a geração parcial antes de continuar.");
+    }
+    if (c.target === "blender") {
+        return (generateBlender(c) +
+            blenderChairs(c, chairLayout) +
+            blenderRoundTables(c, tables.roundTables) +
+            blenderRectTables(c, tables.rectTables));
+    }
+    const script = generateMax(c);
+    const additions = maxChairs(c, chairLayout) +
+        maxRoundTables(c, tables.roundTables) +
+        maxRectTables(c, tables.rectTables);
+    if (!additions) {
+        return script;
+    }
+    const marker = "select criados";
+    if (!script.includes(marker)) {
+        throw new Error("Não encontrei o ponto de inserção " +
+            "dos objetos no MaxScript.");
+    }
+    return script.replace(marker, additions + "\n" + marker);
 }
 export function generateBlender(c: Config) {
     validate(c);
