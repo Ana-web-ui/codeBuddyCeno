@@ -1,6 +1,7 @@
 /** Catálogo dos componentes que já possuem geração no Code Buddy. */
 import type { MaterialKind } from "./generator";
 export const libraryCatalog = [
+    { id: 'pedestals', label: 'Pedestais expositores', projectTypes: ['stand', 'palco'] },
     { id: "led", label: "Painel de LED", projectTypes: ["stand", "palco"] },
     { id: "counter", label: "Balcão", projectTypes: ["stand"] },
     { id: "stage", label: "Palco", projectTypes: ["stand", "palco"] },
@@ -994,4 +995,70 @@ export function layoutTablesWithChairs(c: TableSeatingContext, kind: 'round' | '
         }
     chairs.generatedCount = chairs.positions.length;
     return { tables: { positions, generatedCount: positions.length }, chairs, footprint };
+}
+export type PedestalConfig = {
+    pedestals: boolean;
+    pedestalCount: number;
+    pedestalWidth: number;
+    pedestalDepth: number;
+    pedestalHeight: number;
+    pedestalGap: number;
+    pedestalMat: MaterialKind;
+};
+export const pedestalDefaults: PedestalConfig = {
+    pedestals: false,
+    pedestalCount: 1,
+    pedestalWidth: 0.5,
+    pedestalDepth: 0.5,
+    pedestalHeight: 1,
+    pedestalGap: 0.5,
+    pedestalMat: 'white',
+};
+export type PedestalLayout = {
+    positions: [
+        number,
+        number
+    ][];
+    generatedCount: number;
+};
+export function layoutPedestals(c: PedestalConfig & {
+    width: number;
+    depth: number;
+    height: number;
+}, reserved: ReservedArea[]): PedestalLayout {
+    if (!c.pedestals)
+        return { positions: [], generatedCount: 0 };
+    if (!Number.isInteger(c.pedestalCount) || c.pedestalCount < 1 || c.pedestalCount > 100)
+        throw new Error('Pedestais: use uma quantidade inteira de 1 a 100.');
+    for (const [v, min, max, label] of [
+        [c.pedestalWidth, .2, 3, 'Largura do pedestal'], [c.pedestalDepth, .2, 3, 'Profundidade do pedestal'],
+        [c.pedestalHeight, .2, 3, 'Altura do pedestal'], [c.pedestalGap, 0, 3, 'Vão entre pedestais'],
+    ] as const)
+        if (!Number.isFinite(v) || v < min || v > max)
+            throw new Error(`${label}: use um valor entre ${min} e ${max} m.`);
+    if (![c.width, c.depth, c.height].every(Number.isFinite) || c.width <= 0 || c.depth <= 0 || c.height <= 0)
+        throw new Error('Confira as medidas da área de montagem.');
+    if (c.pedestalHeight > c.height)
+        throw new Error('O pedestal deve caber na altura da montagem.');
+    for (const a of reserved)
+        if (![a.centerX, a.centerY, a.width, a.depth].every(Number.isFinite) || a.width <= 0 || a.depth <= 0)
+            throw new Error('Existe uma área reservada com medidas inválidas.');
+    const w = c.pedestalWidth, d = c.pedestalDepth, gap = c.pedestalGap;
+    const cols = Math.floor((c.width + gap + 1e-9) / (w + gap)), rows = Math.floor((c.depth + gap + 1e-9) / (d + gap));
+    const fullW = cols * w + Math.max(0, cols - 1) * gap, fullD = rows * d + Math.max(0, rows - 1) * gap;
+    const positions: [
+        number,
+        number
+    ][] = [];
+    for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+            const x = -fullW / 2 + w / 2 + col * (w + gap), y = -fullD / 2 + d / 2 + row * (d + gap);
+            if (reserved.some(a => Math.abs(x - a.centerX) < (w + a.width) / 2 && Math.abs(y - a.centerY) < (d + a.depth) / 2))
+                continue;
+            positions.push([x, y]);
+            if (positions.length === c.pedestalCount)
+                return { positions, generatedCount: positions.length };
+        }
+    }
+    throw new Error(`Foram solicitados ${c.pedestalCount} pedestais, mas esta distribuição comporta ${positions.length}. Ajuste a quantidade, as medidas ou os espaços livres.`);
 }
