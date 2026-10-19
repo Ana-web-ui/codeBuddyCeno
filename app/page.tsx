@@ -1,23 +1,16 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
-import type { ChangeEvent } from 'react';
+import type { ChangeEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { Box, Layers, Download, Copy, Check, Code2, Ruler, Monitor, LampDesk, PanelTop, RectangleVertical, Square, Sparkles, Armchair, Circle } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { materials, generate, geometry, filename, validate, tableGeometry, stoolGeometry, pedestalGeometry, loungeGeometry, coffeeTableGeometry, showcaseGeometry, extraObjectGeometry, assemblyGeometry, } from '@/lib/generator';
 import type { MaterialKind, Target, Config, ProjectType } from '@/lib/generator';
+import { unitTransform } from '@/lib/assembly';
+import type { ObjectTransform } from '@/lib/assembly';
 import { projectTypes, createProjectConfig } from '@/lib/project-types';
 import { libraryCatalog, layoutChairs, extraObjectDefinitions, extraObjectSpec } from '@/lib/library';
-type ObjectTransform = { x: number; y: number; rotation: number };
-function unitTransform(c: Config, unit: ReturnType<typeof assemblyGeometry>[number]): ObjectTransform {
-    const transform = c.objectTransforms[unit.id];
-    return {
-        x: transform?.x ?? unit.x,
-        y: transform?.y ?? unit.y,
-        rotation: unit.rotation + (transform?.rotation ?? 0),
-    };
-}
 const MAX_PROJECT_BYTES = 4 * 1024 * 1024;
 function serializeProject(config: Config): string {
     const text = JSON.stringify({ config }, null, 2);
@@ -78,8 +71,8 @@ const elements = [
     { key: 'stools', title: 'Banquetas', text: 'Assentos altos com base central', icon: Armchair },
 ] as const;
 type NumberKey = {
-    [K in Extract<keyof Config, string>]: Config[K] extends number ? K : never;
-}[Extract<keyof Config, string>];
+    [K in keyof Config]: Config[K] extends number ? K : never;
+}[keyof Config];
 type ParameterField = {
     step?: number;
     key: NumberKey;
@@ -229,22 +222,121 @@ const materialFields: {
     { key: 'openCubeMat', label: 'Cubos vazados', enabled: 'openCubes' },
     { key: 'rugMat', label: 'Tapetes circulares', enabled: 'roundRugs' }];
 const num = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
-function Plan({ c, selectedId, onSelect }: {
-    c: Config; selectedId?: string | null; onSelect?: (id: string) => void;
+type DragPreview = { id: string; transform: ObjectTransform; error: string };
+type PlanDragSession = {
+    pointerId: number; svg: SVGSVGElement; config: Config; id: string;
+    startClientX: number; startClientY: number; offsetX: number; offsetY: number;
+    original: ObjectTransform; latest: ObjectTransform; moved: boolean;
+};
+/** SVG coordinates use +Y down; the project uses +Y toward the back. */
+function planPoint(width: number, depth: number, svgX: number, svgY: number) {
+    const scale = Math.min(440 / width, 280 / depth);
+    return { x: (svgX - 300) / scale, y: (195 - svgY) / scale };
+}
+function dragPosition(x: number, y: number, rotation: number, snap: boolean): ObjectTransform {
+    const round = (v: number) => Number((snap ? Math.round(v / .1) * .1 : v).toFixed(6));
+    return { x: round(x), y: round(y), rotation };
+}
+function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
+    c: Config; selectedId?: string | null; onSelect?: (id: string) => void; snap?: boolean;
+    onDragPreview?: (preview: DragPreview | null) => void;
+    onDrop?: (id: string, transform: ObjectTransform) => void;
 }) {
+    const [drag, setDrag] = useState<DragPreview | null>(null);
+    const dragSession = useRef<PlanDragSession | null>(null);
+    // Use current callbacks when a session ends during effect cleanup.
+    const dragCallback = useRef(onDragPreview);
+    dragCallback.current = onDragPreview;
+    function release(session: PlanDragSession) {
+        if (session.svg.hasPointerCapture(session.pointerId)) session.svg.releasePointerCapture(session.pointerId);
+    }
+    function cancelDrag() {
+        const session = dragSession.current;
+        dragSession.current = null;
+        if (session) release(session);
+        setDrag(null);
+        dragCallback.current?.(null);
+    }
+    useEffect(() => {
+        const session = dragSession.current;
+        if (session && (session.config !== c || (selectedId != null && selectedId !== session.id))) cancelDrag();
+    }, [c, selectedId]);
+    useEffect(() => () => {
+        const session = dragSession.current;
+        dragSession.current = null;
+        if (session) release(session);
+        dragCallback.current?.(null);
+    }, []);
+    function clientPoint(svg: SVGSVGElement, clientX: number, clientY: number) {
+        const matrix = svg.getScreenCTM();
+        if (!matrix) return null;
+        const point = svg.createSVGPoint(); point.x = clientX; point.y = clientY;
+        const local = point.matrixTransform(matrix.inverse());
+        return planPoint(c.width, c.depth, local.x, local.y);
+    }
+    function startDrag(event: ReactPointerEvent<SVGGElement>, id: string, original: ObjectTransform) {
+        if (!onDrop || event.button !== 0 || !event.isPrimary || dragSession.current) return;
+        const svg = event.currentTarget.ownerSVGElement;
+        if (!svg) return;
+        const point = clientPoint(svg, event.clientX, event.clientY);
+        if (!point) return;
+        event.preventDefault(); event.stopPropagation();
+        onSelect?.(id);
+        event.currentTarget.focus();
+        svg.setPointerCapture(event.pointerId);
+        dragSession.current = { pointerId: event.pointerId, svg, config: c, id,
+            startClientX: event.clientX, startClientY: event.clientY,
+            offsetX: original.x - point.x, offsetY: original.y - point.y,
+            original: { ...original }, latest: { ...original }, moved: false };
+        const preview = { id, transform: { ...original }, error: '' };
+        setDrag(preview); onDragPreview?.(preview);
+    }
+    function moveDrag(event: ReactPointerEvent<SVGSVGElement>) {
+        const session = dragSession.current;
+        if (!session || event.pointerId !== session.pointerId) return;
+        if (session.config !== c) { cancelDrag(); return; }
+        event.preventDefault();
+        if (!session.moved && Math.hypot(event.clientX - session.startClientX, event.clientY - session.startClientY) < 3) return;
+        const point = clientPoint(session.svg, event.clientX, event.clientY);
+        if (!point) return;
+        session.moved = true;
+        const transform = dragPosition(point.x + session.offsetX, point.y + session.offsetY, session.original.rotation, snap);
+        if (transform.x === session.latest.x && transform.y === session.latest.y) return;
+        session.latest = transform;
+        let error = '';
+        try { validate({ ...c, objectTransforms: { ...c.objectTransforms, [session.id]: transform } }); }
+        catch (e) { error = e instanceof Error ? e.message : 'Posição inválida.'; }
+        const preview = { id: session.id, transform, error };
+        setDrag(preview); onDragPreview?.(preview);
+    }
+    function endDrag(event: ReactPointerEvent<SVGSVGElement>) {
+        const session = dragSession.current;
+        if (!session || session.pointerId !== event.pointerId) return;
+        // Pointer-up can contain a final coordinate not delivered by pointer-move.
+        moveDrag(event);
+        if (dragSession.current !== session) return;
+        dragSession.current = null;
+        release(session);
+        setDrag(null); onDragPreview?.(null);
+        if (session.moved && session.config === c && (session.latest.x !== session.original.x || session.latest.y !== session.original.y)) {
+            onDrop?.(session.id, session.latest);
+        }
+    }
     const units = assemblyGeometry(c);
     const drawUnits = (floor: boolean) => units.filter(unit => unit.floor === floor).map(unit => {
-        const t = unitTransform(c, unit), selected = selectedId === unit.id;
+        const t = drag?.id === unit.id ? drag.transform : unitTransform(c, unit), selected = selectedId === unit.id;
+        const stroke = drag?.id === unit.id && drag.error ? '#ff6575' : selected ? '#ffce57' : '#dce6ff';
         return <g key={unit.id} role="button" tabIndex={0} aria-label={`Selecionar ${unit.label}`} aria-pressed={selected}
           onClick={() => onSelect?.(unit.id)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect?.(unit.id); } }}
-          style={{ cursor: 'pointer', outline: 'none' }} transform={`translate(${px(t.x)} ${py(t.y)}) rotate(${-t.rotation})`}>
-          <title>{`${unit.label} — clique para ajustar`}</title>
-          {unit.members.map((m: { x: number; y: number; material: string; role: string; index: any; rotation: number; circle: any; width: number; depth: number; }) => {
+          onPointerDown={event => startDrag(event, unit.id, unitTransform(c, unit))}
+          style={{ cursor: drag?.id === unit.id ? 'grabbing' : 'grab', touchAction: 'none' }} transform={`translate(${px(t.x)} ${py(t.y)}) rotate(${-t.rotation})`}>
+          <title>{`${unit.label} — arraste para mover ou clique para ajustar`}</title>
+          {unit.members.map(m => {
               const mx = (m.x - unit.x) * s, my = -(m.y - unit.y) * s;
               const fill = m.material === 'brand' ? c.color : materials.find(mat => mat.value === m.material)?.color ?? '#c8cedb';
               return <g key={`${m.role}:${m.index}`} transform={`translate(${mx} ${my}) rotate(${-m.rotation})`}>
-                {m.circle ? <circle r={m.width * s / 2} fill={fill} fillOpacity={floor ? .45 : 1} stroke={selected ? '#ffce57' : '#dce6ff'} strokeWidth={selected ? 2.5 : 1} />
-                  : <rect x={-m.width * s / 2} y={-m.depth * s / 2} width={m.width * s} height={m.depth * s} rx="1" fill={fill} fillOpacity={m.role === 'showcases' ? .4 : m.role === 'openCubes' ? .25 : 1} stroke={selected ? '#ffce57' : '#dce6ff'} strokeWidth={selected ? 2.5 : 1} />}
+                {m.circle ? <circle r={m.width * s / 2} fill={fill} fillOpacity={floor ? .45 : 1} stroke={stroke} strokeWidth={selected ? 2.5 : 1} />
+                  : <rect x={-m.width * s / 2} y={-m.depth * s / 2} width={m.width * s} height={m.depth * s} rx="1" fill={fill} fillOpacity={m.role === 'showcases' ? .4 : m.role === 'openCubes' ? .25 : 1} stroke={stroke} strokeWidth={selected ? 2.5 : 1} />}
                 {m.role === 'openCubes' && <rect x={(-m.width / 2 + c.openCubeWallThickness) * s} y={-m.depth * s / 2} width={(m.width - 2 * c.openCubeWallThickness) * s} height={m.depth * s} fill="none" stroke="#8795ad" strokeDasharray="2 2" />}
                 {!m.circle && <path d={`M ${-m.width * s / 3} ${-m.depth * s / 2} H ${m.width * s / 3}`} stroke="#fff" strokeWidth="2" />}
               </g>;
@@ -257,7 +349,12 @@ function Plan({ c, selectedId, onSelect }: {
     const s = Math.min(440 / c.width, 280 / c.depth);
     const w = c.width * s, h = c.depth * s, x = (600 - w) / 2, y = (390 - h) / 2;
     const px = (v: number) => x + w / 2 + v * s, py = (v: number) => y + h / 2 - v * s;
-    return <svg viewBox="0 0 600 430" role="img" aria-label={`Planta esquemática da área de montagem de ${num(c.width)} por ${num(c.depth)} metros`}>
+    return <svg viewBox="0 0 600 430" role="group" tabIndex={0}
+      onPointerMove={moveDrag} onPointerUp={endDrag}
+      onPointerCancel={event => { if (dragSession.current?.pointerId === event.pointerId) cancelDrag(); }}
+      onLostPointerCapture={event => { if (dragSession.current?.pointerId === event.pointerId) cancelDrag(); }}
+      onKeyDown={event => { if (event.key === 'Escape' && dragSession.current) { event.preventDefault(); cancelDrag(); } }}
+      style={{ userSelect: 'none' }} aria-label={`Planta esquemática da área de montagem de ${num(c.width)} por ${num(c.depth)} metros`}>
       <defs><pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M 20 0 L 0 0 0 20" fill="none" stroke="#252d40" strokeWidth=".5"/></pattern></defs>
     <rect width="600" height="430" fill="url(#grid)"/>
     <path d={`M ${x} ${y - 22} H ${x + w} M ${x} ${y - 29} v 14 M ${x + w} ${y - 29} v 14`} stroke="#67758e" fill="none"/>
@@ -278,6 +375,10 @@ function Plan({ c, selectedId, onSelect }: {
     {c.counter && g.counterXs.map((cx, i) => <g key={i}><rect x={px(cx - (g.counterW + .08) / 2)} y={py(g.counterY + (c.counterDepth + .08) / 2)} width={(g.counterW + .08) * s} height={(c.counterDepth + .08) * s} rx="3" fill={c.counterMat === 'brand' ? c.color : materials.find(m => m.value === c.counterMat)?.color}/><text x={px(cx)} y={py(g.counterY) + 5} textAnchor="middle" fill="white" fontSize="12">Balcão</text></g>)}
     {c.totem && g.totemXs.map((tx, i) => <g key={i}><rect x={px(tx - (c.totemWidth + .15) / 2)} y={py(g.totemY + (c.totemDepth + .2) / 2)} width={(c.totemWidth + .15) * s} height={(c.totemDepth + .2) * s} rx="2" fill={c.totemMat === 'brand' ? c.color : materials.find(m => m.value === c.totemMat)?.color}/><text x={px(tx)} y={py(g.totemY) + 27} textAnchor="middle" fill="#cdd7ec" fontSize="12">Totem</text></g>)}
     {c.spots && [-1, 1].map(sign => <g key={sign}><path d={`M ${px(sign * (c.width / 2 - .35))} ${py(c.depth / 2 - .25)} V ${py(-c.depth / 2 + .25)}`} stroke="#b49a67" strokeWidth="2"/>{g.spotYs.map((sy, i) => <circle key={i} cx={px(sign * (c.width / 2 - .35))} cy={py(sy)} r="4" fill="#f0ca85"/>)}</g>)}
+    {drag && <g pointerEvents="none" transform={`translate(${Math.max(5, Math.min(390, px(drag.transform.x) + 12))} ${Math.max(20, Math.min(398, py(drag.transform.y) - 16))})`}>
+      <rect x="0" y="-17" width="198" height="27" rx="5" fill="#101827" stroke={drag.error ? '#ff6575' : '#ffce57'} />
+      <text x="8" y="0" fill={drag.error ? '#ff6575' : '#ffce57'} fontSize="12">X: {num(drag.transform.x)} m · Y: {num(drag.transform.y)} m</text>
+    </g>}
     <text x="300" y={y + h + 35} textAnchor="middle" fill="#8392ae" fontSize="13" letterSpacing="3">FRENTE / ENTRADA</text>
   </svg>;
 }
@@ -302,6 +403,8 @@ export default function Home() {
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [transformDraft, setTransformDraft] = useState({ x: '', y: '', rotation: '' });
     const [assemblyError, setAssemblyError] = useState('');
+    const [dragPreview, setDragPreview] = useState<DragPreview | null>(null);
+    const [snapToGrid, setSnapToGrid] = useState(true);
     const current = useRef(c);
     current.current = c;
     const imageRequest = useRef(0);
@@ -342,6 +445,14 @@ export default function Home() {
             setNotice('Montagem atualizada. Gere novamente o script para exportar os ajustes.');
         } catch (e) { setAssemblyError(e instanceof Error ? e.message : 'Não foi possível aplicar o ajuste.'); }
     }
+    function previewDrag(preview: DragPreview | null) {
+        setDragPreview(preview);
+        if (preview) setAssemblyError('');
+    }
+    function dropObject(id: string, transform: ObjectTransform) {
+        if (!assemblyUnits.some(unit => unit.id === id)) return;
+        commitTransforms({ ...c.objectTransforms, [id]: transform });
+    }
     function applySelectedTransform() {
         if (!selectedUnit) return;
         if (Object.values(transformDraft).some(value => !value.trim())) {
@@ -357,7 +468,7 @@ export default function Home() {
     const display = c;
     const dirty = output && JSON.stringify(output.config) !== JSON.stringify(c);
     const update = <K extends keyof Config>(key: K, value: Config[K]) => {
-        const preservesLayout = typeof key === 'string' && (['name', 'target', 'color', 'screenImage', 'screenName'].includes(key) || key.endsWith('Mat'));
+        const preservesLayout = ['name', 'target', 'color', 'screenImage', 'screenName'].includes(key) || key.endsWith('Mat');
         setC(prev => ({ ...prev, [key]: value, objectTransforms: preservesLayout ? prev.objectTransforms : {} }));
         setError(''); setAssemblyError('');
         setNotice(!preservesLayout && Object.keys(c.objectTransforms).length ? 'As medidas, quantidades ou distribuição mudaram. Os ajustes individuais foram restaurados para a nova distribuição automática.' : '');
@@ -427,7 +538,7 @@ export default function Home() {
             }
             imageRequest.current += 1;
             const previous = current.current;
-            projectDrafts.current[previous.projectType as ProjectType] = { ...previous };
+            projectDrafts.current[previous.projectType] = { ...previous };
             projectDrafts.current[loaded.projectType as ProjectType] = { ...loaded };
             current.current = loaded;
             setSelectedId(null); setAssemblyError('');
@@ -475,7 +586,7 @@ export default function Home() {
             image.onload = () => {
                 if (!isCurrent())
                     return;
-                setC((prev: any) => ({ ...prev, screenImage: data, screenName: file.name }));
+                setC(prev => ({ ...prev, screenImage: data, screenName: file.name }));
                 setError('');
                 setNotice('Textura da TV adicionada. Gere o script para incluir a imagem.');
             };
@@ -530,7 +641,7 @@ export default function Home() {
             return;
         imageRequest.current += 1;
         setSelectedId(null); setAssemblyError('');
-        const currentProjectType = c.projectType as ProjectType;
+        const currentProjectType = c.projectType;
         // Guarda o preenchimento do projeto atual.
         projectDrafts.current[currentProjectType] = { ...c };
         // Recupera o preenchimento do próximo projeto.
@@ -696,7 +807,7 @@ export default function Home() {
                 return c.chairGenerationMode !== 'fill' || !isQuantityField;
             }).map(field => <label className="field" key={field.key}>{field.key === 'coffeeTableCount' && c.loungeMode === 'set' ? 'Quantidade de conjuntos' : field.label}<div className="unit-input"><input type="number" inputMode={field.unit === 'un' ? 'numeric' : 'decimal'} min={field.min ?? .1} max={field.max ?? 30} step={field.step ?? (field.unit === 'un' ? 1 : field.key === "showcaseGlassThickness" ? .001 : field.key === "roundTableTopThickness" || field.key === "rectTableTopThickness" || field.key === "bistroTableTopThickness" || field.key === "coffeeTableTopThickness" || field.key === "stoolSeatThickness" || field.key === "stoolBistroGap" ? 0.01 : 0.05)} value={Number.isNaN(c[field.key]) ? '' : c[field.key] as number} onChange={e => update(field.key, e.target.value === '' ? NaN : Number(e.target.value))}/><span>{field.unit ?? 'm'}</span></div></label>)}</div></div>)}
       {!availableElements.some(f => c[f.key]) && <p className="tab-help">Selecione um elemento na aba Projeto para ajustar suas medidas.</p>}
-      {c.led && <div className="texture-section"><h3>Textura da TV / LED</h3><p>Escolha a arte que vai aparecer na tela. A imagem inteira é ajustada às medidas do LED.</p><label className="upload-label" htmlFor="tv-image">Escolher imagem JPG ou PNG<input id="tv-image" type="file" accept="image/png,image/jpeg" onChange={handleImage}/></label><small>Até 2 MB · incorporada ao script · imagem estática</small>{c.screenImage ? <div className="texture-preview"><img src={c.screenImage} alt="Arte selecionada para a tela de TV"/><span>{c.screenName}</span><button onClick={() => { imageRequest.current += 1; setC((prev: any) => ({ ...prev, screenImage: '', screenName: '' })); setNotice('Imagem removida.'); }}>Remover imagem</button></div> : <p className="tab-help">Sem imagem, a tela usa a cor de destaque.</p>}</div>}
+      {c.led && <div className="texture-section"><h3>Textura da TV / LED</h3><p>Escolha a arte que vai aparecer na tela. A imagem inteira é ajustada às medidas do LED.</p><label className="upload-label" htmlFor="tv-image">Escolher imagem JPG ou PNG<input id="tv-image" type="file" accept="image/png,image/jpeg" onChange={handleImage}/></label><small>Até 2 MB · incorporada ao script · imagem estática</small>{c.screenImage ? <div className="texture-preview"><img src={c.screenImage} alt="Arte selecionada para a tela de TV"/><span>{c.screenName}</span><button onClick={() => { imageRequest.current += 1; setC(prev => ({ ...prev, screenImage: '', screenName: '' })); setNotice('Imagem removida.'); }}>Remover imagem</button></div> : <p className="tab-help">Sem imagem, a tela usa a cor de destaque.</p>}</div>}
       </TabsContent><TabsContent value="materials"><p className="tab-help">Escolha o acabamento de cada parte. Madeira e concreto usam textura procedural; metal e vidro recebem propriedades de superfície.</p><div className="material-fields">{materialFields.filter((field) => {
             if (field.key === 'wallMat')
                 return c.back || c.left || c.right;
@@ -749,7 +860,12 @@ export default function Home() {
     <section className="result-panel" aria-label="Visualização e script">
       <div className="config-panel" style={{ marginBottom: 16, padding: 16 }}>
         <h3 style={{ marginTop: 0 }}>Ajustar montagem</h3>
-        <p className="tab-help">Clique em um móvel na planta ou escolha abaixo. Mesas e seus assentos vinculados se movem juntos. Palco, estrutura e plateia continuam automáticos.</p>
+        <p className="tab-help">Arraste um móvel na planta ou escolha abaixo para ajustar pelos campos. Mesas e seus assentos vinculados se movem juntos. Palco, estrutura e plateia continuam automáticos.</p>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+          <input type="checkbox" checked={snapToGrid} disabled={!!dragPreview} onChange={event => setSnapToGrid(event.target.checked)} />
+          Encaixar a cada 10 cm
+        </label>
+        <p className="tab-help">Arraste e solte para aplicar. Vermelho indica uma posição inválida; ao soltar, o objeto volta. Pressione Esc para cancelar.</p>
         <label className="field">Objeto ou conjunto
           <select aria-label="Selecionar objeto da montagem" value={selectedId ?? ''} onChange={event => setSelectedId(event.target.value || null)} style={{ width: '100%', padding: 10, marginTop: 8, background: '#0e1524', color: '#edf1fc', border: '1px solid #34405a', borderRadius: 6 }}>
             <option value="">Selecione um objeto</option>
@@ -760,7 +876,7 @@ export default function Home() {
           <p className="tab-help">X: esquerda (−) / direita (+). Y: entrada (−) / fundo (+). Posição medida no centro; rotação adicional em relação à distribuição inicial.</p>
           <div className="dimensions">
             {(['x', 'y', 'rotation'] as const).map(key => <label className="field" key={key}>{key === 'rotation' ? 'Rotação (°)' : `${key.toUpperCase()} (m)`}
-              <input aria-label={key === 'rotation' ? 'Rotação do objeto' : `Posição ${key.toUpperCase()} do objeto`} type="number" min={key === 'rotation' ? -360 : -30} max={key === 'rotation' ? 360 : 30} step={key === 'rotation' ? 5 : .1} value={transformDraft[key]} onChange={event => setTransformDraft(prev => ({ ...prev, [key]: event.target.value }))} />
+              <input aria-label={key === 'rotation' ? 'Rotação do objeto' : `Posição ${key.toUpperCase()} do objeto`} type="number" min={key === 'rotation' ? -360 : -30} max={key === 'rotation' ? 360 : 30} step={key === 'rotation' ? 5 : .1} readOnly={!!dragPreview} value={dragPreview?.id === selectedId ? String(Number(dragPreview.transform[key].toFixed(6))) : transformDraft[key]} onChange={event => setTransformDraft(prev => ({ ...prev, [key]: event.target.value }))} />
             </label>)}
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
@@ -770,10 +886,10 @@ export default function Home() {
         </>}
         {Object.keys(c.objectTransforms).length > 0 && <button type="button" className="generate-button" onClick={() => commitTransforms({})}>Restaurar toda a distribuição</button>}
         <p className="tab-help">Alterar medidas, quantidades ou distribuição restaura os ajustes individuais. Materiais e cores preservam as posições.</p>
-        {assemblyError && <p role="alert" className="error">{assemblyError}</p>}
+        {(dragPreview?.error || assemblyError) && <p role="alert" className="error">{dragPreview?.error || assemblyError}</p>}
       </div>
       <Tabs value={tab} onValueChange={setTab}><div className="result-header"><TabsList className="view-tabs"><TabsTrigger value="plan"><Square size={16}/>Planta</TabsTrigger><TabsTrigger value="code"><Code2 size={17}/>{c.target === 'max' ? 'MaxScript' : 'Script Python'}</TabsTrigger></TabsList><span className="plan-scale">{valid ? `${num(c.width)} × ${num(c.depth)} m` : 'Confira as medidas'}</span></div>
-      <TabsContent value="plan"><div className="plan-title"><span>VISTA SUPERIOR</span><small>Planta esquemática · sem perspectiva</small></div><div className="drawing">{valid ? <Plan c={display} selectedId={selectedId} onSelect={setSelectedId}/> : <div className="empty"><Ruler size={32}/><p>{validationMessage}</p></div>}</div><div className="legend">{(c.back || c.left || c.right) && <span><i className="legend-wall"/>Parede</span>}<span><i style={{ background: c.color }}/>Elementos</span><span><i className="legend-light"/>Spots</span></div><div className="model-info"><div><span>ÁREA TOTAL</span><strong>{valid ? num(c.width * c.depth) : '—'} <small>m²</small></strong></div><div><span>ALTURA DE MONTAGEM</span><strong>{valid ? num(c.height) : '—'} <small>m</small></strong></div><div><span>{c.target === 'max' ? 'EXPORTAÇÃO' : 'RENDER'}</span><strong>{c.target === 'max' ? '3ds Max' : 'Cycles'} <small>{c.target === 'max' ? '.ms' : '64 samples'}</small></strong></div></div></TabsContent>
+      <TabsContent value="plan"><div className="plan-title"><span>VISTA SUPERIOR</span><small>Planta esquemática · sem perspectiva</small></div><div className="drawing">{valid ? <Plan c={display} selectedId={selectedId} onSelect={setSelectedId} snap={snapToGrid} onDragPreview={previewDrag} onDrop={dropObject}/> : <div className="empty"><Ruler size={32}/><p>{validationMessage}</p></div>}</div><div className="legend">{(c.back || c.left || c.right) && <span><i className="legend-wall"/>Parede</span>}<span><i style={{ background: c.color }}/>Elementos</span><span><i className="legend-light"/>Spots</span></div><div className="model-info"><div><span>ÁREA TOTAL</span><strong>{valid ? num(c.width * c.depth) : '—'} <small>m²</small></strong></div><div><span>ALTURA DE MONTAGEM</span><strong>{valid ? num(c.height) : '—'} <small>m</small></strong></div><div><span>{c.target === 'max' ? 'EXPORTAÇÃO' : 'RENDER'}</span><strong>{c.target === 'max' ? '3ds Max' : 'Cycles'} <small>{c.target === 'max' ? '.ms' : '64 samples'}</small></strong></div></div></TabsContent>
       <TabsContent value="code"><div className="code-toolbar"><span>{output ? filename(output.config) : 'Seu script aparecerá aqui'}</span><div><button onClick={copy} disabled={!output || !!dirty} aria-label="Copiar script">{copied ? <Check size={16}/> : <Copy size={16}/>} {copied ? 'Copiado' : 'Copiar'}</button><button onClick={download} disabled={!output || !!dirty}><Download size={16}/>Baixar {output?.config.target === 'max' ? '.ms' : '.py'}</button></div></div>{dirty && <div className="stale" role="status">Você alterou o projeto. Clique em “Gerar script” para atualizar o arquivo.</div>}{output ? <pre className="code"><code>{output.code.replace(/data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+/g, '[imagem incorporada — baixe ou copie o script completo]').replace(/local IMAGEM_TV = "[A-Za-z0-9+/=]+"/g, 'local IMAGEM_TV = "[imagem incorporada — baixe ou copie o script completo]"')}</code></pre> : <div className="empty"><Code2 size={38}/><h3>Seu projeto, em código.</h3><p>Escolha os elementos ao lado e clique em<br />“Gerar script”.</p></div>}</TabsContent>
     </Tabs><p className="notice" role="status" aria-live="polite">{notice}</p>
       <div className="blender-guide"><div className="guide-icon"><Box size={22}/></div><div><h3>Como abrir no {c.target === 'max' ? '3ds Max' : 'Blender'}</h3>{c.target === 'max' ? <ol><li><b>1</b>Baixe o arquivo <strong>.ms</strong>.</li><li><b>2</b>Abra o 3ds Max e entre em <strong>Scripting → Run Script</strong>.</li><li><b>3</b>Escolha o arquivo. Use <strong>CB_Camera_Frontal</strong> para visualizar.</li></ol> : <ol><li><b>1</b>Comece com uma cena vazia e entre em <strong>Scripting</strong>.</li><li><b>2</b>Em <strong>Open</strong>, abra o arquivo .py baixado.</li><li><b>3</b>Clique em <strong>Run Script</strong>. Use <strong>F12</strong> para renderizar.</li></ol>}</div></div>
