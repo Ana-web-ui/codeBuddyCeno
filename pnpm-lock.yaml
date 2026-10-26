@@ -7,6 +7,9 @@ settings:
 overrides:
   miniflare>sharp: 0.35.4
 
+patchedDependencies:
+  nf3@0.3.24: f1bbbd04f5a2c762324229849644d1e1a1c0b3a417c1632f0923161302248ed5
+
 importers:
 
   .:
@@ -8696,7 +8699,7 @@ snapshots:
       - '@types/node'
       - babel-plugin-macros
 
-  nf3@0.3.24: {}
+  nf3@0.3.24(patch_hash=f1bbbd04f5a2c762324229849644d1e1a1c0b3a417c1632f0923161302248ed5): {}
 
   nitro@3.0.260903-beta:
     dependencies:
@@ -8706,7 +8709,7 @@ snapshots:
       env-runner: 0.2.3
       h3: 2.0.5(crossws@0.4.15(srvx@1.0.6))(ocache@0.3.0)
       hookable: 6.1.2
-      nf3: 0.3.24
+      nf3: 0.3.24(patch_hash=f1bbbd04f5a2c762324229849644d1e1a1c0b3a417c1632f0923161302248ed5)
       ocache: 0.3.0
       rolldown: 1.2.14
       rou3: 0.9.2
