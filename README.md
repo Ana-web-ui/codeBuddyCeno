@@ -42,3 +42,5 @@ pnpm build
 ```
 
 As dependências e os arquivos compilados não estão incluídos; são criados pelos comandos acima.
+## Deploy na Vercel
+Commits enviados para a branch `deploy-vercel` geram um deploy de produção automaticamente. Após o build concluir com sucesso, o site https://code-buddy-ceno.vercel.app/ é atualizado.

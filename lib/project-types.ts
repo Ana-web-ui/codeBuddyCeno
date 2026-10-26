@@ -39,7 +39,7 @@ export function createProjectConfig(type: ProjectType): Config {
         stageMat: 'wood',
         floorMat: 'white',
         chairs: true,
-        attendeeCount: 300,
+        chairCount: 300,
         chairColumns: 15,
     };
 }

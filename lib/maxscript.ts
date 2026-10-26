@@ -1,6 +1,5 @@
 import type {Config} from './generator';
 import { geometry } from './generator';
-import { exportProjectKey } from './export-project';
 const msString=(value:string)=>'"'+value.replace(/\\/g,'\\\\').replace(/"/g,'\\"').replace(/[\r\n]/g,' ')+'"';
 export function generateMax(c:Config){
   const rgb=[1,3,5].map(i=>parseInt(c.color.slice(i,i+2),16));
@@ -10,8 +9,7 @@ export function generateMax(c:Config){
 -- Projeto: ${c.name.replace(/[\r\n]/g,' ')}
 -- Scripting > Run Script > selecione este arquivo .ms.
 -- Medidas em metros, convertidas para as unidades atuais da cena.
--- Cada execução cria uma nova camada; objetos e materiais anteriores são preservados.
--- As versões ocupam a mesma posição; oculte as anteriores para comparar ou renderizar.
+-- Reexecutar substitui somente os objetos marcados pelo Code Buddy.
 -- Materiais e render dependem do renderizador configurado no 3ds Max.
 (
 ${Object.entries(settings).map(([k,v])=>`local ${k} = ${v}`).join('\n')}
@@ -24,35 +22,13 @@ local MATERIAL_TOTEM = ${msString(c.totemMat)}
 local IMAGEM_TV = ${msString(data)}
 local EXTENSAO_TV = ${msString(c.screenImage.startsWith('data:image/png')?'.png':'.jpg')}
 local METRO = units.decodeValue "1m"
-local projeto = ${msString(c.name)}
-local projetoChave = "${exportProjectKey(c.name)}"
-local versaoGeracao = 1
-for obj in objects where (getUserProp obj "code_buddy_project_key") == projetoChave do
-(
-    local anterior = getUserProp obj "code_buddy_version"
-    if isKindOf anterior Integer do
-        if anterior >= versaoGeracao do versaoGeracao = anterior + 1
-)
-local nomeGeracao = "CB_" + projetoChave + "_v" + (formattedPrint versaoGeracao format:"03d")
-while (LayerManager.getLayerFromName nomeGeracao) != undefined do
-(
-    versaoGeracao += 1
-    nomeGeracao = "CB_" + projetoChave + "_v" + (formattedPrint versaoGeracao format:"03d")
-)
-local camadaGeracao = LayerManager.newLayerFromName nomeGeracao
-if camadaGeracao == undefined do throw "Não foi possível criar a camada da nova geração."
-local idGeracao = ((dotNetClass "System.Guid").NewGuid()).ToString()
+local marcaObjetos = "CodeBuddy_Gerado_v2"
 local criados = #()
 
 fn cbRegistrar obj =
 (
-    setUserProp obj "CodeBuddy" nomeGeracao
-    setUserProp obj "code_buddy_project" projeto
-    setUserProp obj "code_buddy_project_key" projetoChave
-    setUserProp obj "code_buddy_version" versaoGeracao
-    setUserProp obj "code_buddy_generation" idGeracao
-    camadaGeracao.addNode obj
-    if (findItem criados obj) == 0 do append criados obj
+    setUserProp obj "CodeBuddy" marcaObjetos
+    append criados obj
     obj
 )
 fn cbCaixa nome largura profundidade altura x y z mat =
@@ -64,7 +40,7 @@ fn cbCaixa nome largura profundidade altura x y z mat =
 )
 fn cbMaterial tipo =
 (
-    local mat = Physical_Material name:(nomeGeracao+"_"+tipo)
+    local mat = Physical_Material name:("CB_"+tipo)
     mat.base_color = color 225 225 225
     mat.roughness = .45
     case tipo of
@@ -92,7 +68,7 @@ fn cbMaterial tipo =
 )
 fn cbTV =
 (
-    local mat = Physical_Material name:(nomeGeracao+"_TV")
+    local mat = Physical_Material name:"CB_TV"
     mat.base_color = COR_MARCA
     mat.emission = 1
     mat.emit_color = COR_MARCA
@@ -139,7 +115,8 @@ fn cbSpot nome posicao alvo potencia cor =
     cbRegistrar obj
 )
 
--- Materiais novos por execução preservam os refinamentos das versões anteriores.
+-- Apaga apenas objetos que trazem a marca da geração anterior.
+local antigos = for obj in objects where (getUserProp obj "CodeBuddy") == marcaObjetos collect obj
 local branco = cbMaterial "white"
 local marca = cbMaterial "brand"
 local piso = cbMaterial MATERIAL_PISO
@@ -153,6 +130,7 @@ escuro.base_color = color 30 35 43
 
 undo "Gerar stand Code Buddy" on
 (
+    if antigos.count > 0 do delete antigos
     cbCaixa "Piso" LARGURA PROFUNDIDADE .1 0 0 .05 piso
     if PAREDE_FUNDO do
     (
@@ -213,7 +191,7 @@ undo "Gerar stand Code Buddy" on
 )
 select criados
 max zoomext sel all
-format "Code Buddy: nova versão criada na camada %. Anteriores preservadas.\\n" nomeGeracao
+format "Code Buddy: stand criado. Selecione CB_Camera_Frontal para visualizar.\\n"
 )
 `;
 }
