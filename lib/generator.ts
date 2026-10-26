@@ -6,6 +6,7 @@ import { blenderShowcases, maxShowcases } from './showcase-exporters';
 import { blenderLounge, maxLounge } from './lounge-exporters';
 import { blenderPedestals, maxPedestals } from './pedestal-exporters';
 import { generateMax } from './maxscript';
+import { exportProjectKey } from './export-project';
 import { chairDefaults, layoutChairs, roundTableDefaults, layoutRoundTables, rectTableDefaults, layoutRectTables, bistroTableDefaults, layoutBistroTables, stoolDefaults, layoutStools, validateStoolAssociation, layoutBistroStoolSets, tableChairDefaults, validateTableChairs, layoutTablesWithChairs, pedestalDefaults, layoutPedestals, loungeDefaults, validateLounge, layoutArmchairs, layoutPuffs, coffeeTableDefaults, layoutCoffeeTables, loungeSetDefaults, layoutLoungeSets, showcaseDefaults, layoutShowcases, extraObjectDefaults, layoutExtraObjects } from './library';
 import type { ChairConfig, ReservedArea, RoundTableConfig, RectTableConfig, BistroTableConfig, StoolConfig, TableChairConfig, TableChairLayout, PedestalConfig, LoungeConfig, CoffeeTableConfig, LoungeSetConfig, ShowcaseConfig, ExtraObjectsConfig } from './library';
 import { blenderChairs, maxChairs } from './chair-exporters';
@@ -681,13 +682,13 @@ export function generate(c: Config, options: {
     }
     if (Object.keys(c.objectTransforms).length) {
         const units = assemblyScript(c);
-        if (c.target === 'blender') return generateBlender(c) + blenderChairs(c, chairLayout, { group: 'audience' }) + units;
+        if (c.target === 'blender') return generateBlender(c, blenderChairs(c, chairLayout, { group: 'audience' }) + units);
         const script = generateMax(c), marker = 'select criados';
         if (!script.includes(marker)) throw new Error('Não encontrei o ponto de inserção dos objetos no MaxScript.');
         return script.replace(marker, maxChairs(c, chairLayout, { group: 'audience' }) + units + '\n' + marker);
     }
     if (c.target === "blender") {
-        return (generateBlender(c) +
+        return generateBlender(c,
             blenderChairs(c, chairLayout, { group: "audience" }) +
             blenderChairs(diningConfig, tables.tableChairs, { group: "tables" }) +
             blenderRoundTables(c, tables.roundTables) +
@@ -714,19 +715,21 @@ export function generate(c: Config, options: {
     }
     return script.replace(marker, additions + "\n" + marker);
 }
-export function generateBlender(c: Config) {
+export function generateBlender(c: Config, additions = '') {
     validate(c);
     const rgb = [1, 3, 5].map(i => +(parseInt(c.color.slice(i, i + 2), 16) / 255).toFixed(5));
     return `# CODE BUDDY | Cenografia
 # Modelo conceitual em metros. Projeto: ${c.name.replace(/[\r\n]/g, ' ')}
 # Blender: Scripting > New > cole este código > Run Script.
-# Reexecutar substitui apenas a coleção CodeBuddy_Gerado.
+# Cada execução cria uma nova versão, preservando objetos e materiais anteriores.
+# As versões ocupam a mesma posição; oculte as anteriores para comparar ou renderizar.
 # LARGURA, PROFUNDIDADE e ALTURA controlam as medidas principais.
 import bpy
 import math
 import base64
 import tempfile
 import os
+import uuid
 from mathutils import Vector
 
 LARGURA = ${c.width}
@@ -764,31 +767,55 @@ MATERIAL_PALCO = '${c.stageMat}'
 MATERIAL_TOTEM = '${c.totemMat}'
 IMAGEM_TV = '${c.led ? c.screenImage : ''}'
 
-COLECAO = 'CodeBuddy_Gerado'
+PROJETO = ${JSON.stringify(c.name)}
+PROJETO_CHAVE = '${exportProjectKey(c.name)}'
 colecao = None
+materiais_geracao = {}
 
 def preparar():
-    global colecao
-    antiga = bpy.data.collections.get(COLECAO)
-    if antiga:
-        for objeto in list(antiga.all_objects):
-            bpy.data.objects.remove(objeto, do_unlink=True)
-        bpy.data.collections.remove(antiga)
-    colecao = bpy.data.collections.new(COLECAO)
+    global colecao, materiais_geracao
+    materiais_geracao = {}
+    versoes = [col.get('code_buddy_version', 0) for col in bpy.data.collections
+               if col.get('code_buddy_project_key') == PROJETO_CHAVE]
+    versao = max((v for v in versoes if isinstance(v, int) and v > 0), default=0) + 1
+    nome = 'CB_%s_v%03d' % (PROJETO_CHAVE, versao)
+    while bpy.data.collections.get(nome) is not None:
+        versao += 1
+        nome = 'CB_%s_v%03d' % (PROJETO_CHAVE, versao)
+    colecao = bpy.data.collections.new(nome)
+    colecao['code_buddy_project'] = PROJETO
+    colecao['code_buddy_project_key'] = PROJETO_CHAVE
+    colecao['code_buddy_version'] = versao
+    colecao['code_buddy_generation'] = uuid.uuid4().hex
     bpy.context.scene.collection.children.link(colecao)
     cena = bpy.context.scene
     cena.unit_settings.system = 'METRIC'
     cena.unit_settings.scale_length = 1.0
 
+def identificar(dado):
+    for chave in ('code_buddy_project', 'code_buddy_project_key',
+                  'code_buddy_version', 'code_buddy_generation'):
+        dado[chave] = colecao[chave]
+    return dado
+
+def finalizar_geracao():
+    # Inclui as peças criadas diretamente pelos exportadores da biblioteca V3.
+    for objeto in colecao.all_objects:
+        identificar(objeto)
+    print('Code Buddy: nova versão criada em ' + colecao.name + '. Anteriores preservadas.')
+
 def organizar(objeto):
     for origem in list(objeto.users_collection):
         origem.objects.unlink(objeto)
     colecao.objects.link(objeto)
-    return objeto
+    return identificar(objeto)
 
 def material(nome, cor, emissao=0):
-    # Reutiliza materiais nas próximas execuções.
-    mat = bpy.data.materials.get('CB_' + nome) or bpy.data.materials.new('CB_' + nome)
+    # Reutiliza somente nesta execução; nunca redefine materiais de outra versão.
+    mat = materiais_geracao.get(nome)
+    if mat is None:
+        mat = identificar(bpy.data.materials.new(colecao.name + '_' + nome))
+        materiais_geracao[nome] = mat
     mat.diffuse_color = cor
     mat.use_nodes = True
     nodes = mat.node_tree.nodes
@@ -863,7 +890,8 @@ def material_tv():
             caminho = arquivo.name
             arquivo.write(base64.b64decode(dados))
         imagem = bpy.data.images.load(caminho, check_existing=False)
-        imagem.name = 'CB_Textura_TV'
+        imagem.name = colecao.name + '_Textura_TV'
+        identificar(imagem)
         imagem.pack()
         textura = mat.node_tree.nodes.new('ShaderNodeTexImage')
         textura.image = imagem
@@ -994,7 +1022,7 @@ def configurar_render():
     cena.render.resolution_x = 1920
     cena.render.resolution_y = 1080
     cena.render.resolution_percentage = 100
-    mundo = bpy.data.worlds.get('CB_Mundo') or bpy.data.worlds.new('CB_Mundo')
+    mundo = identificar(bpy.data.worlds.new(colecao.name + '_Mundo'))
     cena.world = mundo
     mundo.use_nodes = True
     fundo = mundo.node_tree.nodes.get('Background')
@@ -1014,5 +1042,7 @@ def gerar_stand():
     print('Code Buddy: stand pronto. Use NumPad 0 para a câmera e F12 para renderizar.')
 
 gerar_stand()
+${additions}
+finalizar_geracao()
 `;
 }

@@ -1,6 +1,6 @@
 import type { Config } from './generator';
-import { extraObjectDefinitions, extraObjectSpec } from './library';
-import type { ReservedArea } from './library';
+import { extraObjectDefinitions, extraObjectSpec } from './library.js';
+import type { ReservedArea } from './library.js';
 
 export type ObjectTransform = { x: number; y: number; rotation: number };
 export type AssemblyConfig = { objectTransforms: Record<string, ObjectTransform> };
