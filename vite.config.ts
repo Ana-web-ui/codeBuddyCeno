@@ -1,5 +1,6 @@
 
 import vinext from "vinext";
+import { createRequire } from "node:module";
 import { defineConfig, type PluginOption } from "vite";
 import { nitro } from "nitro/vite";
 import tailwindcss from "@tailwindcss/vite";
@@ -11,6 +12,9 @@ import { connectorPreview } from "./build/connector-preview-plugin.mjs";
 // ==========================================
 // 1. CONFIGURACOES ORIGINAIS
 // ==========================================
+
+const require = createRequire(import.meta.url);
+const tslibEsm = require.resolve("tslib/tslib.es6.mjs");
 
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
   "00000000-0000-4000-8000-000000000000";
@@ -178,6 +182,9 @@ export default defineConfig(async ({ command }) => {
   // ========================================
 
   return {
+    // Usa os helpers ESM em todas as instalações, inclusive no layout isolado do pnpm.
+    resolve: { alias: [{ find: /^tslib$/, replacement: tslibEsm }] },
+    ssr: { noExternal: ['tslib'] },
     server: {
       ...(managedLinux
         ? {
