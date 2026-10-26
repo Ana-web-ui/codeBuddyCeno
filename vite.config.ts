@@ -2,6 +2,7 @@
 import vinext from "vinext";
 import { defineConfig, type PluginOption } from "vite";
 import { nitro } from "nitro/vite";
+import tailwindcss from "@tailwindcss/vite";
 import hostingConfig from "./.openai/hosting.json";
 import { readExecutionProfile } from "./scripts/execution-profile.mjs";
 import { sites } from "./build/sites-vite-plugin";
@@ -87,6 +88,7 @@ export default defineConfig(async ({ command }) => {
 
  const plugins: PluginOption[] = [
     vinext(),
+    tailwindcss(),
 
    sites({
   mockAuth: !managedLinux && !isVercel,
