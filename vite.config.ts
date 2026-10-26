@@ -112,7 +112,10 @@ export default defineConfig(async ({ command }) => {
   if (isVercel) {
 
     // Vercel utiliza Nitro.
-    plugins.push(nitro());
+    plugins.push(nitro({
+      // A função da Vercel executa em Node; preserva a interoperabilidade CJS/ESM.
+      rolldownConfig: { platform: "node" },
+    }));
 
   } else {
 
