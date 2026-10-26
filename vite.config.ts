@@ -89,6 +89,15 @@ export default defineConfig(async ({ command }) => {
  const plugins: PluginOption[] = [
     vinext(),
     tailwindcss(),
+    {
+      name: 'code-buddy-ssr-diagnostics',
+      enforce: 'pre',
+      transform(code, id) {
+        if (!id.replace(/\\/g, '/').endsWith('/vinext/dist/server/app-ssr-entry.js')) return;
+        return code.replace('errorMetaRenderer.capture(error);',
+          "console.error('[Code Buddy SSR]', error); errorMetaRenderer.capture(error);");
+      },
+    },
 
    sites({
   mockAuth: !managedLinux && !isVercel,
