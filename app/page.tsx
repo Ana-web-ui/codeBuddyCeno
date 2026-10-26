@@ -71,7 +71,7 @@ const elements = [
     { key: 'stools', title: 'Banquetas', text: 'Assentos altos com base central', icon: Armchair },
 ] as const;
 type NumberKey = {
-    [K in keyof Config]: Config[K] extends number ? K : never;
+    [K in keyof Config]: NonNullable<Config[K]> extends number ? K : never;
 }[keyof Config];
 type ParameterField = {
     step?: number;

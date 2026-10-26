@@ -19,3 +19,6 @@ verifyDepsBeforeRun: false
 optimisticRepeatInstall: false
 overrides:
   miniflare>sharp: 0.35.4
+
+patchedDependencies:
+  nf3@0.3.24: patches/nf3@0.3.24.patch
