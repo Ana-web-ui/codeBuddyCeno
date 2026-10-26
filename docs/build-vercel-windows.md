@@ -39,3 +39,13 @@ Um build feito no Windows valida o empacotamento local. Para publicação, a Ver
 - Configuração Build Output API v3 e função Node.js 24 geradas.
 - A função empacotada foi importada diretamente e respondeu HTTP 200 para `/`, com HTML da aplicação.
 - Sem commit, push ou deploy.
+
+## Resolução de tslib no servidor da Vercel
+
+O ambiente remoto também revelou uma incompatibilidade de interoperabilidade CommonJS/ESM: a renderização falhava tentando acessar `__extends` em um export default inexistente de tslib. A instalação local com dependências hoisted não reproduzia o comportamento do layout remoto.
+
+O Vite agora resolve exatamente `tslib` para `tslib/tslib.es6.mjs`, com a versão direta fixada em 2.8.1 e `ssr.noExternal` para esses helpers. O Nitro tem alvo Node.js explícito. A correção respondeu HTTP 200 e gerou o script Blender na prévia da Vercel antes da promoção. O registro temporário de diagnóstico foi removido depois de identificar a causa.
+
+Após o build, execute `node tests/vercel-runtime-smoke.mjs`. Além da renderização, esse teste confere os arquivos estáticos referenciados pelo HTML. A conferência na própria Vercel continua necessária, pois a organização das dependências pode variar entre o ambiente local e a instalação remota.
+
+Referência do problema de interoperabilidade: https://github.com/nitrojs/nitro/issues/4113
