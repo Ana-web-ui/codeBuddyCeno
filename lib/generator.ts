@@ -14,6 +14,11 @@ import { blenderRoundTables, maxRoundTables } from './round-table-exporters';
 import { blenderRectTables, maxRectTables, } from './react-table-exporters';
 import { blenderBistroTables, maxBistroTables } from './bistro-table-exporters';
 import { blenderStools, maxStools } from './stool-exporters';
+import { storageDefaults, storageReservedAreas, validateStorage } from './storage';
+import { blenderStorage } from './storage-exporters';
+import type { StorageConfig } from './storage';
+import type { StandLayout, FrontRotation, CornerOpenSide } from './stand-config.js';
+import { getStandWalls } from './stand-config.js';
 export type MaterialKind = 'white' | 'brand' | 'wood' | 'metal' | 'glass' | 'concrete' | 'plastic';
 export type ProjectType = 'stand' | 'palco';
 export type Target = 'blender' | 'max';
@@ -27,8 +32,11 @@ export const materials: {
     { value: 'glass', label: 'Vidro', color: '#81bfce' }, { value: 'concrete', label: 'Concreto', color: '#747b86' },
     { value: 'plastic', label: 'Plástico', color: '#c4d1e1' }
 ];
-export type Config = AssemblyConfig & ChairConfig & RoundTableConfig & RectTableConfig & BistroTableConfig & StoolConfig & TableChairConfig & PedestalConfig & LoungeConfig & CoffeeTableConfig & LoungeSetConfig & ShowcaseConfig & ExtraObjectsConfig & {
+export type Config = StorageConfig & AssemblyConfig & ChairConfig & RoundTableConfig & RectTableConfig & BistroTableConfig & StoolConfig & TableChairConfig & PedestalConfig & LoungeConfig & CoffeeTableConfig & LoungeSetConfig & ShowcaseConfig & ExtraObjectsConfig & {
     projectType: ProjectType;
+    standLayout: StandLayout;
+    frontRotation: FrontRotation;
+    cornerOpenSide: CornerOpenSide;
     name: string;
     width: number;
     depth: number;
@@ -79,7 +87,11 @@ function maxCoffeeTables(c: Config, layout: { positions: [number, number][] }): 
     return layout.positions.map(([x, y], index) => `cbCaixa "Mesa_Centro_${index + 1}" ${c.coffeeTableWidth} ${c.coffeeTableDepth} ${c.coffeeTableHeight} ${x} ${y} ${0.1 + c.coffeeTableHeight / 2} (cbMaterial "${c.coffeeTableMat}")`).join('\n');
 }
 export const defaults: Config = {
+    standLayout: 'custom',
+    frontRotation: 0,
+    cornerOpenSide: 'right',
     objectTransforms: {},
+    ...storageDefaults,
     ...chairDefaults,
     ...roundTableDefaults,
     ...rectTableDefaults,
@@ -125,8 +137,10 @@ export function geometry(c: Config) {
  * Calcula as posições das mesas usando as áreas
  * ocupadas pelos elementos existentes.
  */
-function tableReservedAreas(c: Config): ReservedArea[] {
-    const g = geometry(c);
+function tableReservedAreas(
+    c: Config,
+    includeStorage = true,
+): ReservedArea[] {    const g = geometry(c);
     const reserved: ReservedArea[] = [];
     function reserve(centerX: number, centerY: number, width: number, depth: number, clearance = 0.1) {
         reserved.push({
@@ -182,8 +196,100 @@ function tableReservedAreas(c: Config): ReservedArea[] {
             reserve(0, (entranceY + stageFront) / 2, c.width, stageFront - entranceY, 0);
         }
     }
+
+    if (includeStorage) {
+    reserved.push(...storageReservedAreas(c));
+
+    }
     return reserved;
 }
+
+export function findStoragePosition(
+    c: Config,
+): { storageX: number; storageY: number } {
+    if (c.projectType !== 'stand') {
+        throw new Error(
+            'O depósito está disponível somente para estandes.',
+        );
+    }
+
+    const margin = 0.2;
+
+    const minX =
+        -c.width / 2 + margin + c.storageWidth / 2;
+    const maxX =
+        c.width / 2 - margin - c.storageWidth / 2;
+
+    const minY =
+        -c.depth / 2 + margin + c.storageDepth / 2;
+    const maxY =
+        c.depth / 2 - margin - c.storageDepth / 2;
+
+    if (minX > maxX || minY > maxY) {
+        throw new Error(
+            'O depósito não cabe na área do estande.',
+        );
+    }
+
+    const occupied = tableReservedAreas(c, false);
+
+    function candidate(
+        x: number,
+        y: number,
+    ): { storageX: number; storageY: number } | null {
+        const next: Config = {
+            ...c,
+            storageEnabled: true,
+            storageX: Number(x.toFixed(6)),
+            storageY: Number(y.toFixed(6)),
+        };
+
+        try {
+            validateStorage(next, occupied);
+
+            return {
+                storageX: next.storageX,
+                storageY: next.storageY,
+            };
+        } catch {
+            return null;
+        }
+    }
+
+    // Prefere a lateral fechada quando apenas uma está fechada.
+    const preferLeft = c.left && !c.right;
+
+    const firstX = preferLeft ? minX : maxX;
+    const secondX = preferLeft ? maxX : minX;
+
+    // Primeiro verifica os dois cantos do fundo.
+    for (const x of [firstX, secondX]) {
+        const position = candidate(x, maxY);
+        if (position) return position;
+    }
+
+    // Depois procura em uma grade de 10 cm, do fundo para a frente.
+    const columns = Math.ceil((maxX - minX) / 0.1);
+    const rows = Math.ceil((maxY - minY) / 0.1);
+
+    for (let row = 0; row <= rows; row++) {
+        const y = Math.max(minY, maxY - row * 0.1);
+
+        for (let column = 0; column <= columns; column++) {
+            const x = preferLeft
+                ? Math.min(maxX, minX + column * 0.1)
+                : Math.max(minX, maxX - column * 0.1);
+
+            const position = candidate(x, y);
+            if (position) return position;
+        }
+    }
+
+    throw new Error(
+        'Não encontrei espaço para o depósito e o acesso da porta. Reduza suas medidas ou ajuste os elementos fixos.',
+    );
+}
+
 /** Distribui redondas, retangulares e bistrôs, nesta ordem. */
 export function tableGeometry(c: Config) {
     validateStoolAssociation(c);
@@ -453,6 +559,17 @@ export function extraObjectGeometry(c: Config) {
     });
 }
 export function validate(c: Config) {
+    if (![0, 90, 180, 270].includes(c.frontRotation))
+        throw new Error('A orientação da frente deve ser 0°, 90°, 180° ou 270°.');
+    if (!['front', 'corner', 'peninsula', 'island', 'custom'].includes(c.standLayout))
+        throw new Error('Selecione uma configuração válida para o estande.');
+    if (!['left', 'right'].includes(c.cornerOpenSide))
+        throw new Error('Selecione uma lateral aberta válida para a esquina.');
+    if (c.projectType === 'stand' && c.standLayout !== 'custom') {
+        const walls = getStandWalls(c.standLayout, c.cornerOpenSide, c);
+        if (walls.back !== c.back || walls.left !== c.left || walls.right !== c.right)
+            throw new Error('As paredes não correspondem ao modelo do estande. Selecione o modelo novamente ou use Personalizado.');
+    }
     checkTransforms(c.objectTransforms);
     if (c.loungeMode !== 'free' && c.loungeMode !== 'set')
         throw new Error('Selecione um modo válido para o lounge.');
@@ -590,6 +707,10 @@ export function validate(c: Config) {
         }
     if (c.screenImage && (!/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/]+={0,2}$/.test(c.screenImage) || c.screenImage.length > 2800000))
         throw new Error('Use uma imagem JPG ou PNG de até 2 MB.');
+        validateStorage(c, tableReservedAreas(c, false));
+
+    layoutChairs(c, geometry(c).stageY);
+    tableGeometry(c);
     layoutChairs(c, geometry(c).stageY);
     tableGeometry(c);
     stoolGeometry(c);
@@ -797,6 +918,25 @@ def identificar(dado):
                   'code_buddy_version', 'code_buddy_generation'):
         dado[chave] = colecao[chave]
     return dado
+
+def aplicar_orientacao():
+    angulo = ${c.projectType === 'stand' ? c.frontRotation : 0}
+    if angulo == 0:
+        return
+    objetos = list(colecao.all_objects)
+    conjunto = set(objetos)
+    raiz = bpy.data.objects.new(colecao.name + '_Orientacao', None)
+    colecao.objects.link(raiz)
+    identificar(raiz)
+    raiz.empty_display_type = 'PLAIN_AXES'
+    raiz.empty_display_size = 1.0
+    for objeto in objetos:
+        if objeto.parent not in conjunto:
+            matriz = objeto.matrix_world.copy()
+            objeto.parent = raiz
+            objeto.matrix_world = matriz
+    raiz.rotation_euler.z = math.radians(angulo)
+    bpy.context.view_layer.update()
 
 def finalizar_geracao():
     # Inclui as peças criadas diretamente pelos exportadores da biblioteca V3.
@@ -1042,7 +1182,9 @@ def gerar_stand():
     print('Code Buddy: stand pronto. Use NumPad 0 para a câmera e F12 para renderizar.')
 
 gerar_stand()
+${blenderStorage(c)}
 ${additions}
+aplicar_orientacao()
 finalizar_geracao()
 `;
 }

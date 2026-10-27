@@ -1,6 +1,7 @@
 import type {Config} from './generator';
 import { geometry } from './generator';
 import { exportProjectKey } from './export-project';
+import { maxStorage } from './storage-exporters';
 const msString=(value:string)=>'"'+value.replace(/\\/g,'\\\\').replace(/"/g,'\\"').replace(/[\r\n]/g,' ')+'"';
 export function generateMax(c:Config){
   const rgb=[1,3,5].map(i=>parseInt(c.color.slice(i,i+2),16));
@@ -211,7 +212,25 @@ undo "Gerar stand Code Buddy" on
     renderWidth = 1920
     renderHeight = 1080
 )
+${maxStorage(c)}
 select criados
+undo "Orientar estande Code Buddy" on
+(
+    local anguloFrente = ${c.projectType === 'stand' ? c.frontRotation : 0}
+    if anguloFrente != 0 do
+    (
+        local objetosGeracao = for obj in criados collect obj
+        local raiz = cbRegistrar (Dummy name:(nomeGeracao + "_Orientacao") pos:[0,0,0])
+        for obj in objetosGeracao do
+        (
+            if obj.parent == undefined then
+                obj.parent = raiz
+            else if (findItem objetosGeracao obj.parent) == 0 then
+                obj.parent = raiz
+        )
+        raiz.transform = rotateZMatrix anguloFrente
+    )
+)
 max zoomext sel all
 format "Code Buddy: nova versão criada na camada %. Anteriores preservadas.\\n" nomeGeracao
 )

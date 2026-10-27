@@ -1,52 +1,23 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
-import type { ChangeEvent, PointerEvent as ReactPointerEvent } from 'react';
+import type { ChangeEvent, PointerEvent as ReactPointerEvent, SVGProps } from 'react';
 import { Box, Layers, Download, Copy, Check, Code2, Ruler, Monitor, LampDesk, PanelTop, RectangleVertical, Square, Sparkles, Armchair, Circle } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
-import { materials, generate, geometry, filename, validate, tableGeometry, stoolGeometry, pedestalGeometry, loungeGeometry, coffeeTableGeometry, showcaseGeometry, extraObjectGeometry, assemblyGeometry, } from '@/lib/generator';
+import { materials, generate, geometry, filename, validate, tableGeometry, stoolGeometry, pedestalGeometry, loungeGeometry, coffeeTableGeometry, showcaseGeometry, extraObjectGeometry, assemblyGeometry, findStoragePosition, } from '@/lib/generator';
 import type { MaterialKind, Target, Config, ProjectType } from '@/lib/generator';
 import { unitTransform } from '@/lib/assembly';
 import type { ObjectTransform } from '@/lib/assembly';
 import { projectTypes, createProjectConfig } from '@/lib/project-types';
 import { libraryCatalog, layoutChairs, extraObjectDefinitions, extraObjectSpec } from '@/lib/library';
-const MAX_PROJECT_BYTES = 4 * 1024 * 1024;
-function serializeProject(config: Config): string {
-    const text = JSON.stringify({ config }, null, 2);
-    if (new TextEncoder().encode(text).length > MAX_PROJECT_BYTES) {
-        throw new Error('O projeto excede o limite de 4 MB.');
-    }
-    return text;
-}
-function parseProject(text: string): Config {
-    if (new TextEncoder().encode(text).length > MAX_PROJECT_BYTES) {
-        throw new Error('O arquivo de projeto excede o limite de 4 MB.');
-    }
-    let parsed: unknown;
-    try {
-        parsed = JSON.parse(text);
-    } catch {
-        throw new Error('O arquivo de projeto não contém um JSON válido.');
-    }
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        throw new Error('O arquivo de projeto é inválido.');
-    }
-    const root = parsed as Record<string, unknown>;
-    const data = root.config && typeof root.config === 'object' && !Array.isArray(root.config)
-        ? root.config as Record<string, unknown>
-        : root;
-    if (data.projectType !== 'stand' && data.projectType !== 'palco') {
-        throw new Error('Tipo de projeto inválido.');
-    }
-    const config = { ...createProjectConfig(data.projectType), ...data } as Config;
-    validate(config);
-    return config;
-}
-function projectFilename(config: Config): string {
-    const name = config.name.trim().replace(/[<>:"/\\|?*\x00-\x1f]/g, '-').replace(/[. ]+$/g, '');
-    return `${name || 'projeto'}.json`;
-}
+import { getStandWalls } from '@/lib/stand-config';
+import { MAX_PROJECT_BYTES, serializeProject, parseProject, projectFilename } from '@/lib/project-file';
+import type { StandLayout, CornerOpenSide, FrontRotation } from '@/lib/stand-config';
+import { storageGeometry } from '@/lib/storage';
+import type { StorageDoorSide, StorageDoorHinge, StorageDoorOpening } from '@/lib/storage';
+
+
 const elements = [
     { key: 'shelving', title: 'Estantes expositoras', text: 'Estantes abertas com prateleiras', icon: Layers },
     { key: 'backdrops', title: 'Backdrops', text: 'Painéis de fundo com bases de apoio', icon: PanelTop },
@@ -81,6 +52,63 @@ type ParameterField = {
     min?: number;
     max?: number;
 };
+const storageFields: ParameterField[] = [
+    {
+        key: 'storageWidth',
+        label: 'Largura externa',
+        min: 1,
+        max: 10,
+    },
+    {
+        key: 'storageDepth',
+        label: 'Profundidade externa',
+        min: 1,
+        max: 10,
+    },
+    {
+        key: 'storageHeight',
+        label: 'Altura',
+        min: 2,
+        max: 8,
+    },
+    {
+        key: 'storageWallThickness',
+        label: 'Espessura das paredes',
+        min: 0.05,
+        max: 0.3,
+        step: 0.01,
+    },
+    {
+        key: 'storageX',
+        label: 'Centro X',
+        min: -30,
+        max: 30,
+    },
+    {
+        key: 'storageY',
+        label: 'Centro Y',
+        min: -30,
+        max: 30,
+    },
+    {
+        key: 'storageDoorWidth',
+        label: 'Largura livre da porta',
+        min: 0.6,
+        max: 1.5,
+    },
+    {
+        key: 'storageDoorHeight',
+        label: 'Altura livre da porta',
+        min: 1.8,
+        max: 3,
+    },
+    {
+        key: 'storageAccessDepth',
+        label: 'Profundidade do acesso',
+        min: 0.6,
+        max: 3,
+    },
+];
 const parameterFields: Record<'led' | 'counter' | 'stage' | 'totem' | 'spots' | 'chairs' | 'roundTables' | 'rectTables' | 'bistroTables' | 'stools' | 'pedestals' | 'armchairs' | 'puffs' | 'coffeeTables' | 'showcases' | 'shelving' | 'backdrops' | 'touchScreens' | 'cabinets' | 'openCubes' | 'roundRugs', ParameterField[]> = {
     led: [{ key: 'ledWidth', label: 'Largura' }, { key: 'ledHeight', label: 'Altura' }, { key: 'ledBottom', label: 'Base sobre o piso', max: 8 }],
     counter: [{ key: 'counterWidth', label: 'Largura' }, { key: 'counterDepth', label: 'Profundidade' }, { key: 'counterHeight', label: 'Altura' }, { key: 'counterCount', label: 'Quantidade', unit: 'un', min: 1, max: 6 }],
@@ -229,9 +257,44 @@ type PlanDragSession = {
     original: ObjectTransform; latest: ObjectTransform; moved: boolean;
 };
 /** SVG coordinates use +Y down; the project uses +Y toward the back. */
-function planPoint(width: number, depth: number, svgX: number, svgY: number) {
-    const scale = Math.min(440 / width, 280 / depth);
-    return { x: (svgX - 300) / scale, y: (195 - svgY) / scale };
+function planPoint(
+    c: Config,
+    svgX: number,
+    svgY: number,
+) {
+    const rotation =
+        c.projectType === 'stand'
+            ? c.frontRotation ?? 0
+            : 0;
+
+    const sideways = rotation === 90 || rotation === 270;
+
+    const displayWidth = sideways ? c.depth : c.width;
+    const displayDepth = sideways ? c.width : c.depth;
+
+    const scale = Math.min(
+        440 / displayWidth,
+        280 / displayDepth,
+    );
+
+    // Coordenadas globais da planta, com Y para cima.
+    const worldX = (svgX - 300) / scale;
+    const worldY = (195 - svgY) / scale;
+
+    // Inverte o giro para manter o arraste em coordenadas locais.
+    switch (rotation) {
+        case 90:
+            return { x: worldY, y: -worldX };
+
+        case 180:
+            return { x: -worldX, y: -worldY };
+
+        case 270:
+            return { x: -worldY, y: worldX };
+
+        default:
+            return { x: worldX, y: worldY };
+    }
 }
 function dragPosition(x: number, y: number, rotation: number, snap: boolean): ObjectTransform {
     const round = (v: number) => Number((snap ? Math.round(v / .1) * .1 : v).toFixed(6));
@@ -272,7 +335,7 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
         if (!matrix) return null;
         const point = svg.createSVGPoint(); point.x = clientX; point.y = clientY;
         const local = point.matrixTransform(matrix.inverse());
-        return planPoint(c.width, c.depth, local.x, local.y);
+        return planPoint(c, local.x, local.y);
     }
     function startDrag(event: ReactPointerEvent<SVGGElement>, id: string, original: ObjectTransform) {
         if (!onDrop || event.button !== 0 || !event.isPrimary || dragSession.current) return;
@@ -341,14 +404,98 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
                 {!m.circle && <path d={`M ${-m.width * s / 3} ${-m.depth * s / 2} H ${m.width * s / 3}`} stroke="#fff" strokeWidth="2" />}
               </g>;
           })}
-          <text x="0" y="3" textAnchor="middle" fontSize="9" fill={selected ? '#ffce57' : '#101827'} stroke={selected ? '#101827' : 'none'} strokeWidth=".4">{unit.label.replace(/ [0-9]+$/, '').slice(0, 2).toUpperCase()}{Number(unit.id.split(':')[1]) + 1}</text>
+          <PlanText counterRotation={t.rotation} x="0" y="3" textAnchor="middle" fontSize="9" fill={selected ? '#ffce57' : '#101827'} stroke={selected ? '#101827' : 'none'} strokeWidth=".4">{unit.label.replace(/ [0-9]+$/, '').slice(0, 2).toUpperCase()}{Number(unit.id.split(':')[1]) + 1}</PlanText>
         </g>;
     });
     const g = geometry(c);
     const seating = layoutChairs(c, g.stageY);
-    const s = Math.min(440 / c.width, 280 / c.depth);
+
+    const frontRotation =
+        c.projectType === 'stand'
+            ? c.frontRotation ?? 0
+            : 0;
+
+    const sideways =
+        frontRotation === 90 || frontRotation === 270;
+
+    const displayWidth = sideways ? c.depth : c.width;
+    const displayDepth = sideways ? c.width : c.depth;
+
+    const s = Math.min(
+        440 / displayWidth,
+        280 / displayDepth,
+    );
     const w = c.width * s, h = c.depth * s, x = (600 - w) / 2, y = (390 - h) / 2;
     const px = (v: number) => x + w / 2 + v * s, py = (v: number) => y + h / 2 - v * s;
+
+    const storage = storageGeometry(c);
+    const storageWallColor = c.storageWallMat === 'brand' ? c.color
+        : materials.find(material => material.value === c.storageWallMat)?.color ?? '#c8cedb';
+    const storageDoorColor = c.storageDoorMat === 'brand' ? c.color
+        : materials.find(material => material.value === c.storageDoorMat)?.color ?? '#c8cedb';
+    const storageWalls: { x1: number; y1: number; x2: number; y2: number }[] = [];
+    if (storage) {
+        const t = c.storageWallThickness;
+        const faces = [
+            { side: 'front', nx: 0, ny: -1 },
+            { side: 'back', nx: 0, ny: 1 },
+            { side: 'left', nx: -1, ny: 0 },
+            { side: 'right', nx: 1, ny: 0 },
+        ] as const;
+        for (const face of faces) {
+            const horizontal = face.ny !== 0;
+            const tx = -face.ny, ty = face.nx;
+            const distance = horizontal ? c.storageDepth / 2 - t / 2 : c.storageWidth / 2 - t / 2;
+            const length = horizontal ? c.storageWidth : c.storageDepth - 2 * t;
+            const centerX = c.storageX + face.nx * distance;
+            const centerY = c.storageY + face.ny * distance;
+            function addSegment(from: number, to: number) {
+                storageWalls.push({ x1: centerX + tx * from, y1: centerY + ty * from,
+                    x2: centerX + tx * to, y2: centerY + ty * to });
+            }
+            if (face.side === c.storageDoorSide) {
+                addSegment(-length / 2, -c.storageDoorWidth / 2);
+                addSegment(c.storageDoorWidth / 2, length / 2);
+            } else addSegment(-length / 2, length / 2);
+        }
+    }
+    const storageDoorArc = storage ? Array.from({ length: 17 }, (_, index) => {
+        const angle = index / 16 * Math.PI / 2;
+        const { hinge, closedEnd, openEnd } = storage.door;
+        const x = hinge.x + (closedEnd.x - hinge.x) * Math.cos(angle) + (openEnd.x - hinge.x) * Math.sin(angle);
+        const y = hinge.y + (closedEnd.y - hinge.y) * Math.cos(angle) + (openEnd.y - hinge.y) * Math.sin(angle);
+        return `${px(x)},${py(y)}`;
+    }).join(' ') : '';
+
+    function PlanText({
+        x = 0,
+        y = 0,
+        transform = '',
+        counterRotation = 0,
+        ...props
+    }: SVGProps<SVGTextElement> & {
+        counterRotation?: number;
+    }) {
+        return (
+            <text
+                {...props}
+                x={x}
+                y={y}
+                transform={
+                    `${transform} rotate(` +
+                    `${frontRotation + counterRotation} ${x} ${y})`
+                }
+            />
+        );
+    }
+    // Tooltip stays in screen coordinates, outside the rotated drawing.
+    const angle = frontRotation * Math.PI / 180;
+    const labelX = drag ? px(drag.transform.x) - 300 : 0;
+    const labelY = drag ? py(drag.transform.y) - 195 : 0;
+    const dragLabel = {
+        x: Math.max(5, Math.min(390, 300 + labelX * Math.cos(angle) + labelY * Math.sin(angle) + 12)),
+        y: Math.max(20, Math.min(398, 195 - labelX * Math.sin(angle) + labelY * Math.cos(angle) - 16)),
+    };
     return <svg viewBox="0 0 600 430" role="group" tabIndex={0}
       onPointerMove={moveDrag} onPointerUp={endDrag}
       onPointerCancel={event => { if (dragSession.current?.pointerId === event.pointerId) cancelDrag(); }}
@@ -357,29 +504,50 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
       style={{ userSelect: 'none' }} aria-label={`Planta esquemática da área de montagem de ${num(c.width)} por ${num(c.depth)} metros`}>
       <defs><pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M 20 0 L 0 0 0 20" fill="none" stroke="#252d40" strokeWidth=".5"/></pattern></defs>
     <rect width="600" height="430" fill="url(#grid)"/>
+    <g transform={`rotate(${-frontRotation} 300 195)`}>
     <path d={`M ${x} ${y - 22} H ${x + w} M ${x} ${y - 29} v 14 M ${x + w} ${y - 29} v 14`} stroke="#67758e" fill="none"/>
-    <text x="300" y={y - 33} textAnchor="middle" fill="#b6c3d7" fontSize="14">{num(c.width)} m</text>
+    <PlanText x="300" y={y - 33} textAnchor="middle" fill="#b6c3d7" fontSize="14">{num(c.width)} m</PlanText>
     <path d={`M ${x + w + 24} ${y} V ${y + h} M ${x + w + 17} ${y} h 14 M ${x + w + 17} ${y + h} h 14`} stroke="#67758e" fill="none"/>
-    <text x={x + w + 40} y={y + h / 2} transform={`rotate(90 ${x + w + 40} ${y + h / 2})`} textAnchor="middle" fill="#b6c3d7" fontSize="14">{num(c.depth)} m</text>
+    <PlanText x={x + w + 40} y={y + h / 2} transform={`rotate(90 ${x + w + 40} ${y + h / 2})`} textAnchor="middle" fill="#b6c3d7" fontSize="14">{num(c.depth)} m</PlanText>
     <rect x={x} y={y} width={w} height={h} fill={(c.floorMat === 'brand' ? c.color : materials.find(m => m.value === c.floorMat)?.color) + '25'} stroke="#687695" strokeDasharray="5 5"/>
     {drawUnits(true)}
+    {storage && (
+      <g aria-label="Depósito com porta e área de acesso" pointerEvents="none">
+        <rect x={px(storage.access.centerX - storage.access.width / 2)}
+          y={py(storage.access.centerY + storage.access.depth / 2)}
+          width={storage.access.width * s} height={storage.access.depth * s}
+          fill="#f0ca85" fillOpacity="0.08" stroke="#f0ca85" strokeWidth="1" strokeDasharray="5 4" />
+        <rect x={px(c.storageX - c.storageWidth / 2)} y={py(c.storageY + c.storageDepth / 2)}
+          width={c.storageWidth * s} height={c.storageDepth * s} fill={storageWallColor} fillOpacity="0.12" />
+        {storageWalls.map((wall, index) => <line key={index}
+          x1={px(wall.x1)} y1={py(wall.y1)} x2={px(wall.x2)} y2={py(wall.y2)}
+          stroke={storageWallColor} strokeWidth={c.storageWallThickness * s} strokeLinecap="butt" />)}
+        <polyline points={storageDoorArc} fill="none" stroke={storageDoorColor} strokeWidth="1" strokeDasharray="3 2" />
+        <line x1={px(storage.door.hinge.x)} y1={py(storage.door.hinge.y)}
+          x2={px(storage.door.openEnd.x)} y2={py(storage.door.openEnd.y)} stroke={storageDoorColor} strokeWidth="2" />
+        <circle cx={px(storage.door.hinge.x)} cy={py(storage.door.hinge.y)} r="2" fill={storageDoorColor} />
+        <PlanText x={px(c.storageX)} y={py(c.storageY)} textAnchor="middle" fill="#e4ebf7" fontSize="10">DEPÓSITO</PlanText>
+      </g>
+    )}
     {c.back && <rect x={x} y={y} width={w} height={Math.max(5, .15 * s)} fill={c.wallMat === 'brand' ? c.color : materials.find(m => m.value === c.wallMat)?.color}/>}
     {c.left && <rect x={x} y={y} width={Math.max(5, .15 * s)} height={h} fill={c.wallMat === 'brand' ? c.color : materials.find(m => m.value === c.wallMat)?.color}/>}
     {c.right && <rect x={x + w - Math.max(5, .15 * s)} y={y} width={Math.max(5, .15 * s)} height={h} fill={c.wallMat === 'brand' ? c.color : materials.find(m => m.value === c.wallMat)?.color}/>}
-    {c.led && <g><rect x={px(-g.ledW / 2)} y={py(c.depth / 2 - .35) - 4} width={g.ledW * s} height="8" rx="2" fill={c.color}/><text x="300" y={y + 32} textAnchor="middle" fill="#cdd7ec" fontSize="13">LED</text></g>}
-    {c.stage && <g><rect x={px(-g.stageW / 2)} y={py(g.stageY + g.stageD / 2)} width={g.stageW * s} height={g.stageD * s} rx="2" fill={c.stageMat === 'brand' ? c.color : materials.find(m => m.value === c.stageMat)?.color} stroke="#78859d"/><text x="300" y={py(g.stageY) + 5} textAnchor="middle" fill="#d0daee" fontSize="13">Palco</text></g>}
+    {c.led && <g><rect x={px(-g.ledW / 2)} y={py(c.depth / 2 - .35) - 4} width={g.ledW * s} height="8" rx="2" fill={c.color}/><PlanText x="300" y={y + 32} textAnchor="middle" fill="#cdd7ec" fontSize="13">LED</PlanText></g>}
+    {c.stage && <g><rect x={px(-g.stageW / 2)} y={py(g.stageY + g.stageD / 2)} width={g.stageW * s} height={g.stageD * s} rx="2" fill={c.stageMat === 'brand' ? c.color : materials.find(m => m.value === c.stageMat)?.color} stroke="#78859d"/><PlanText x="300" y={py(g.stageY) + 5} textAnchor="middle" fill="#d0daee" fontSize="13">Palco</PlanText></g>}
     {c.chairs && (<g aria-label={`${seating.positions.length} cadeiras`}>
     {seating.positions.map(([cx, cy], index) => (<rect key={index} x={px(cx - c.chairWidth / 2)} y={py(cy + c.chairDepth / 2)} width={c.chairWidth * s} height={c.chairDepth * s} fill={c.color} stroke="#dce6ff" strokeWidth="0.5"/>))}
   </g>)}
     {drawUnits(false)}
-    {c.counter && g.counterXs.map((cx, i) => <g key={i}><rect x={px(cx - (g.counterW + .08) / 2)} y={py(g.counterY + (c.counterDepth + .08) / 2)} width={(g.counterW + .08) * s} height={(c.counterDepth + .08) * s} rx="3" fill={c.counterMat === 'brand' ? c.color : materials.find(m => m.value === c.counterMat)?.color}/><text x={px(cx)} y={py(g.counterY) + 5} textAnchor="middle" fill="white" fontSize="12">Balcão</text></g>)}
-    {c.totem && g.totemXs.map((tx, i) => <g key={i}><rect x={px(tx - (c.totemWidth + .15) / 2)} y={py(g.totemY + (c.totemDepth + .2) / 2)} width={(c.totemWidth + .15) * s} height={(c.totemDepth + .2) * s} rx="2" fill={c.totemMat === 'brand' ? c.color : materials.find(m => m.value === c.totemMat)?.color}/><text x={px(tx)} y={py(g.totemY) + 27} textAnchor="middle" fill="#cdd7ec" fontSize="12">Totem</text></g>)}
+    {c.counter && g.counterXs.map((cx, i) => <g key={i}><rect x={px(cx - (g.counterW + .08) / 2)} y={py(g.counterY + (c.counterDepth + .08) / 2)} width={(g.counterW + .08) * s} height={(c.counterDepth + .08) * s} rx="3" fill={c.counterMat === 'brand' ? c.color : materials.find(m => m.value === c.counterMat)?.color}/><PlanText x={px(cx)} y={py(g.counterY) + 5} textAnchor="middle" fill="white" fontSize="12">Balcão</PlanText></g>)}
+    {c.totem && g.totemXs.map((tx, i) => <g key={i}><rect x={px(tx - (c.totemWidth + .15) / 2)} y={py(g.totemY + (c.totemDepth + .2) / 2)} width={(c.totemWidth + .15) * s} height={(c.totemDepth + .2) * s} rx="2" fill={c.totemMat === 'brand' ? c.color : materials.find(m => m.value === c.totemMat)?.color}/><PlanText x={px(tx)} y={py(g.totemY) + 27} textAnchor="middle" fill="#cdd7ec" fontSize="12">Totem</PlanText></g>)}
     {c.spots && [-1, 1].map(sign => <g key={sign}><path d={`M ${px(sign * (c.width / 2 - .35))} ${py(c.depth / 2 - .25)} V ${py(-c.depth / 2 + .25)}`} stroke="#b49a67" strokeWidth="2"/>{g.spotYs.map((sy, i) => <circle key={i} cx={px(sign * (c.width / 2 - .35))} cy={py(sy)} r="4" fill="#f0ca85"/>)}</g>)}
-    {drag && <g pointerEvents="none" transform={`translate(${Math.max(5, Math.min(390, px(drag.transform.x) + 12))} ${Math.max(20, Math.min(398, py(drag.transform.y) - 16))})`}>
+    <PlanText x="300" y={y + h + 35} textAnchor="middle" fill="#8392ae" fontSize="11" letterSpacing="1">FRENTE</PlanText>
+    </g>
+    {drag && <g pointerEvents="none" transform={`translate(${dragLabel.x} ${dragLabel.y})`}>
       <rect x="0" y="-17" width="198" height="27" rx="5" fill="#101827" stroke={drag.error ? '#ff6575' : '#ffce57'} />
       <text x="8" y="0" fill={drag.error ? '#ff6575' : '#ffce57'} fontSize="12">X: {num(drag.transform.x)} m · Y: {num(drag.transform.y)} m</text>
     </g>}
-    <text x="300" y={y + h + 35} textAnchor="middle" fill="#8392ae" fontSize="13" letterSpacing="3">FRENTE / ENTRADA</text>
+
   </svg>;
 }
 export default function Home() {
@@ -467,12 +635,108 @@ export default function Home() {
     }
     const display = c;
     const dirty = output && JSON.stringify(output.config) !== JSON.stringify(c);
-    const update = <K extends keyof Config>(key: K, value: Config[K]) => {
-        const preservesLayout = ['name', 'target', 'color', 'screenImage', 'screenName'].includes(key) || key.endsWith('Mat');
-        setC(prev => ({ ...prev, [key]: value, objectTransforms: preservesLayout ? prev.objectTransforms : {} }));
-        setError(''); setAssemblyError('');
-        setNotice(!preservesLayout && Object.keys(c.objectTransforms).length ? 'As medidas, quantidades ou distribuição mudaram. Os ajustes individuais foram restaurados para a nova distribuição automática.' : '');
+        const update = <K extends keyof Config>(
+        key: K,
+        value: Config[K],
+    ) => {
+        const preservesLayout =
+            [
+                'name',
+                'target',
+                'color',
+                'screenImage',
+                'screenName',
+                'frontRotation',
+            ].includes(key) || key.endsWith('Mat');
+
+        setC(prev => {
+            const next: Config = {
+                ...prev,
+                [key]: value,
+                objectTransforms: preservesLayout
+                    ? prev.objectTransforms
+                    : {},
+            };
+
+            // Escolher um modelo ou a lateral da esquina
+            // atualiza todas as paredes na mesma operação.
+            if (
+                key === 'standLayout' ||
+                key === 'cornerOpenSide'
+            ) {
+                const walls = getStandWalls(
+                    next.standLayout,
+                    next.cornerOpenSide,
+                    next,
+                );
+
+                return {
+                    ...next,
+                    ...walls,
+                };
+            }
+
+            // Uma alteração manual nas paredes passa
+            // a representar uma configuração personalizada.
+            if (
+                key === 'back' ||
+                key === 'left' ||
+                key === 'right'
+            ) {
+                return {
+                    ...next,
+                    standLayout: 'custom',
+                };
+            }
+
+            return next;
+        });
+
+        setError('');
+        setAssemblyError('');
+
+        setNotice(
+            !preservesLayout &&
+            Object.keys(c.objectTransforms).length > 0
+                ? 'A configuração mudou. Os ajustes individuais foram restaurados para a distribuição automática.'
+                : '',
+        );
     };
+
+        function placeStorage() {
+        try {
+            const base: Config = {
+                ...c,
+                storageEnabled: true,
+                objectTransforms: {},
+            };
+
+            const position = findStoragePosition(base);
+
+            const next: Config = {
+                ...base,
+                ...position,
+            };
+
+            // Confere também se os móveis cabem no espaço restante.
+            validate(next);
+
+            setC(next);
+            setSelectedId(null);
+            setError('');
+            setAssemblyError('');
+            setNotice(
+                'Depósito posicionado. Os móveis foram redistribuídos e os ajustes individuais foram restaurados.',
+            );
+        } catch (error) {
+            setError(
+                error instanceof Error
+                    ? error.message
+                    : 'Não foi possível posicionar o depósito.',
+            );
+            setNotice('');
+        }
+    }
     const build = () => {
         try {
             validate(c);
@@ -679,10 +943,218 @@ export default function Home() {
       <p className="tab-help">{c.projectType === 'palco' ? 'Informe a área disponível e a altura de montagem. Ajuste as medidas da plataforma na aba Parâmetros.' : 'Informe as medidas do stand. A altura também define as paredes e os trilhos de iluminação.'}</p>
       <div className="dimensions">{([{ key: 'width', label: 'Largura', min: 3, max: 30 }, { key: 'depth', label: 'Profundidade', min: 3, max: 30 }, { key: 'height', label: 'Altura', min: 2, max: 8 }] as const).map(f => <label className="field" key={f.key}>{f.label}<div className="unit-input"><input type="number" inputMode="decimal" min={f.min} max={f.max} step="0.1" value={Number.isNaN(c[f.key]) ? '' : c[f.key]} onChange={e => update(f.key, e.target.value === '' ? NaN : Number(e.target.value))}/><span>m</span></div></label>)}</div>
       <div className="area-summary"><Ruler size={16}/><span>Área de montagem</span><strong>{valid ? num(c.width * c.depth) : '—'} <small>m²</small></strong></div>
-      {c.projectType === 'stand' && <>
-        <div className="subheading"><h3>Paredes</h3><span>A frente fica aberta</span></div>
-      <div className="wall-options">{([{ key: 'left', label: 'Esquerda' }, { key: 'back', label: 'Fundo' }, { key: 'right', label: 'Direita' }] as const).map(f => <label className={'wall-choice ' + (c[f.key] ? 'chosen' : '')} key={f.key}><Checkbox checked={c[f.key]} onCheckedChange={v => update(f.key, v === true)} aria-label={`Parede ${f.label.toLowerCase()}`}/>{f.label}</label>)}</div>
-      </>}
+      {c.projectType === 'stand' && (
+        <>
+          <div className="subheading">
+            <h3>Configuração do estande</h3>
+          </div>
+
+          <div className="field engine-label">
+            <span>Modelo do estande</span>
+
+            <Select
+              value={c.standLayout}
+              onValueChange={value =>
+                update('standLayout', value as StandLayout)
+              }
+            >
+              <SelectTrigger
+                aria-label="Modelo do estande"
+                className="full-select"
+              >
+                <SelectValue />
+              </SelectTrigger>
+
+              <SelectContent>
+                <SelectItem value="front">
+                  Frente aberta
+                </SelectItem>
+                <SelectItem value="corner">
+                  Esquina
+                </SelectItem>
+                <SelectItem value="peninsula">
+                  Península
+                </SelectItem>
+                <SelectItem value="island">
+                  Ilha
+                </SelectItem>
+                <SelectItem value="custom">
+                  Personalizado
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {c.standLayout === 'corner' && (
+            <div className="field engine-label">
+              <span>Lateral aberta da esquina</span>
+
+              <Select
+                value={c.cornerOpenSide}
+                onValueChange={value =>
+                  update(
+                    'cornerOpenSide',
+                    value as CornerOpenSide,
+                  )
+                }
+              >
+                <SelectTrigger
+                  aria-label="Lateral aberta da esquina"
+                  className="full-select"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+
+                <SelectContent>
+                  <SelectItem value="left">
+                    Esquerda
+                  </SelectItem>
+                  <SelectItem value="right">
+                    Direita
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          <div className="field engine-label">
+            <span>Orientação da frente</span>
+
+            <Select
+              value={String(c.frontRotation)}
+              onValueChange={value =>
+                update(
+                  'frontRotation',
+                  Number(value) as FrontRotation,
+                )
+              }
+            >
+              <SelectTrigger
+                aria-label="Orientação da frente"
+                className="full-select"
+              >
+                <SelectValue />
+              </SelectTrigger>
+
+              <SelectContent>
+                <SelectItem value="0">
+                  0° — Frente para baixo
+                </SelectItem>
+                <SelectItem value="90">
+                  90° — Frente para a direita
+                </SelectItem>
+                <SelectItem value="180">
+                  180° — Frente para cima
+                </SelectItem>
+                <SelectItem value="270">
+                  270° — Frente para a esquerda
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <p className="tab-help">
+            A orientação gira toda a montagem. As medidas e os
+            ajustes X/Y continuam relativos à frente do estande.
+          </p>
+
+          <div className="subheading">
+            <h3>Paredes</h3>
+            <span>A frente local fica aberta</span>
+          </div>
+
+          <p className="tab-help">
+            Esquerda e direita são vistas da entrada para
+            o fundo. Alterar uma parede muda o modelo
+            para Personalizado.
+          </p>
+
+          <div className="wall-options">
+            {(
+              [
+                { key: 'left', label: 'Esquerda' },
+                { key: 'back', label: 'Fundo' },
+                { key: 'right', label: 'Direita' },
+              ] as const
+            ).map(field => (
+              <label
+                className={
+                  'wall-choice ' +
+                  (c[field.key] ? 'chosen' : '')
+                }
+                key={field.key}
+              >
+                <Checkbox
+                  checked={c[field.key]}
+                  onCheckedChange={value =>
+                    update(field.key, value === true)
+                  }
+                  aria-label={
+                    `Parede ${field.label.toLowerCase()}`
+                  }
+                />
+                {field.label}
+              </label>
+            ))}
+          </div>
+        </>
+      )}
+      {c.projectType === 'stand' && (
+        <div className="parameter-section">
+          <h3>Depósito com porta</h3>
+          <label className="wall-choice">
+            <Checkbox checked={c.storageEnabled} onCheckedChange={value => {
+              if (value === true) placeStorage();
+              else update('storageEnabled', false);
+            }} aria-label="Ativar depósito com porta" />
+            Ativar depósito
+          </label>
+          {c.storageEnabled && <>
+            <p className="tab-help">X/Y indicam o centro do depósito nos eixos locais do estande. A orientação da frente gira toda a montagem.</p>
+            <div className="param-grid">
+              {storageFields.map(field => <label className="field" key={field.key}>
+                {field.label}<div className="unit-input">
+                  <input type="number" inputMode="decimal" min={field.min} max={field.max} step={field.step ?? 0.1}
+                    value={Number.isNaN(c[field.key]) ? '' : c[field.key] as number}
+                    onChange={event => update(field.key, event.target.value === '' ? NaN : Number(event.target.value))} />
+                  <span>m</span>
+                </div>
+              </label>)}
+            </div>
+            <div className="field engine-label"><span>Face da porta</span>
+              <Select value={c.storageDoorSide} onValueChange={value => update('storageDoorSide', value as StorageDoorSide)}>
+                <SelectTrigger aria-label="Face da porta do depósito" className="full-select"><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="front">Frente</SelectItem><SelectItem value="back">Fundo</SelectItem>
+                  <SelectItem value="left">Esquerda</SelectItem><SelectItem value="right">Direita</SelectItem></SelectContent>
+              </Select>
+            </div>
+            <div className="field engine-label"><span>Dobradiça, olhando de fora</span>
+              <Select value={c.storageDoorHinge} onValueChange={value => update('storageDoorHinge', value as StorageDoorHinge)}>
+                <SelectTrigger aria-label="Dobradiça da porta do depósito" className="full-select"><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="left">Esquerda</SelectItem><SelectItem value="right">Direita</SelectItem></SelectContent>
+              </Select>
+            </div>
+            <div className="field engine-label"><span>Sentido de abertura</span>
+              <Select value={c.storageDoorOpening} onValueChange={value => update('storageDoorOpening', value as StorageDoorOpening)}>
+                <SelectTrigger aria-label="Abertura da porta do depósito" className="full-select"><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="inward">Para dentro</SelectItem><SelectItem value="outward">Para fora</SelectItem></SelectContent>
+              </Select>
+            </div>
+            {([{ key: 'storageWallMat', label: 'Material das paredes do depósito' },
+                { key: 'storageDoorMat', label: 'Material da porta do depósito' }] as const).map(field => (
+              <div className="field engine-label" key={field.key}><span>{field.label}</span>
+                <Select value={c[field.key]} onValueChange={value => update(field.key, value as MaterialKind)}>
+                  <SelectTrigger aria-label={field.label} className="full-select"><SelectValue /></SelectTrigger>
+                  <SelectContent>{materials.map(material => <SelectItem key={material.value} value={material.value}>{material.label}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+            ))}
+            <button type="button" className="generate-button" onClick={placeStorage}>Reposicionar depósito automaticamente</button>
+            <p className="tab-help">A área tracejada fica reservada para acesso e abertura externa. Alterar medidas, posição ou porta restaura os ajustes individuais dos móveis. Alterar materiais preserva os ajustes.</p>
+            <p className="tab-help">O depósito é incluído no JSON e nos scripts 3D. A porta é exportada fechada, com pivô na dobradiça; o arco na planta indica sua abertura.</p>
+          </>}
+        </div>
+      )}
       <div className="subheading elements-heading"><h3>Elementos</h3><span>Selecione o que entra</span></div>
       <div className="element-list">{availableElements.map(f => <label className={'element ' + (c[f.key] ? 'selected' : '')} key={f.key}><span className="element-icon"><f.icon size={19}/></span><span className="element-text"><strong>{f.title}</strong><small>{f.text}</small></span><Checkbox checked={c[f.key]} disabled={c.projectType === 'palco' && f.key === 'stage'} onCheckedChange={v => update(f.key, v === true)} aria-label={f.title}/></label>)}</div>
       <div className="color-row"><label htmlFor="brand-color">Cor de destaque<small>Aplicada ao LED e aos elementos</small></label><div className="color-control"><input id="brand-color" type="color" value={c.color} onChange={e => update('color', e.target.value)}/><span>{c.color.toUpperCase()}</span></div></div>
