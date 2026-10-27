@@ -1,4 +1,5 @@
 import type { Config } from './generator';
+import { activationGeometry } from './activation-geometry';
 import { extraObjectDefinitions, extraObjectSpec } from './library.js';
 import type { ReservedArea } from './library.js';
 
@@ -66,11 +67,18 @@ export function buildAssembly(c: Config, scene: AssemblyScene): AssemblyUnit[] {
     }
     add('showcases', 'Vitrine');
     for (const def of extraObjectDefinitions) add(def.id, def.label);
+    if (c.projectType === 'activation') {
+        const stations = activationGeometry(c)!.baseStations;
+        for (const unit of units) {
+            const station = stations.find(s => s.id === unit.id);
+            if (station) { unit.rotation = station.rotation; unit.label = `Estação de interação ${Number(unit.id.split(':')[1]) + 1}`; }
+        }
+    }
     return units;
 }
 
 export function unitTransform(c: AssemblyConfig, unit: AssemblyUnit): ObjectTransform {
-    return Object.hasOwn(c.objectTransforms, unit.id) ? c.objectTransforms[unit.id] : { x: unit.x, y: unit.y, rotation: 0 };
+    return Object.hasOwn(c.objectTransforms, unit.id) ? c.objectTransforms[unit.id] : { x: unit.x, y: unit.y, rotation: unit.rotation };
 }
 
 export function placedMembers(c: AssemblyConfig, unit: AssemblyUnit): AssemblyMember[] {

@@ -207,3 +207,74 @@ test('controles reais de lounge e banquetas limpam ajustes ao trocar a distribui
     }
     assert.equal(state.bistroTables,true);
 });
+
+test('ativação inicial contém somente dois equipamentos touch e salva JSON versão 7',()=>{
+    const c=createProjectConfig('activation');
+    validate(c);
+    assert.equal(c.projectType,'activation'); assert.equal(c.activationModel,'touch');
+    assert.deepEqual([c.width,c.depth,c.height],[8,6,3.5]);
+    assert.equal(c.touchCount,2); assert.equal(c.touchScreens,true);
+    const units=assemblyGeometry(c);
+    assert.equal(units.length,2);
+    assert.ok(units.every(unit=>unit.id.startsWith('touchScreens:')));
+    const text=serializeProject(c);
+    assert.equal(JSON.parse(text).version,7);
+    writeFileSync(join(output,'activation.json'),text);
+    const restored=parseProject(readFileSync(join(output,'activation.json'),'utf8'));
+    assert.deepEqual(restored,c);
+    for(const target of ['blender','max']) assert.equal(generate({...c,target}),generate({...restored,target}));
+});
+
+test('ativação preserva equipamento movido, girado e seu material no JSON',()=>{
+    const c={...createProjectConfig('activation'),width:12,depth:10,touchMat:'metal',
+        objectTransforms:{'touchScreens:0':{x:0,y:0,rotation:45}}};
+    validate(c);
+    assert.deepEqual(parseProject(serializeProject(c)),c);
+    for(const target of ['blender','max']) assert.ok(generate({...c,target}).length>1000);
+});
+
+test('JSON de versões 1 a 5 recebe o novo campo sem perder projetos existentes',()=>{
+    for(const type of ['stand','palco','lounge']) for(const version of [1,2,3,4,5]) {
+        const c=createProjectConfig(type); c.name='Arquivo antigo '+type;
+        const legacy={...c}; delete legacy.activationModel;
+        if(version<=3) for(const key of Object.keys(legacy)) if(key.startsWith('storage')) delete legacy[key];
+        if(version<=2) { delete legacy.standLayout; delete legacy.frontRotation; delete legacy.cornerOpenSide; }
+        const restored=parseProject(JSON.stringify({format:'code-buddy-project',version,config:legacy}));
+        assert.equal(restored.activationModel,'touch');
+        assert.equal(restored.projectType,type); assert.equal(restored.name,c.name);
+        assert.equal(restored.width,c.width); assert.equal(restored.color,c.color);
+        assert.deepEqual(parseProject(serializeProject(restored)),restored);
+    }
+    const c=createProjectConfig('lounge'); delete c.activationModel;
+    for(const legacy of [c,{config:c}]) assert.equal(parseProject(JSON.stringify(legacy)).projectType,'lounge');
+});
+
+test('JSON versão 6 exige modelo e versões antigas não mascaram modelo inválido',()=>{
+    const doc=JSON.parse(serializeProject(createProjectConfig('activation')));
+    delete doc.config.activationModel;
+    assert.throws(()=>parseProject(JSON.stringify(doc)),/ausente/);
+    for(const version of [5,6]) for(const activationModel of ['outro',null,12]) {
+        assert.throws(()=>parseProject(JSON.stringify({format:'code-buddy-project',version,
+            config:{...createProjectConfig('activation'),activationModel}})));
+    }
+    assert.throws(()=>parseProject(JSON.stringify({...doc,version:8})),/versão/);
+});
+
+test('troca real para ativação recupera rascunho ausente e preserva o estande',()=>{
+    const source=readFileSync(resolve('app/page.tsx'),'utf8');
+    const ast=ts.createSourceFile('page.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+    let fn;
+    function visit(n) {if(ts.isFunctionDeclaration(n)&&n.name?.text==='changeProjectType') fn=n; ts.forEachChild(n,visit);}
+    visit(ast); assert.ok(fn);
+    const c={...base(),name:'Estande em edição',target:'max'};
+    const projectDrafts={current:{stand:c,palco:createProjectConfig('palco'),lounge:createProjectConfig('lounge')}};
+    let state=c;
+    const ctx=vm.createContext({c,projectDrafts,projectTypes,createProjectConfig,imageRequest:{current:0},
+        setC:value=>{state=value;},setSelectedId:()=>{},setAssemblyError:()=>{},setOutput:()=>{},
+        setTab:()=>{},setError:()=>{},setNotice:()=>{},setCopied:()=>{}});
+    vm.runInContext(ts.transpileModule(fn.getText(ast),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,ctx);
+    ctx.changeProjectType('activation');
+    assert.equal(state.projectType,'activation'); assert.equal(state.target,'max'); validate(state);
+    ctx.c=state; ctx.changeProjectType('stand');
+    assert.equal(state.name,'Estande em edição'); assert.equal(state.target,'max');
+});

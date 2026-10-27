@@ -20,8 +20,12 @@ import { blenderStorage } from './storage-exporters';
 import type { StorageConfig } from './storage';
 import type { StandLayout, FrontRotation, CornerOpenSide } from './stand-config.js';
 import { getStandWalls } from './stand-config.js';
+import { activationDefaults } from './activation';
+import { activationGeometry } from './activation-geometry';
+import { activationGuides } from './activation-exporters';
+import type { ActivationConfig } from './activation';
 export type MaterialKind = 'white' | 'brand' | 'wood' | 'metal' | 'glass' | 'concrete' | 'plastic';
-export type ProjectType = 'stand' | 'palco' | 'lounge';
+export type ProjectType = 'stand' | 'palco' | 'lounge'| 'activation';
 export type Target = 'blender' | 'max';
 export const materials: {
     value: MaterialKind;
@@ -33,7 +37,7 @@ export const materials: {
     { value: 'glass', label: 'Vidro', color: '#81bfce' }, { value: 'concrete', label: 'Concreto', color: '#747b86' },
     { value: 'plastic', label: 'Plástico', color: '#c4d1e1' }
 ];
-export type Config = StorageConfig & AssemblyConfig & ChairConfig & RoundTableConfig & RectTableConfig & BistroTableConfig & StoolConfig & TableChairConfig & PedestalConfig & LoungeConfig & CoffeeTableConfig & LoungeSetConfig & ShowcaseConfig & ExtraObjectsConfig & {
+export type Config = ActivationConfig & StorageConfig & AssemblyConfig & ChairConfig & RoundTableConfig & RectTableConfig & BistroTableConfig & StoolConfig & TableChairConfig & PedestalConfig & LoungeConfig & CoffeeTableConfig & LoungeSetConfig & ShowcaseConfig & ExtraObjectsConfig & {
     projectType: ProjectType;
     standLayout: StandLayout;
     frontRotation: FrontRotation;
@@ -81,6 +85,7 @@ export const defaults: Config = {
     frontRotation: 0,
     cornerOpenSide: 'right',
     objectTransforms: {},
+    ...activationDefaults,
     ...storageDefaults,
     ...chairDefaults,
     ...roundTableDefaults,
@@ -539,6 +544,13 @@ export function showcaseGeometry(c: Config) { if (!c.showcases)
             number
         ][], generatedCount: 0 }; return layoutShowcases(c, showcaseReservedAreas(c, c.showcaseGap)); }
 export function extraObjectGeometry(c: Config) {
+    if (c.projectType === 'activation') {
+        const g = activationGeometry(c)!;
+        // Reutiliza as verificações construtivas do totem, sem a distribuição genérica.
+        const result = layoutExtraObjects({ ...c, touchCount: 1 }, () => []);
+        result.touchScreens = { positions: g.baseStations.map(s => [s.x, s.y]), generatedCount: g.stations.length };
+        return result;
+    }
     return layoutExtraObjects(c, (gap) => {
         const reserved = showcaseReservedAreas(c, gap);
         if (c.showcases) {
@@ -566,14 +578,22 @@ export function validate(c: Config) {
         throw new Error('Selecione um modo válido para o lounge.');
     if (!c.name.trim() || c.name.length > 80)
         throw new Error('Dê um nome ao projeto, com até 80 caracteres.');
-    if (!['stand', 'palco', 'lounge'].includes(c.projectType))
+    if (
+        !['stand', 'palco', 'lounge', 'activation'].includes(
+            c.projectType,
+        )
+    ) {
         throw new Error('Tipo de projeto inválido.');
+    }
+
+    if (c.activationModel !== 'touch') {
+        throw new Error('Modelo de ativação inválido.');
+    }
     if (c.projectType === 'palco') {
         if (!c.stage)
             throw new Error('Palco / plenária precisa incluir um palco.');
-        if (c.back || c.left || c.right || c.counter || c.totem) {
-            throw new Error("Nesta versão, paredes, balcões e totens ainda não estão disponíveis em Palco / plenária.");
-        }
+        if (c.back || c.left || c.right || c.counter || c.totem)
+            throw new Error('Nesta versão, paredes, balcões e totens ainda não estão disponíveis em Palco / plenária.');
     }
     if (c.projectType === 'lounge' && [c.back, c.left, c.right, c.stage, c.chairs,
         c.led, c.counter, c.totem, c.spots, c.storageEnabled, c.roundTables,
@@ -716,7 +736,7 @@ export function validate(c: Config) {
     coffeeTableGeometry(c);
     showcaseGeometry(c);
     extraObjectGeometry(c);
-    if (Object.keys(c.objectTransforms).length) validateAssembly(c, assemblyGeometry(c), tableReservedAreas(c));
+    if (c.projectType !== 'activation' && Object.keys(c.objectTransforms).length) validateAssembly(c, assemblyGeometry(c), tableReservedAreas(c));
     return c;
 }
 /** Posições automáticas são a base dos ajustes; não chama validate para evitar recursão. */
@@ -798,8 +818,8 @@ export function generate(c: Config, options: {
             `mas cabem ${chairLayout.generatedCount}. ` +
             "Confirme a geração parcial antes de continuar.");
     }
-    if (Object.keys(c.objectTransforms).length || (c.projectType === 'lounge' && c.target === 'blender')) {
-        const units = assemblyScript(c);
+    if (c.projectType === 'activation' || Object.keys(c.objectTransforms).length || (c.projectType === 'lounge' && c.target === 'blender')) {
+        const units = assemblyScript(c) + activationGuides(c);
         if (c.target === 'blender') return generateBlender(c, blenderChairs(c, chairLayout, { group: 'audience' }) + units);
         const script = generateMax(c), marker = 'select criados';
         if (!script.includes(marker)) throw new Error('Não encontrei o ponto de inserção dos objetos no MaxScript.');

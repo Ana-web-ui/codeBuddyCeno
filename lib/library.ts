@@ -3,7 +3,7 @@ import type { MaterialKind, ProjectType } from "./generator";
 export const libraryCatalog = [
     { id: 'shelving', label: 'Estantes expositoras', projectTypes: ['stand', 'palco'] },
     { id: 'backdrops', label: 'Backdrops', projectTypes: ['stand', 'palco'] },
-    { id: 'touchScreens', label: 'Telas touch', projectTypes: ['stand', 'palco'] },
+    { id: 'touchScreens', label: 'Telas touch', projectTypes: ['stand', 'palco', 'activation'] },
     { id: 'cabinets', label: 'Armários', projectTypes: ['stand', 'palco'] },
     { id: 'openCubes', label: 'Cubos vazados', projectTypes: ['stand', 'palco'] },
     { id: 'roundRugs', label: 'Tapetes circulares', projectTypes: ['stand', 'palco', 'lounge'] },

@@ -14,6 +14,8 @@ import { libraryCatalog, layoutChairs, extraObjectDefinitions, extraObjectSpec }
 import { getStandWalls } from '@/lib/stand-config';
 import { MAX_PROJECT_BYTES, serializeProject, parseProject, projectFilename } from '@/lib/project-file';
 import type { StandLayout, CornerOpenSide, FrontRotation } from '@/lib/stand-config';
+import { ActivationControls } from '@/components/activation-controls';
+import { activationGeometry } from '@/lib/activation-geometry';
 import { storageGeometry } from '@/lib/storage';
 import type { StorageDoorSide, StorageDoorHinge, StorageDoorOpening } from '@/lib/storage';
 
@@ -428,6 +430,7 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
     const w = c.width * s, h = c.depth * s, x = (600 - w) / 2, y = (390 - h) / 2;
     const px = (v: number) => x + w / 2 + v * s, py = (v: number) => y + h / 2 - v * s;
 
+    const activation = activationGeometry(c);
     const storage = storageGeometry(c);
     const storageWallColor = c.storageWallMat === 'brand' ? c.color
         : materials.find(material => material.value === c.storageWallMat)?.color ?? '#c8cedb';
@@ -511,6 +514,14 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
     <PlanText x={x + w + 40} y={y + h / 2} transform={`rotate(90 ${x + w + 40} ${y + h / 2})`} textAnchor="middle" fill="#b6c3d7" fontSize="14">{num(c.depth)} m</PlanText>
     <rect x={x} y={y} width={w} height={h} fill={(c.floorMat === 'brand' ? c.color : materials.find(m => m.value === c.floorMat)?.color) + '25'} stroke="#687695" strokeDasharray="5 5"/>
     {drawUnits(true)}
+    {activation && <g aria-label="Espera, participação e circulação" pointerEvents="none">
+      {activation.circulation.map((z,i)=><rect key={'c'+i} x={px(z.x-z.width/2)} y={py(z.y+z.depth/2)} width={z.width*s} height={z.depth*s} fill="#60a5fa" fillOpacity="0.12"/>)}
+      {[...(activation.waiting?[activation.waiting]:[]),...activation.participation].map((z,i)=><g key={z.name}>
+        <rect x={px(z.x-z.width/2)} y={py(z.y+z.depth/2)} width={z.width*s} height={z.depth*s} fill={z.name==='Espera'?'#fbbf24':'#34d399'} fillOpacity="0.18" stroke={z.name==='Espera'?'#fbbf24':'#34d399'} strokeDasharray="4 3"/>
+        <PlanText x={px(z.x)} y={py(z.y)+3} textAnchor="middle" fill="#e5edf9" fontSize="9">{z.name}</PlanText>
+      </g>)}
+      {[activation.entrance,activation.exit].map(z=><PlanText key={z.name} x={px(z.x)} y={py(z.y)+3} textAnchor="middle" fill="#93c5fd" fontSize="10">{z.name.toUpperCase()}</PlanText>)}
+    </g>}
     {storage && (
       <g aria-label="Depósito com porta e área de acesso" pointerEvents="none">
         <rect x={px(storage.access.centerX - storage.access.width / 2)}
@@ -541,7 +552,7 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
     {c.counter && g.counterXs.map((cx, i) => <g key={i}><rect x={px(cx - (g.counterW + .08) / 2)} y={py(g.counterY + (c.counterDepth + .08) / 2)} width={(g.counterW + .08) * s} height={(c.counterDepth + .08) * s} rx="3" fill={c.counterMat === 'brand' ? c.color : materials.find(m => m.value === c.counterMat)?.color}/><PlanText x={px(cx)} y={py(g.counterY) + 5} textAnchor="middle" fill="white" fontSize="12">Balcão</PlanText></g>)}
     {c.totem && g.totemXs.map((tx, i) => <g key={i}><rect x={px(tx - (c.totemWidth + .15) / 2)} y={py(g.totemY + (c.totemDepth + .2) / 2)} width={(c.totemWidth + .15) * s} height={(c.totemDepth + .2) * s} rx="2" fill={c.totemMat === 'brand' ? c.color : materials.find(m => m.value === c.totemMat)?.color}/><PlanText x={px(tx)} y={py(g.totemY) + 27} textAnchor="middle" fill="#cdd7ec" fontSize="12">Totem</PlanText></g>)}
     {c.spots && [-1, 1].map(sign => <g key={sign}><path d={`M ${px(sign * (c.width / 2 - .35))} ${py(c.depth / 2 - .25)} V ${py(-c.depth / 2 + .25)}`} stroke="#b49a67" strokeWidth="2"/>{g.spotYs.map((sy, i) => <circle key={i} cx={px(sign * (c.width / 2 - .35))} cy={py(sy)} r="4" fill="#f0ca85"/>)}</g>)}
-    <PlanText x="300" y={y + h + 35} textAnchor="middle" fill="#8392ae" fontSize="11" letterSpacing="1">FRENTE</PlanText>
+    <PlanText x="300" y={y + h + 35} textAnchor="middle" fill="#8392ae" fontSize="11" letterSpacing="1">{c.projectType === 'activation' ? 'ESPERA · PARTICIPAÇÃO · CIRCULAÇÃO' : 'FRENTE'}</PlanText>
     </g>
     {drag && <g pointerEvents="none" transform={`translate(${dragLabel.x} ${dragLabel.y})`}>
       <rect x="0" y="-17" width="198" height="27" rx="5" fill="#101827" stroke={drag.error ? '#ff6575' : '#ffce57'} />
@@ -559,7 +570,12 @@ export default function Home() {
         setConfirmedPartial(null);
         confirmedPartialRef.current = null;
     }, [c]);
-    const projectDrafts = useRef<Record<ProjectType, Config>>({ stand: createProjectConfig("stand"), palco: createProjectConfig("palco"), lounge: createProjectConfig("lounge")});
+    const projectDrafts = useRef<Record<ProjectType, Config>>({
+        stand: createProjectConfig('stand'),
+        palco: createProjectConfig('palco'),
+        lounge: createProjectConfig('lounge'),
+        activation: createProjectConfig('activation'),
+    });
     const [tab, setTab] = useState('plan');
     const [output, setOutput] = useState<{
         code: string;
@@ -652,6 +668,7 @@ export default function Home() {
                 'screenImage',
                 'screenName',
                 'frontRotation',
+                'activationExportGuides',
             ].includes(key) || key.endsWith('Mat');
 
         setC(prev => {
@@ -662,6 +679,8 @@ export default function Home() {
                     ? prev.objectTransforms
                     : {},
             };
+
+            if (prev.projectType === 'activation' && !preservesLayout) next.activationWaitingManual = false;
 
             // Escolher um modelo ou a lateral da esquina
             // atualiza todas as paredes na mesma operação.
@@ -702,7 +721,7 @@ export default function Home() {
 
         setNotice(
             !preservesLayout &&
-            Object.keys(c.objectTransforms).length > 0
+            (Object.keys(c.objectTransforms).length > 0 || (c.projectType === 'activation' && c.activationWaitingManual))
                 ? 'A configuração mudou. Os ajustes individuais foram restaurados para a distribuição automática.'
                 : '',
         );
@@ -952,7 +971,7 @@ export default function Home() {
       <label className="field engine-label"><span>Gerar para</span><Select value={c.target} onValueChange={v => update('target', v as Target)}><SelectTrigger aria-label="Programa de destino" className="full-select"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="blender">Blender · Python (.py)</SelectItem><SelectItem value="max">3ds Max · MaxScript (.ms)</SelectItem></SelectContent></Select></label>
       <Tabs defaultValue="stand" className="config-tabs"><TabsList className="config-tabs-list"><TabsTrigger value="stand">Projeto</TabsTrigger><TabsTrigger value="params">Parâmetros</TabsTrigger><TabsTrigger value="materials">Materiais</TabsTrigger></TabsList><TabsContent value="stand">
       <label className="field">Nome do projeto<input value={c.name} maxLength={80} onChange={e => update('name', e.target.value)} placeholder="Ex.: Stand KitKat"/></label>
-      <p className="tab-help">{c.projectType === 'palco' ? 'Informe a área disponível e a altura de montagem. Ajuste as medidas da plataforma na aba Parâmetros.' : c.projectType === 'lounge' ? 'Informe a área disponível para o lounge. Selecione os móveis abaixo e ajuste os conjuntos na aba Parâmetros.' : 'Informe as medidas do stand. A altura também define as paredes e os trilhos de iluminação.'}</p>
+      <p className="tab-help">{c.projectType === 'palco' ? 'Informe a área disponível e a altura de montagem. Ajuste as medidas da plataforma na aba Parâmetros.' : c.projectType === 'lounge' ? 'Informe a área disponível para o lounge. Selecione os móveis abaixo e ajuste os conjuntos na aba Parâmetros.' : c.projectType === 'activation' ? 'Interação em totem: configure as zonas e os acessos na aba Parâmetros. A área de participação acompanha cada estação.' : 'Informe as medidas do stand. A altura também define as paredes e os trilhos de iluminação.'}</p>
       <div className="dimensions">{([{ key: 'width', label: 'Largura', min: 3, max: 30 }, { key: 'depth', label: 'Profundidade', min: 3, max: 30 }, { key: 'height', label: 'Altura', min: 2, max: 8 }] as const).map(f => <label className="field" key={f.key}>{f.label}<div className="unit-input"><input type="number" inputMode="decimal" min={f.min} max={f.max} step="0.1" value={Number.isNaN(c[f.key]) ? '' : c[f.key]} onChange={e => update(f.key, e.target.value === '' ? NaN : Number(e.target.value))}/><span>m</span></div></label>)}</div>
       <div className="area-summary"><Ruler size={16}/><span>Área de montagem</span><strong>{valid ? num(c.width * c.depth) : '—'} <small>m²</small></strong></div>
       {c.projectType === 'lounge' && <div className="parameter-section" aria-label="Resumo de assentos do lounge">
@@ -1177,9 +1196,13 @@ export default function Home() {
         </div>
       )}
       <div className="subheading elements-heading"><h3>Elementos</h3><span>Selecione o que entra</span></div>
-      <div className="element-list">{availableElements.map(f => <label className={'element ' + (c[f.key] ? 'selected' : '')} key={f.key}><span className="element-icon"><f.icon size={19}/></span><span className="element-text"><strong>{f.title}</strong><small>{f.text}</small></span><Checkbox checked={c[f.key]} disabled={c.projectType === 'palco' && f.key === 'stage'} onCheckedChange={v => update(f.key, v === true)} aria-label={f.title}/></label>)}</div>
+      <div className="element-list">{availableElements.map(f => <label className={'element ' + (c[f.key] ? 'selected' : '')} key={f.key}><span className="element-icon"><f.icon size={19}/></span><span className="element-text"><strong>{f.title}</strong><small>{f.text}</small></span><Checkbox checked={c[f.key]} disabled={(c.projectType === 'palco' && f.key === 'stage') || (c.projectType === 'activation' && f.key === 'touchScreens')} onCheckedChange={v => update(f.key, v === true)} aria-label={f.title}/></label>)}</div>
       <div className="color-row"><label htmlFor="brand-color">Cor de destaque<small>Aplicada ao LED e aos elementos</small></label><div className="color-control"><input id="brand-color" type="color" value={c.color} onChange={e => update('color', e.target.value)}/><span>{c.color.toUpperCase()}</span></div></div>
       </TabsContent><TabsContent value="params">
+      {c.projectType === 'activation' && <ActivationControls c={c} update={update} apply={next=>{
+        try { validate(next); setC(next); setError(''); setNotice('Espera atualizada. O percurso foi recalculado.'); }
+        catch(e) { setError(e instanceof Error?e.message:'Posição inválida.'); }
+      }}/> }
       <p className="tab-help">Medidas em metros. Os elementos seguem uma distribuição automática na planta.</p>
       {seating && c.chairs && (<p className="tab-help">
     {c.chairGenerationMode === 'fill' ? (<>
@@ -1289,6 +1312,7 @@ export default function Home() {
                     ? <>Cada mesa de centro forma um conjunto com até 4 assentos. Total: {c.coffeeTableCount} mesas, {c.armchairs ? c.coffeeTableCount * c.loungeArmchairsPerTable : 0} poltronas e {c.puffs ? c.coffeeTableCount * c.loungePuffsPerTable : 0} puffs. Limite de 100 unidades de cada tipo de assento.</>
                     : 'Mesas de centro, poltronas e puffs ocupam posições livres de forma independente.'}</p>
   </div>)} <div className="param-grid">{parameterFields[f.key].filter(field => {
+                if (c.projectType === 'activation' && field.key === 'touchGap') return false;
                 if (field.key.startsWith('lounge') && c.loungeMode !== 'set')
                     return false;
                 if (field.key === 'coffeeTableGap' && c.loungeMode === 'set')
@@ -1305,7 +1329,7 @@ export default function Home() {
                     return false;
                 const isQuantityField = field.key === 'attendeeCount' || field.key === 'chairExtraCount';
                 return c.chairGenerationMode !== 'fill' || !isQuantityField;
-            }).map(field => <label className="field" key={field.key}>{field.key === 'coffeeTableCount' && c.loungeMode === 'set' ? 'Quantidade de conjuntos' : field.label}<div className="unit-input"><input type="number" inputMode={field.unit === 'un' ? 'numeric' : 'decimal'} min={field.min ?? .1} max={field.max ?? 30} step={field.step ?? (field.unit === 'un' ? 1 : field.key === "showcaseGlassThickness" ? .001 : field.key === "roundTableTopThickness" || field.key === "rectTableTopThickness" || field.key === "bistroTableTopThickness" || field.key === "coffeeTableTopThickness" || field.key === "stoolSeatThickness" || field.key === "stoolBistroGap" ? 0.01 : 0.05)} value={Number.isNaN(c[field.key]) ? '' : c[field.key] as number} onChange={e => update(field.key, e.target.value === '' ? NaN : Number(e.target.value))}/><span>{field.unit ?? 'm'}</span></div></label>)}</div></div>)}
+            }).map(field => <label className="field" key={field.key}>{field.key === 'coffeeTableCount' && c.loungeMode === 'set' ? 'Quantidade de conjuntos' : field.label}<div className="unit-input"><input type="number" inputMode={field.unit === 'un' ? 'numeric' : 'decimal'} min={field.min ?? .1} max={c.projectType === 'activation' && field.key === 'touchCount' ? 30 : field.max ?? 30} step={field.step ?? (field.unit === 'un' ? 1 : field.key === "showcaseGlassThickness" ? .001 : field.key === "roundTableTopThickness" || field.key === "rectTableTopThickness" || field.key === "bistroTableTopThickness" || field.key === "coffeeTableTopThickness" || field.key === "stoolSeatThickness" || field.key === "stoolBistroGap" ? 0.01 : 0.05)} value={Number.isNaN(c[field.key]) ? '' : c[field.key] as number} onChange={e => update(field.key, e.target.value === '' ? NaN : Number(e.target.value))}/><span>{field.unit ?? 'm'}</span></div></label>)}</div></div>)}
       {!availableElements.some(f => c[f.key]) && <p className="tab-help">Selecione um elemento na aba Projeto para ajustar suas medidas.</p>}
       {c.led && <div className="texture-section"><h3>Textura da TV / LED</h3><p>Escolha a arte que vai aparecer na tela. A imagem inteira é ajustada às medidas do LED.</p><label className="upload-label" htmlFor="tv-image">Escolher imagem JPG ou PNG<input id="tv-image" type="file" accept="image/png,image/jpeg" onChange={handleImage}/></label><small>Até 2 MB · incorporada ao script · imagem estática</small>{c.screenImage ? <div className="texture-preview"><img src={c.screenImage} alt="Arte selecionada para a tela de TV"/><span>{c.screenName}</span><button onClick={() => { imageRequest.current += 1; setC(prev => ({ ...prev, screenImage: '', screenName: '' })); setNotice('Imagem removida.'); }}>Remover imagem</button></div> : <p className="tab-help">Sem imagem, a tela usa a cor de destaque.</p>}</div>}
       </TabsContent><TabsContent value="materials"><p className="tab-help">Escolha o acabamento de cada parte. Madeira e concreto usam textura procedural; metal e vidro recebem propriedades de superfície.</p><div className="material-fields">{materialFields.filter((field) => {
@@ -1373,7 +1397,7 @@ export default function Home() {
           </select>
         </label>
         {selectedUnit && <>
-          <p className="tab-help">X: esquerda (−) / direita (+). Y: entrada (−) / fundo (+). Posição medida no centro; rotação adicional em relação à distribuição inicial.</p>
+          <p className="tab-help">X: esquerda (−) / direita (+). Y: frente (−) / fundo (+). Posição medida no centro; rotação da unidade em torno do eixo Z da planta.</p>
           <div className="dimensions">
             {(['x', 'y', 'rotation'] as const).map(key => <label className="field" key={key}>{key === 'rotation' ? 'Rotação (°)' : `${key.toUpperCase()} (m)`}
               <input aria-label={key === 'rotation' ? 'Rotação do objeto' : `Posição ${key.toUpperCase()} do objeto`} type="number" min={key === 'rotation' ? -360 : -30} max={key === 'rotation' ? 360 : 30} step={key === 'rotation' ? 5 : .1} readOnly={!!dragPreview} value={dragPreview?.id === selectedId ? String(Number(dragPreview.transform[key].toFixed(6))) : transformDraft[key]} onChange={event => setTransformDraft(prev => ({ ...prev, [key]: event.target.value }))} />
@@ -1389,7 +1413,7 @@ export default function Home() {
         {(dragPreview?.error || assemblyError) && <p role="alert" className="error">{dragPreview?.error || assemblyError}</p>}
       </div>
       <Tabs value={tab} onValueChange={setTab}><div className="result-header"><TabsList className="view-tabs"><TabsTrigger value="plan"><Square size={16}/>Planta</TabsTrigger><TabsTrigger value="code"><Code2 size={17}/>{c.target === 'max' ? 'MaxScript' : 'Script Python'}</TabsTrigger></TabsList><span className="plan-scale">{valid ? `${num(c.width)} × ${num(c.depth)} m` : 'Confira as medidas'}</span></div>
-      <TabsContent value="plan"><div className="plan-title"><span>VISTA SUPERIOR</span><small>Planta esquemática · sem perspectiva</small></div><div className="drawing">{valid ? <Plan c={display} selectedId={selectedId} onSelect={setSelectedId} snap={snapToGrid} onDragPreview={previewDrag} onDrop={dropObject}/> : <div className="empty"><Ruler size={32}/><p>{validationMessage}</p></div>}</div><div className="legend">{(c.back || c.left || c.right) && <span><i className="legend-wall"/>Parede</span>}<span><i style={{ background: c.color }}/>Elementos</span><span><i className="legend-light"/>Spots</span></div><div className="model-info"><div><span>ÁREA TOTAL</span><strong>{valid ? num(c.width * c.depth) : '—'} <small>m²</small></strong></div><div><span>ALTURA DE MONTAGEM</span><strong>{valid ? num(c.height) : '—'} <small>m</small></strong></div><div><span>{c.target === 'max' ? 'EXPORTAÇÃO' : 'RENDER'}</span><strong>{c.target === 'max' ? '3ds Max' : 'Cycles'} <small>{c.target === 'max' ? '.ms' : '64 samples'}</small></strong></div></div></TabsContent>
+      <TabsContent value="plan"><div className="plan-title"><span>VISTA SUPERIOR</span><small>Planta esquemática · sem perspectiva</small></div><div className="drawing">{valid ? <Plan c={display} selectedId={selectedId} onSelect={setSelectedId} snap={snapToGrid} onDragPreview={previewDrag} onDrop={dropObject}/> : <div className="empty"><Ruler size={32}/><p>{validationMessage}</p></div>}</div><div className="legend">{(c.back || c.left || c.right) && <span><i className="legend-wall"/>Parede</span>}<span><i style={{ background: c.color }}/>Elementos</span>{c.projectType === 'activation' ? <><span><i style={{background:'#fbbf24'}}/>Espera</span><span><i style={{background:'#34d399'}}/>Participação</span><span><i style={{background:'#60a5fa'}}/>Circulação</span></> : <span><i className="legend-light"/>Spots</span>}</div><div className="model-info"><div><span>ÁREA TOTAL</span><strong>{valid ? num(c.width * c.depth) : '—'} <small>m²</small></strong></div><div><span>ALTURA DE MONTAGEM</span><strong>{valid ? num(c.height) : '—'} <small>m</small></strong></div><div><span>{c.target === 'max' ? 'EXPORTAÇÃO' : 'RENDER'}</span><strong>{c.target === 'max' ? '3ds Max' : 'Cycles'} <small>{c.target === 'max' ? '.ms' : '64 samples'}</small></strong></div></div></TabsContent>
       <TabsContent value="code"><div className="code-toolbar"><span>{output ? filename(output.config) : 'Seu script aparecerá aqui'}</span><div><button onClick={copy} disabled={!output || !!dirty} aria-label="Copiar script">{copied ? <Check size={16}/> : <Copy size={16}/>} {copied ? 'Copiado' : 'Copiar'}</button><button onClick={download} disabled={!output || !!dirty}><Download size={16}/>Baixar {output?.config.target === 'max' ? '.ms' : '.py'}</button></div></div>{dirty && <div className="stale" role="status">Você alterou o projeto. Clique em “Gerar script” para atualizar o arquivo.</div>}{output ? <pre className="code"><code>{output.code.replace(/data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+/g, '[imagem incorporada — baixe ou copie o script completo]').replace(/local IMAGEM_TV = "[A-Za-z0-9+/=]+"/g, 'local IMAGEM_TV = "[imagem incorporada — baixe ou copie o script completo]"')}</code></pre> : <div className="empty"><Code2 size={38}/><h3>Seu projeto, em código.</h3><p>Escolha os elementos ao lado e clique em<br />“Gerar script”.</p></div>}</TabsContent>
     </Tabs><p className="notice" role="status" aria-live="polite">{notice}</p>
       <div className="blender-guide"><div className="guide-icon"><Box size={22}/></div><div><h3>Como abrir no {c.target === 'max' ? '3ds Max' : 'Blender'}</h3>{c.target === 'max' ? <ol><li><b>1</b>Baixe o arquivo <strong>.ms</strong>.</li><li><b>2</b>Abra o 3ds Max e entre em <strong>Scripting → Run Script</strong>.</li><li><b>3</b>Escolha o arquivo. Use <strong>CB_Camera_Frontal</strong> para visualizar.</li></ol> : <ol><li><b>1</b>Comece com uma cena vazia e entre em <strong>Scripting</strong>.</li><li><b>2</b>Em <strong>Open</strong>, abra o arquivo .py baixado.</li><li><b>3</b>Clique em <strong>Run Script</strong>. Use <strong>F12</strong> para renderizar.</li></ol>}</div></div>

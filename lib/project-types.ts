@@ -7,8 +7,29 @@ export const projectTypes: {
     { value: 'stand', label: 'Stand' },
     { value: 'palco', label: 'Palco / plenária' },
     { value: 'lounge', label: 'Lounge' },
+    { value: 'activation', label: 'Ativação de marca' },
 ];
 export function createProjectConfig(type: ProjectType): Config {
+    if (type === 'activation') {
+        return {
+            ...defaults,
+            projectType: 'activation',
+            activationModel: 'touch',
+            name: 'Minha primeira ativação',
+            width: 8, depth: 6, height: 3.5,
+            standLayout: 'custom', frontRotation: 0, cornerOpenSide: 'right',
+            back: false, left: false, right: false,
+            led: false, counter: false, stage: false, totem: false, spots: false,
+            chairs: false, storageEnabled: false,
+            roundTables: false, rectTables: false, bistroTables: false, stools: false,
+            coffeeTables: false, armchairs: false, puffs: false, loungeMode: 'free',
+            pedestals: false, showcases: false, shelving: false, backdrops: false,
+            cabinets: false, openCubes: false, roundRugs: false,
+            touchScreens: true, touchCount: 2, touchWidth: 0.65, touchHeight: 1.7,
+            touchScreenHeight: 0.95, touchBaseDepth: 0.45, touchGap: 1,
+            touchMat: 'white', floorMat: 'white', objectTransforms: {},
+        };
+    }
     if (type === 'stand') {
         return {
             ...defaults,

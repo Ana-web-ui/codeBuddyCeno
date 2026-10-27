@@ -3,11 +3,12 @@ import type { Config } from './generator';
 import { createProjectConfig } from './project-types';
 import { checkTransforms } from './assembly';
 import { storageDefaults } from './storage';
+import { activationDefaults } from './activation';
 import { materials } from './generator';
 
 export const MAX_PROJECT_BYTES = 4 * 1024 * 1024;
 const FORMAT = 'code-buddy-project';
-const VERSION = 5;
+const VERSION = 7;
 
 function object(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -18,6 +19,8 @@ function checkedConfig(
     value: unknown,
     legacy = false,
     migrateStorage = false,
+    migrateActivation = false,
+    migrateZones = false,
 ): Config  {
     if (!object(value)) {
         throw new Error('O projeto é inválido.');
@@ -25,7 +28,8 @@ function checkedConfig(
     if (
         value.projectType !== 'stand' &&
         value.projectType !== 'palco' &&
-        value.projectType !== 'lounge'
+        value.projectType !== 'lounge' &&
+        value.projectType !== 'activation'
     ) {
         throw new Error('Tipo de projeto inválido.');
     }
@@ -38,10 +42,14 @@ function checkedConfig(
         const present = Object.hasOwn(value, key);
 
         const canUseDefault =
-            legacy ||
+            legacy || (migrateZones && key !== 'activationModel' && Object.hasOwn(activationDefaults, key)) ||
             (
                 migrateStorage &&
                 Object.hasOwn(storageDefaults, key)
+            ) ||
+            (
+                migrateActivation &&
+                Object.hasOwn(activationDefaults, key)
             );
 
         if (!present && !canUseDefault) {
@@ -60,6 +68,7 @@ function checkedConfig(
         }
     }
     const enums: Record<string, readonly string[]> = {
+        activationModel: ['touch'],
         chairDistribution: ['central', 'lateral'],
         chairGenerationMode: ['quantity', 'fill'],
         stoolDistribution: ['free', 'bistro'],
@@ -108,6 +117,8 @@ export function parseProject(text: string): Config {
             document.version !== 2 &&
             document.version !== 3 &&
             document.version !== 4 &&
+            document.version !== 5 &&
+            document.version !== 6 &&
             document.version !== VERSION
         ) {
             throw new Error(
@@ -120,6 +131,8 @@ export function parseProject(text: string): Config {
             document.config,
             document.version === 1 || document.version === 2,
             document.version === 3,
+            document.version === 3 || document.version === 4 || document.version === 5,
+            typeof document.version === 'number' && document.version <= 6,
         );
     }
     // Formatos antigos da interface: { config } e configuração direta.
