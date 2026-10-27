@@ -6,10 +6,11 @@ import { storageDefaults } from './storage';
 import { activationDefaults, photoDefaults, demoDefaults } from './activation';
 import { materials } from './generator';
 import { samplingDefaults } from './sampling';
+import { receptionDefaults } from './reception';
 
 export const MAX_PROJECT_BYTES = 4 * 1024 * 1024;
 const FORMAT = 'code-buddy-project';
-const VERSION = 10;
+const VERSION = 11;
 
 function object(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -25,6 +26,7 @@ function checkedConfig(
     migratePhoto = false,
     migrateDemo = false,
     migrateSampling = false,
+    migrateReception = false,
 ): Config  {
     if (!object(value)) {
         throw new Error('O projeto é inválido.');
@@ -33,7 +35,8 @@ function checkedConfig(
         value.projectType !== 'stand' &&
         value.projectType !== 'palco' &&
         value.projectType !== 'lounge' &&
-        value.projectType !== 'activation'
+        value.projectType !== 'activation' &&
+        value.projectType !== 'reception'
     ) {
         throw new Error('Tipo de projeto inválido.');
     }
@@ -130,6 +133,7 @@ export function parseProject(text: string): Config {
             document.version !== 7 &&
             document.version !== 8 &&
             document.version !== 9 &&
+            document.version !== 10 &&
             document.version !== VERSION
         ) {
             throw new Error(
@@ -147,6 +151,7 @@ export function parseProject(text: string): Config {
             typeof document.version === 'number' && document.version <= 7,
             typeof document.version === 'number' && document.version <= 8,
             typeof document.version === 'number' && document.version <= 9,
+            typeof document.version === 'number' && document.version <= 10,
         );
     }
     // Formatos antigos da interface: { config } e configuração direta.

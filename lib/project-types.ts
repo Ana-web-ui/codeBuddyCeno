@@ -37,8 +37,66 @@ export const projectTypes: {
     { value: 'palco', label: 'Palco / plenária' },
     { value: 'lounge', label: 'Lounge' },
     { value: 'activation', label: 'Ativação de marca' },
+    { value: 'reception', label: 'Recepção e credenciamento' },
 ];
 export function createProjectConfig(type: ProjectType): Config {
+
+    if (type === 'reception') {
+        return {
+            ...defaults,
+
+            projectType: 'reception',
+            name: 'Minha primeira recepção',
+
+            width: 10,
+            depth: 8,
+            height: 3.5,
+
+            standLayout: 'custom',
+            frontRotation: 0,
+            cornerOpenSide: 'right',
+
+            back: false,
+            left: false,
+            right: false,
+
+            led: false,
+            stage: false,
+            chairs: false,
+            totem: false,
+            spots: false,
+            storageEnabled: false,
+
+            counter: true,
+            counterCount: 3,
+            counterWidth: 1.5,
+            counterDepth: 0.65,
+            counterHeight: 1,
+            counterMat: 'brand',
+
+            roundTables: false,
+            rectTables: false,
+            bistroTables: false,
+            stools: false,
+            coffeeTables: false,
+            armchairs: false,
+            puffs: false,
+
+            pedestals: false,
+            showcases: false,
+            shelving: false,
+            backdrops: false,
+            touchScreens: false,
+            cabinets: false,
+            openCubes: false,
+            roundRugs: false,
+
+            loungeMode: 'free',
+            floorMat: 'white',
+            objectTransforms: {},
+        };
+    }
+
     if (type === 'activation') {
         return {
             ...defaults,

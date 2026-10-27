@@ -13,7 +13,7 @@ export const libraryCatalog = [
     { id: 'puffs', label: 'Puffs', projectTypes: ['stand', 'palco', 'lounge'] },
     { id: 'pedestals', label: 'Pedestais expositores', projectTypes: ['stand', 'palco'] },
     { id: "led", label: "Painel de LED", projectTypes: ["stand", "palco"] },
-    { id: "counter", label: "Balcão", projectTypes: ["stand"] },
+    { id: "counter", label: "Balcão", projectTypes: ["stand", "reception"] },
     { id: "stage", label: "Palco", projectTypes: ["stand", "palco"] },
     { id: "totem", label: "Totem", projectTypes: ["stand"] },
     { id: "spots", label: "Spots laterais", projectTypes: ["stand", "palco"], },

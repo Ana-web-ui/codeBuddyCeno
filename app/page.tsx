@@ -23,6 +23,7 @@ import { samplingLayout } from '@/lib/sampling';
 import { activationGeometry } from '@/lib/activation-geometry';
 import { storageGeometry } from '@/lib/storage';
 import type { StorageDoorSide, StorageDoorHinge, StorageDoorOpening } from '@/lib/storage';
+import { receptionGeometry } from '@/lib/reception';
 
 
 const elements = [
@@ -599,6 +600,7 @@ export default function Home() {
         palco: createProjectConfig('palco'),
         lounge: createProjectConfig('lounge'),
         activation: createProjectConfig('activation'),
+        reception: createProjectConfig('reception'),
     });
     const [tab, setTab] = useState('plan');
     const [output, setOutput] = useState<{
@@ -1020,7 +1022,17 @@ export default function Home() {
         </Select>
       </div>}
       <label className="field">Nome do projeto<input value={c.name} maxLength={80} onChange={e => update('name', e.target.value)} placeholder="Ex.: Stand KitKat"/></label>
-      <p className="tab-help">{c.projectType === 'palco' ? 'Informe a área disponível e a altura de montagem. Ajuste as medidas da plataforma na aba Parâmetros.' : c.projectType === 'lounge' ? 'Informe a área disponível para o lounge. Selecione os móveis abaixo e ajuste os conjuntos na aba Parâmetros.' : c.projectType === 'activation' ? 'Escolha o modelo de ativação e configure as zonas e os acessos na aba Parâmetros. A montagem acompanha os ajustes da estação.' : 'Informe as medidas do stand. A altura também define as paredes e os trilhos de iluminação.'}</p>
+    <p className="tab-help">
+    {c.projectType === 'reception'
+        ? 'Informe a área disponível para recepção e credenciamento. Ajuste a quantidade e as medidas dos balcões na aba Parâmetros.'
+        : c.projectType === 'palco'
+            ? 'Informe a área disponível e a altura de montagem. Ajuste as medidas da plataforma na aba Parâmetros.'
+            : c.projectType === 'lounge'
+                ? 'Informe a área disponível para o lounge. Selecione os móveis abaixo e ajuste os conjuntos na aba Parâmetros.'
+                : c.projectType === 'activation'
+                    ? 'Escolha o modelo de ativação e configure as zonas e os acessos na aba Parâmetros. A montagem acompanha os ajustes da estação.'
+                    : 'Informe as medidas do stand. A altura também define as paredes e os trilhos de iluminação.'}
+</p>
       <div className="dimensions">{([{ key: 'width', label: 'Largura', min: 3, max: 30 }, { key: 'depth', label: 'Profundidade', min: 3, max: 30 }, { key: 'height', label: 'Altura', min: 2, max: 8 }] as const).map(f => <label className="field" key={f.key}>{f.label}<div className="unit-input"><input type="number" inputMode="decimal" min={f.min} max={f.max} step="0.1" value={Number.isNaN(c[f.key]) ? '' : c[f.key]} onChange={e => update(f.key, e.target.value === '' ? NaN : Number(e.target.value))}/><span>m</span></div></label>)}</div>
       <div className="area-summary"><Ruler size={16}/><span>Área de montagem</span><strong>{valid ? num(c.width * c.depth) : '—'} <small>m²</small></strong></div>
       {c.projectType === 'lounge' && <div className="parameter-section" aria-label="Resumo de assentos do lounge">
@@ -1250,6 +1262,72 @@ export default function Home() {
       <div className="element-list">{availableElements.map(f => <label className={'element ' + (c[f.key] ? 'selected' : '')} key={f.key}><span className="element-icon"><f.icon size={19}/></span><span className="element-text"><strong>{f.title}</strong><small>{f.text}</small></span><Checkbox checked={c[f.key]} disabled={(c.projectType === 'palco' && f.key === 'stage') || (c.projectType === 'activation' && (f.key === 'touchScreens' || f.key === 'backdrops'))} onCheckedChange={v => update(f.key, v === true)} aria-label={f.title}/></label>)}</div>
       <div className="color-row"><label htmlFor="brand-color">Cor de destaque<small>Aplicada ao LED e aos elementos</small></label><div className="color-control"><input id="brand-color" type="color" value={c.color} onChange={e => update('color', e.target.value)}/><span>{c.color.toUpperCase()}</span></div></div>
       </TabsContent><TabsContent value="params">
+              {c.projectType === 'reception' && (
+        <div
+          className="parameter-section"
+          aria-label="Organização da recepção"
+        >
+          <h3>Organização dos balcões</h3>
+
+          {([
+            {
+              key: 'receptionCounterGap',
+              label: 'Espaço entre os tampos',
+              min: 0.1,
+              max: 2,
+            },
+            {
+              key: 'receptionRowY',
+              label: 'Posição Y da fileira',
+              min: -15,
+              max: 15,
+            },
+            {
+              key: 'receptionServiceDepth',
+              label: 'Profundidade do atendimento',
+              min: 0.8,
+              max: 5,
+            },
+            {
+              key: 'receptionTeamDepth',
+              label: 'Profundidade da área da equipe',
+              min: 0.8,
+              max: 5,
+            },
+            {
+              key: 'receptionSideAccessWidth',
+              label: 'Largura de cada acesso lateral',
+              min: 0.8,
+              max: 3,
+            },
+          ] as const).map(field => (
+            <label className="field" key={field.key}>
+              <span>{field.label} (m)</span>
+              <input
+                type="number"
+                min={field.min}
+                max={field.max}
+                step="0.1"
+                value={
+                  Number.isFinite(c[field.key])
+                    ? c[field.key]
+                    : ''
+                }
+                onChange={event =>
+                  update(field.key, event.target.valueAsNumber)
+                }
+              />
+            </label>
+          ))}
+
+          <p className="tab-help">
+            Y positivo aproxima a fileira do fundo; Y negativo
+            aproxima da frente. Azul indica atendimento,
+            laranja indica equipe e verde indica acessos laterais.
+            As faixas são referências de espaço livre.
+          </p>
+        </div>
+      )}
       {c.projectType === 'activation' && <ActivationControls c={c} update={update} apply={next=>{
         try { validate(next); setC(next); setError(''); setNotice('Espera atualizada. O percurso foi recalculado.'); }
         catch(e) { setError(e instanceof Error?e.message:'Posição inválida.'); }

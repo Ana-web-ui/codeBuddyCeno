@@ -26,8 +26,10 @@ import { activationGuides, activationPhotoCamera } from './activation-exporters'
 import { blenderSampling, maxSampling } from './sampling-exporters';
 import { blenderDemoStation, maxDemoStation } from './demo-exporters';
 import type { ActivationConfig } from './activation';
+import { receptionDefaults, receptionGeometry, validateReception } from './reception.js';
+import type { ReceptionConfig } from './reception.js';
 export type MaterialKind = 'white' | 'brand' | 'wood' | 'metal' | 'glass' | 'concrete' | 'plastic';
-export type ProjectType = 'stand' | 'palco' | 'lounge'| 'activation';
+export type ProjectType = 'stand' | 'palco' | 'lounge'| 'activation' | 'reception';
 export type Target = 'blender' | 'max';
 export const materials: {
     value: MaterialKind;
@@ -39,7 +41,7 @@ export const materials: {
     { value: 'glass', label: 'Vidro', color: '#81bfce' }, { value: 'concrete', label: 'Concreto', color: '#747b86' },
     { value: 'plastic', label: 'Plástico', color: '#c4d1e1' }
 ];
-export type Config = ActivationConfig & StorageConfig & AssemblyConfig & ChairConfig & RoundTableConfig & RectTableConfig & BistroTableConfig & StoolConfig & TableChairConfig & PedestalConfig & LoungeConfig & CoffeeTableConfig & LoungeSetConfig & ShowcaseConfig & ExtraObjectsConfig & {
+export type Config = ReceptionConfig & ActivationConfig & StorageConfig & AssemblyConfig & ChairConfig & RoundTableConfig & RectTableConfig & BistroTableConfig & StoolConfig & TableChairConfig & PedestalConfig & LoungeConfig & CoffeeTableConfig & LoungeSetConfig & ShowcaseConfig & ExtraObjectsConfig & {
     projectType: ProjectType;
     standLayout: StandLayout;
     frontRotation: FrontRotation;
@@ -87,6 +89,7 @@ export const defaults: Config = {
     frontRotation: 0,
     cornerOpenSide: 'right',
     objectTransforms: {},
+    ...receptionDefaults,
     ...activationDefaults,
     ...storageDefaults,
     ...chairDefaults,
@@ -108,6 +111,7 @@ export const defaults: Config = {
     projectType: 'stand'
 };
 export function geometry(c: Config) {
+    const reception = receptionGeometry(c);
     return {
         ledW: c.ledWidth,
         ledH: c.ledHeight,
@@ -118,9 +122,23 @@ export function geometry(c: Config) {
         stageY: c.projectType === "palco"
             ? c.depth / 2 - 0.7 - c.stageDepth / 2
             : c.depth * 0.18,
-        counterY: -c.depth * 0.28,
-        counterXs: Array.from({ length: Math.min(6, Math.max(0, c.counterCount || 0)) }, (_, i) => (i - (c.counterCount - 1) / 2) *
-            (c.counterWidth + 0.4)),
+               counterY: reception
+            ? c.receptionRowY
+            : -c.depth * 0.28,
+
+        counterXs: reception
+            ? reception.counters.map(counter => counter.x)
+            : Array.from(
+                {
+                    length: Math.min(
+                        6,
+                        Math.max(0, c.counterCount || 0),
+                    ),
+                },
+                (_, i) =>
+                    (i - (c.counterCount - 1) / 2) *
+                    (c.counterWidth + 0.4),
+            ),
         totemXs: Array.from({ length: Math.min(6, Math.max(0, c.totemCount || 0)) }, (_, i) => (i - (c.totemCount - 1) / 2) *
             (c.totemWidth + 0.5)),
         totemY: -c.depth * 0.07,
@@ -582,7 +600,7 @@ export function validate(c: Config) {
     if (!c.name.trim() || c.name.length > 80)
         throw new Error('Dê um nome ao projeto, com até 80 caracteres.');
     if (
-        !['stand', 'palco', 'lounge', 'activation'].includes(
+        !['stand', 'palco', 'lounge', 'activation', 'reception'].includes(
             c.projectType,
         )
     ) {
@@ -702,6 +720,34 @@ export function validate(c: Config) {
     }
     if (c.spots)
         count(c.spotsCount, 'Spots por lado', 10);
+
+        validateReception(c);
+
+    if (c.projectType === 'reception') {
+        const unsupported = [
+            c.back, c.left, c.right,
+            c.led, c.stage, c.totem, c.spots,
+            c.chairs, c.storageEnabled,
+            c.roundTables, c.rectTables, c.bistroTables, c.stools,
+            c.coffeeTables, c.armchairs, c.puffs,
+            c.pedestals, c.showcases, c.shelving, c.backdrops,
+            c.touchScreens, c.cabinets, c.openCubes, c.roundRugs,
+        ].some(Boolean);
+
+        if (unsupported) {
+            throw new Error(
+                'Nesta etapa, a recepção permite somente os balcões ' +
+                'e suas áreas de atendimento e equipe.',
+            );
+        }
+
+        if (Object.keys(c.objectTransforms).length > 0) {
+            throw new Error(
+                'Os balcões da recepção ainda usam o ajuste da fileira. ' +
+                'Ajustes individuais não estão disponíveis nesta etapa.',
+            );
+        }
+    }
     const g = geometry(c);
     const rects: {
         label: string;
