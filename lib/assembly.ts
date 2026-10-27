@@ -71,7 +71,7 @@ export function buildAssembly(c: Config, scene: AssemblyScene): AssemblyUnit[] {
         const stations = activationGeometry(c)!.baseStations;
         for (const unit of units) {
             const station = stations.find(s => s.id === unit.id);
-            if (station) { unit.rotation = station.rotation; unit.label = `Estação de interação ${Number(unit.id.split(':')[1]) + 1}`; }
+            if (station) { unit.rotation = station.rotation; unit.label = c.activationModel === 'photo' ? 'Espaço para fotos' : `Estação de interação ${Number(unit.id.split(':')[1]) + 1}`; }
         }
     }
     return units;

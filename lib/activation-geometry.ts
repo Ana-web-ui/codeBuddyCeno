@@ -31,7 +31,7 @@ function route(start: Point, end: Point, obstacles: Zone[], width: number, area:
             previous.set(next,id); queue.push(next);
         }
     }
-    if(!previous.has(to)) throw new Error('A circulação está bloqueada. Aumente a área ou reposicione a espera e os totens.');
+    if(!previous.has(to)) throw new Error('A circulação está bloqueada. Aumente a área ou reposicione a espera e a estação.');
     const ids=[to]; while(ids[ids.length-1]!==from) ids.push(previous.get(ids[ids.length-1])!);
     ids.reverse();
     if(ids.length===1) return [segment(start,end,width)];
@@ -56,26 +56,41 @@ export function activationGeometry(c: Config) {
         throw new Error('Escolha lados diferentes para entrada e saída.');
     if(c.activationEntranceWidth<c.activationCirculationWidth||c.activationExitWidth<c.activationCirculationWidth)
         throw new Error('Entrada e saída devem ter pelo menos a largura da circulação.');
-    if(!c.touchScreens||!Number.isInteger(c.touchCount)||c.touchCount<1||c.touchCount>30)
+    const isPhoto=c.activationModel==='photo';
+    if(!isPhoto&&(!c.touchScreens||!Number.isInteger(c.touchCount)||c.touchCount<1||c.touchCount>30))
         throw new Error('A ativação precisa de 1 a 30 totens de interação.');
-    // O primeiro modelo contém somente estações touch; objetos ocultos não podem bloquear o percurso.
-    if([c.back,c.left,c.right,c.led,c.counter,c.stage,c.totem,c.spots,c.chairs,c.storageEnabled,c.roundTables,c.rectTables,c.bistroTables,c.stools,c.coffeeTables,c.armchairs,c.puffs,c.pedestals,c.showcases,c.shelving,c.backdrops,c.cabinets,c.openCubes,c.roundRugs].some(Boolean))
-        throw new Error('Interação em totem aceita apenas os totens e as zonas de atividade nesta versão.');
+    if(isPhoto&&(!c.backdrops||c.backdropCount!==1||c.touchScreens))
+        throw new Error('Espaço para fotos precisa de um backdrop e não inclui totens touch.');
+    if(!isPhoto&&c.backdrops) throw new Error('Interação em totem não inclui backdrop.');
+    if([c.back,c.left,c.right,c.led,c.counter,c.stage,c.totem,c.spots,c.chairs,c.storageEnabled,c.roundTables,c.rectTables,c.bistroTables,c.stools,c.coffeeTables,c.armchairs,c.puffs,c.pedestals,c.showcases,c.shelving,c.cabinets,c.openCubes,c.roundRugs].some(Boolean))
+        throw new Error('Este modelo de ativação contém elementos que não estão disponíveis.');
+    if(isPhoto) {
+        for(const [key,min,max] of [
+            ['activationPhotoPersonDistance',.5,5],['activationPhotoCameraDistance',.5,8],
+            ['activationPhotoCameraWidth',.5,3],['activationPhotoCameraDepth',.5,3],['activationPhotoCameraHeight',.5,2.5],
+        ] as const) if(!Number.isFinite(c[key])||c[key]<min||c[key]>max) throw new Error(`Confira ${key}: valor entre ${min} e ${max} m.`);
+        if(c.activationPhotoCameraHeight>c.height) throw new Error('A altura da câmera deve caber na montagem.');
+        if(c.activationPhotoPersonDistance<c.backdropBaseDepth/2+c.activationParticipationDepth/2+.1-EPS)
+            throw new Error('Afaste a pessoa do backdrop para liberar as bases de apoio.');
+        if(c.activationPhotoCameraDistance<(c.activationParticipationDepth+c.activationPhotoCameraDepth)/2+.2-EPS)
+            throw new Error('Afaste a câmera da pessoa para separar as áreas de operação e participação.');
+    }
     const angle=sides.indexOf(c.activationEntranceSide)*90, r=angle*Math.PI/180;
     const rotate=(p:Point):Point=>({x:p.x*Math.cos(r)-p.y*Math.sin(r),y:p.x*Math.sin(r)+p.y*Math.cos(r)});
     const sideways=angle%180!==0, width=sideways?c.depth:c.width, depth=sideways?c.width:c.depth;
     const margin=c.activationEdgeMargin, cw=c.activationCirculationWidth;
     const area:Zone={name:'Área',x:0,y:0,width:c.width-2*margin,depth:c.depth-2*margin};
     const orient=(z:Zone):Zone=>({...z,...rotate(z),width:sideways?z.depth:z.width,depth:sideways?z.width:z.depth});
-    const stationWidth=Math.max(c.touchWidth+.1,c.activationParticipationWidth);
+    const stationWidth=isPhoto?Math.max(c.backdropWidth,c.activationParticipationWidth,c.activationPhotoCameraWidth):Math.max(c.touchWidth+.1,c.activationParticipationWidth);
+    const stationCount=isPhoto?1:c.touchCount,baseDepth=isPhoto?c.backdropBaseDepth:c.touchBaseDepth;
     const opposite=sides.indexOf(c.activationExitSide)===(sides.indexOf(c.activationEntranceSide)+2)%4;
     const centerGap=opposite?Math.max(c.activationStationGap,c.activationExitWidth,cw):c.activationStationGap;
-    const span=c.touchCount*stationWidth+(c.touchCount-1)*c.activationStationGap+(opposite?centerGap-c.activationStationGap:0);
+    const span=stationCount*stationWidth+(stationCount-1)*c.activationStationGap+(opposite?centerGap-c.activationStationGap:0);
     if(span>width-2*margin+EPS) throw new Error('A fileira de estações não cabe. Aumente a largura disponível ou reduza a quantidade e as folgas.');
-    const leftCount=Math.ceil(c.touchCount/2);
-    const baseStations=Array.from({length:c.touchCount},(_,i)=>{
-        const x=opposite?(i<leftCount?-centerGap/2-stationWidth/2-(leftCount-1-i)*(stationWidth+c.activationStationGap):centerGap/2+stationWidth/2+(i-leftCount)*(stationWidth+c.activationStationGap)):(i-(c.touchCount-1)/2)*(stationWidth+c.activationStationGap);
-        return {...rotate({x,y:depth/2-margin-c.touchBaseDepth/2}),rotation:angle,id:`touchScreens:${i}`};
+    const leftCount=Math.ceil(stationCount/2);
+    const baseStations=Array.from({length:stationCount},(_,i)=>{
+        const x=opposite?(i<leftCount?-centerGap/2-stationWidth/2-(leftCount-1-i)*(stationWidth+c.activationStationGap):centerGap/2+stationWidth/2+(i-leftCount)*(stationWidth+c.activationStationGap)):(i-(stationCount-1)/2)*(stationWidth+c.activationStationGap);
+        return {...rotate({x,y:depth/2-margin-baseDepth/2}),rotation:angle,id:`${isPhoto?'backdrops':'touchScreens'}:${i}`};
     });
     const stations=baseStations.map(base=>({...base,...c.objectTransforms[base.id]}));
     for(const id of Object.keys(c.objectTransforms)) if(!stations.some(s=>s.id===id)) throw new Error('Há um ajuste de objeto que não existe nesta ativação. Restaure a distribuição.');
@@ -91,8 +106,24 @@ export function activationGeometry(c: Config) {
         const connector:Zone={name:'Circulação',x:z.x+n.x*(distance+cw/4),y:z.y+n.y*(distance+cw/4),width:n.x?cw/2:cw,depth:n.y?cw/2:cw};
         inside(connector); connectors.push(connector); terminals.push(point);
     }
+    let photo: { capture:Zone; person:Zone; camera:Zone; stationId:string; rotation:number } | null=null;
     stations.forEach((s,i)=>{
         const a=s.rotation*Math.PI/180,n={x:Math.sin(a),y:-Math.cos(a)},cos=Math.abs(Math.cos(a)),sin=Math.abs(Math.sin(a));
+        if(isPhoto) {
+            const zone=(name:string,distance:number,w:number,d:number):Zone=>({name,x:s.x+n.x*distance,y:s.y+n.y*distance,width:cos*w+sin*d,depth:sin*w+cos*d});
+            const person=zone('Pessoa na foto',c.activationPhotoPersonDistance,c.activationParticipationWidth,c.activationParticipationDepth);
+            const camera=zone('Câmera / fotógrafo',c.activationPhotoPersonDistance+c.activationPhotoCameraDistance,c.activationPhotoCameraWidth,c.activationPhotoCameraDepth);
+            const end=c.activationPhotoPersonDistance+c.activationPhotoCameraDistance+c.activationPhotoCameraDepth/2;
+            const capture=zone('Área de captura',(end-baseDepth/2)/2,stationWidth,end+baseDepth/2);
+            const backdrop=zone('Backdrop',0,c.backdropWidth,baseDepth);
+            for(const z of [person,camera,capture,backdrop]) inside(z);
+            photo={capture,person,camera,stationId:s.id,rotation:s.rotation};
+            equipment.push(backdrop);participation.push(person);
+            // A circulação chega à lateral do espaço de captura e não cruza o enquadramento.
+            const side={x:Math.cos(a),y:Math.sin(a)};
+            access(capture,Math.abs(side.x)>Math.abs(side.y)?{x:Math.sign(side.x),y:0}:{x:0,y:Math.sign(side.y)});
+            return;
+        }
         const e:Zone={name:`Totem ${i+1}`,...s,width:cos*(c.touchWidth+.1)+sin*c.touchBaseDepth,depth:sin*(c.touchWidth+.1)+cos*c.touchBaseDepth};
         const d=(c.touchBaseDepth+c.activationParticipationDepth)/2;
         const p:Zone={name:`Participação ${i+1}`,x:s.x+n.x*d,y:s.y+n.y*d,width:sin*c.activationParticipationDepth+cos*c.activationParticipationWidth,depth:cos*c.activationParticipationDepth+sin*c.activationParticipationWidth};
@@ -103,7 +134,8 @@ export function activationGeometry(c: Config) {
     const autoWaiting=orient({name:'Espera',x:-width/2+margin+c.activationWaitingWidth/2,y:-depth/2+margin+c.activationWaitingDepth/2,width:c.activationWaitingWidth,depth:c.activationWaitingDepth});
     const waiting=c.activationWaitingEnabled?{...autoWaiting,...(c.activationWaitingManual?{x:c.activationWaitingX,y:c.activationWaitingY}:{})}:null;
     if(waiting) {inside(waiting);access(waiting,rotate({x:0,y:1}));}
-    const occupied=[...equipment,...participation,...(waiting?[waiting]:[])];
+    const photoGeometry=photo as { capture:Zone; person:Zone; camera:Zone; stationId:string; rotation:number } | null;
+    const occupied=[...(photoGeometry?[photoGeometry.capture]:[...equipment,...participation]),...(waiting?[waiting]:[])];
     occupied.forEach((a,i)=>{if(occupied.slice(i+1).some(b=>{
         const ownStation=(a.name.startsWith('Totem ')&&b.name===a.name.replace('Totem ','Participação '));
         return !ownStation&&zonesOverlap(a,b);
@@ -125,5 +157,5 @@ export function activationGeometry(c: Config) {
     const circulation=[entrance,exit,...(margin>0?[edgeAccess(c.activationEntranceSide,c.activationEntranceWidth),edgeAccess(c.activationExitSide,c.activationExitWidth)]:[]),...connectors,...route(entrance,exit,occupied,cw,area)];
     for(const terminal of terminals) circulation.push(...route(entrance,terminal,occupied,cw,area));
     const uniqueCirculation=[...new Map(circulation.map(z=>[[z.x,z.y,z.width,z.depth].map(v=>v.toFixed(7)).join(','),z])).values()];
-    return {baseStations,stations,equipment,participation,waiting,entrance,exit,circulation:uniqueCirculation};
+    return {baseStations,stations,equipment,participation,waiting,entrance,exit,circulation:uniqueCirculation,photo:photoGeometry};
 }

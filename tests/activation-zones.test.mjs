@@ -56,7 +56,7 @@ test('posição e rotação da participação acompanham o mesmo ajuste do totem
  assert.ok(Math.abs(p.x-(1+(c.touchBaseDepth+c.activationParticipationDepth)/2))<1e-6);
  assert.ok(Math.abs(p.y)<1e-6);assert.equal(g.stations[0].rotation,90);
 });
-test('versão 6 recebe zonas e preserva ajustes antigos válidos; versão 7 exige os novos campos',()=>{
+test('versão 6 recebe zonas e preserva ajustes antigos válidos; versão atual exige os novos campos',()=>{
  for(const type of ['stand','palco','lounge','activation']) {
    const c=createProjectConfig(type);if(type==='activation'){c.width=12;c.depth=10;c.objectTransforms={'touchScreens:0':{x:0,y:0,rotation:45}};}
    const old={...c};for(const key of Object.keys(activationDefaults))if(key!=='activationModel') delete old[key];

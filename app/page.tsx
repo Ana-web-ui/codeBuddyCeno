@@ -1,16 +1,20 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
+import Link from 'next/link';
+import ImagePreview from 'next/image';
 import type { ChangeEvent, PointerEvent as ReactPointerEvent, SVGProps } from 'react';
 import { Box, Layers, Download, Copy, Check, Code2, Ruler, Monitor, LampDesk, PanelTop, RectangleVertical, Square, Sparkles, Armchair, Circle } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
-import { materials, generate, geometry, filename, validate, tableGeometry, stoolGeometry, pedestalGeometry, loungeGeometry, coffeeTableGeometry, showcaseGeometry, extraObjectGeometry, assemblyGeometry, findStoragePosition, } from '@/lib/generator';
+import { materials, generate, geometry, filename, validate, assemblyGeometry, findStoragePosition, } from '@/lib/generator';
 import type { MaterialKind, Target, Config, ProjectType } from '@/lib/generator';
 import { unitTransform } from '@/lib/assembly';
 import type { ObjectTransform } from '@/lib/assembly';
-import { projectTypes, createProjectConfig } from '@/lib/project-types';
-import { libraryCatalog, layoutChairs, extraObjectDefinitions, extraObjectSpec } from '@/lib/library';
+import { activationModels } from '@/lib/activation';
+import type { ActivationModel } from '@/lib/activation';
+import { projectTypes, createProjectConfig, createActivationModelConfig } from '@/lib/project-types';
+import { libraryCatalog, layoutChairs } from '@/lib/library';
 import { getStandWalls } from '@/lib/stand-config';
 import { MAX_PROJECT_BYTES, serializeProject, parseProject, projectFilename } from '@/lib/project-file';
 import type { StandLayout, CornerOpenSide, FrontRotation } from '@/lib/stand-config';
@@ -302,6 +306,9 @@ function dragPosition(x: number, y: number, rotation: number, snap: boolean): Ob
     const round = (v: number) => Number((snap ? Math.round(v / .1) * .1 : v).toFixed(6));
     return { x: round(x), y: round(y), rotation };
 }
+function release(session: PlanDragSession) {
+    if (session.svg.hasPointerCapture(session.pointerId)) session.svg.releasePointerCapture(session.pointerId);
+}
 function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
     c: Config; selectedId?: string | null; onSelect?: (id: string) => void; snap?: boolean;
     onDragPreview?: (preview: DragPreview | null) => void;
@@ -311,21 +318,18 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
     const dragSession = useRef<PlanDragSession | null>(null);
     // Use current callbacks when a session ends during effect cleanup.
     const dragCallback = useRef(onDragPreview);
-    dragCallback.current = onDragPreview;
-    function release(session: PlanDragSession) {
-        if (session.svg.hasPointerCapture(session.pointerId)) session.svg.releasePointerCapture(session.pointerId);
-    }
-    function cancelDrag() {
+    useLayoutEffect(() => { dragCallback.current = onDragPreview; }, [onDragPreview]);
+    const cancelDrag = useCallback(() => {
         const session = dragSession.current;
         dragSession.current = null;
         if (session) release(session);
         setDrag(null);
         dragCallback.current?.(null);
-    }
+    }, []);
     useEffect(() => {
         const session = dragSession.current;
         if (session && (session.config !== c || (selectedId != null && selectedId !== session.id))) cancelDrag();
-    }, [c, selectedId]);
+    }, [c, selectedId, cancelDrag]);
     useEffect(() => () => {
         const session = dragSession.current;
         dragSession.current = null;
@@ -406,7 +410,7 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
                 {!m.circle && <path d={`M ${-m.width * s / 3} ${-m.depth * s / 2} H ${m.width * s / 3}`} stroke="#fff" strokeWidth="2" />}
               </g>;
           })}
-          <PlanText counterRotation={t.rotation} x="0" y="3" textAnchor="middle" fontSize="9" fill={selected ? '#ffce57' : '#101827'} stroke={selected ? '#101827' : 'none'} strokeWidth=".4">{unit.label.replace(/ [0-9]+$/, '').slice(0, 2).toUpperCase()}{Number(unit.id.split(':')[1]) + 1}</PlanText>
+          <PlanText counterRotation={t.rotation} x="0" y="3" textAnchor="middle" fontSize="9" fill={selected ? '#ffce57' : '#101827'} stroke={selected ? '#101827' : 'none'} strokeWidth=".4">{c.projectType === 'activation' && c.activationModel === 'photo' ? 'FOTO' : unit.label.replace(/ [0-9]+$/, '').slice(0, 2).toUpperCase() + (Number(unit.id.split(':')[1]) + 1)}</PlanText>
         </g>;
     });
     const g = geometry(c);
@@ -515,8 +519,14 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
     <rect x={x} y={y} width={w} height={h} fill={(c.floorMat === 'brand' ? c.color : materials.find(m => m.value === c.floorMat)?.color) + '25'} stroke="#687695" strokeDasharray="5 5"/>
     {drawUnits(true)}
     {activation && <g aria-label="Espera, participação e circulação" pointerEvents="none">
+      {activation.photo && <g>
+        <rect x={px(activation.photo.capture.x-activation.photo.capture.width/2)} y={py(activation.photo.capture.y+activation.photo.capture.depth/2)} width={activation.photo.capture.width*s} height={activation.photo.capture.depth*s} fill="#c084fc" fillOpacity="0.06" stroke="#c084fc" strokeDasharray="6 4"/>
+        <line x1={px(activation.photo.person.x)} y1={py(activation.photo.person.y)} x2={px(activation.photo.camera.x)} y2={py(activation.photo.camera.y)} stroke="#c084fc" strokeDasharray="3 3"/>
+        <rect x={px(activation.photo.camera.x-activation.photo.camera.width/2)} y={py(activation.photo.camera.y+activation.photo.camera.depth/2)} width={activation.photo.camera.width*s} height={activation.photo.camera.depth*s} fill="#c084fc" fillOpacity="0.18" stroke="#c084fc"/>
+        <PlanText x={px(activation.photo.camera.x)} y={py(activation.photo.camera.y)+3} textAnchor="middle" fill="#e5edf9" fontSize="9">CÂMERA</PlanText>
+      </g>}
       {activation.circulation.map((z,i)=><rect key={'c'+i} x={px(z.x-z.width/2)} y={py(z.y+z.depth/2)} width={z.width*s} height={z.depth*s} fill="#60a5fa" fillOpacity="0.12"/>)}
-      {[...(activation.waiting?[activation.waiting]:[]),...activation.participation].map((z,i)=><g key={z.name}>
+      {[...(activation.waiting?[activation.waiting]:[]),...activation.participation].map(z=><g key={z.name}>
         <rect x={px(z.x-z.width/2)} y={py(z.y+z.depth/2)} width={z.width*s} height={z.depth*s} fill={z.name==='Espera'?'#fbbf24':'#34d399'} fillOpacity="0.18" stroke={z.name==='Espera'?'#fbbf24':'#34d399'} strokeDasharray="4 3"/>
         <PlanText x={px(z.x)} y={py(z.y)+3} textAnchor="middle" fill="#e5edf9" fontSize="9">{z.name}</PlanText>
       </g>)}
@@ -562,14 +572,9 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
   </svg>;
 }
 export default function Home() {
-    const [confirmedPartial, setConfirmedPartial] = useState<string | null>(null);
+    const [confirmedPartial, setConfirmedPartial] = useState<{ config: Config; key: string } | null>(null);
     const confirmedPartialRef = useRef<string | null>(null);
-    confirmedPartialRef.current = confirmedPartial;
     const [c, setC] = useState<Config>(() => createProjectConfig("stand"));
-    useEffect(() => {
-        setConfirmedPartial(null);
-        confirmedPartialRef.current = null;
-    }, [c]);
     const projectDrafts = useRef<Record<ProjectType, Config>>({
         stand: createProjectConfig('stand'),
         palco: createProjectConfig('palco'),
@@ -585,12 +590,11 @@ export default function Home() {
     const [copied, setCopied] = useState(false);
     const [notice, setNotice] = useState('');
     const [selectedId, setSelectedId] = useState<string | null>(null);
-    const [transformDraft, setTransformDraft] = useState({ x: '', y: '', rotation: '' });
+    const [editedTransform, setEditedTransform] = useState<{ config: Config; id: string; values: { x: string; y: string; rotation: string } } | null>(null);
     const [assemblyError, setAssemblyError] = useState('');
     const [dragPreview, setDragPreview] = useState<DragPreview | null>(null);
     const [snapToGrid, setSnapToGrid] = useState(true);
     const current = useRef(c);
-    current.current = c;
     const imageRequest = useRef(0);
     const projectInput = useRef<HTMLInputElement>(null);
     const projectRequest = useRef(0);
@@ -611,7 +615,12 @@ export default function Home() {
         : null;
     const configurationKey = JSON.stringify(c);
     const needsPartialConfirmation = Boolean(seating && seating.missingCount > 0);
-    const partialConfirmed = confirmedPartial === configurationKey;
+    const partialConfirmed = confirmedPartial?.config === c && confirmedPartial.key === configurationKey;
+    // Sincroniza as leituras assíncronas após o commit, antes dos eventos da interface.
+    useLayoutEffect(() => {
+        current.current = c;
+        confirmedPartialRef.current = partialConfirmed ? configurationKey : null;
+    }, [c, partialConfirmed, configurationKey]);
     const assemblyUnits = valid ? assemblyGeometry(c) : [];
     const loungeMembers = c.projectType === 'lounge' ? assemblyUnits.flatMap(unit => unit.members) : [];
     const loungeArmchairSeats = loungeMembers.filter(member => member.role === 'armchairs').length;
@@ -619,12 +628,17 @@ export default function Home() {
     const loungeStoolSeats = loungeMembers.filter(member => member.role === 'stools').length;
     const loungeSeatingTotal = loungeArmchairSeats + loungePuffSeats + loungeStoolSeats;
     const selectedUnit = assemblyUnits.find(unit => unit.id === selectedId);
-    useEffect(() => {
-        if (!selectedUnit) { setSelectedId(null); setAssemblyError(''); return; }
-        const t = unitTransform(c, selectedUnit);
-        setTransformDraft({ x: String(Number(t.x.toFixed(6))), y: String(Number(t.y.toFixed(6))), rotation: String(t.rotation) });
+    const selectedTransform = selectedUnit ? unitTransform(c, selectedUnit) : null;
+    const transformDraft = editedTransform?.config === c && editedTransform.id === selectedUnit?.id
+        ? editedTransform.values
+        : selectedTransform
+            ? { x: String(Number(selectedTransform.x.toFixed(6))), y: String(Number(selectedTransform.y.toFixed(6))), rotation: String(selectedTransform.rotation) }
+            : { x: '', y: '', rotation: '' };
+    function selectUnit(id: string | null) {
+        setSelectedId(id);
+        setEditedTransform(null);
         setAssemblyError('');
-    }, [selectedId, c]);
+    }
     function commitTransforms(transforms: Config['objectTransforms']) {
         try {
             const next = { ...c, objectTransforms: transforms };
@@ -766,7 +780,7 @@ export default function Home() {
             validate(c);
             layoutChairs(c, geometry(c).stageY);
             const generated = generate(c, {
-                confirmedPartial: confirmedPartial ?? undefined,
+                confirmedPartial: partialConfirmed ? configurationKey : undefined,
             });
             const code = generated;
             setOutput({ code, config: { ...c } });
@@ -923,7 +937,7 @@ export default function Home() {
         return () => controller.abort();
     }, []);
     const availableElements = elements.filter((element) => libraryCatalog.some((item) => item.id === element.key &&
-        item.projectTypes.some((type) => type === c.projectType)));
+        item.projectTypes.some((type) => type === c.projectType)) && (c.projectType !== 'activation' || element.key === (c.activationModel === 'photo' ? 'backdrops' : 'touchScreens')));
     function changeProjectType(type: ProjectType) {
         if (!projectTypes.some(project => project.value === type))
             return;
@@ -952,7 +966,7 @@ export default function Home() {
         setCopied(false);
     }
     return <div className="app-shell">
-    <header className="topbar"><a href="/" className="brand"><span className="brand-mark"><Box size={24}/></span><span>code<span className="brand-light">buddy</span><small>CENOGRAFIA</small></span></a><div className="topbar-right"><span className="version">V3 · Blender + Max</span><span className="group-name">GRUPO <b>TV1</b></span></div></header>
+    <header className="topbar"><Link href="/" className="brand"><span className="brand-mark"><Box size={24}/></span><span>code<span className="brand-light">buddy</span><small>CENOGRAFIA</small></span></Link><div className="topbar-right"><span className="version">V3 · Blender + Max</span><span className="group-name">GRUPO <b>TV1</b></span></div></header>
     <main><div className="page-heading"><div><div className="eyebrow">SEU ESTÚDIO DE CENOGRAFIA</div><h1>Da ideia ao primeiro projeto<span>.</span></h1><p>Defina as medidas. Escolha os elementos. Leve para o Blender ou 3ds Max.</p></div><div className="format"><Code2 size={20}/><span>SAÍDA DO PROJETO<strong>{c.target === 'max' ? 'MaxScript para 3ds Max' : 'Python para Blender'}</strong></span></div></div>
     <div className="workspace"><section className="config-panel" aria-label="Configuração do projeto"><div className="section-title"><span className="step">01</span><h2>Configure seu projeto</h2></div>
       <div className="project-file-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '12px 0' }}>
@@ -970,8 +984,20 @@ export default function Home() {
       </div>
       <label className="field engine-label"><span>Gerar para</span><Select value={c.target} onValueChange={v => update('target', v as Target)}><SelectTrigger aria-label="Programa de destino" className="full-select"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="blender">Blender · Python (.py)</SelectItem><SelectItem value="max">3ds Max · MaxScript (.ms)</SelectItem></SelectContent></Select></label>
       <Tabs defaultValue="stand" className="config-tabs"><TabsList className="config-tabs-list"><TabsTrigger value="stand">Projeto</TabsTrigger><TabsTrigger value="params">Parâmetros</TabsTrigger><TabsTrigger value="materials">Materiais</TabsTrigger></TabsList><TabsContent value="stand">
+      {c.projectType === 'activation' && <div className="field engine-label"><span>Modelo da ativação</span>
+        <Select value={c.activationModel} onValueChange={value=>{
+          try {
+            const next=createActivationModelConfig(c,value as ActivationModel); validate(next);
+            setC(next); setSelectedId(null); setAssemblyError(''); setError(''); setTab('plan');
+            setNotice('Modelo alterado. A distribuição foi reiniciada; confira as medidas iniciais da área.');
+          } catch(e) { setError(e instanceof Error?e.message:'Não foi possível alterar o modelo.'); }
+        }}>
+          <SelectTrigger aria-label="Modelo da ativação" className="full-select"><SelectValue/></SelectTrigger>
+          <SelectContent>{activationModels.map(model=><SelectItem key={model.value} value={model.value}>{model.label}</SelectItem>)}</SelectContent>
+        </Select>
+      </div>}
       <label className="field">Nome do projeto<input value={c.name} maxLength={80} onChange={e => update('name', e.target.value)} placeholder="Ex.: Stand KitKat"/></label>
-      <p className="tab-help">{c.projectType === 'palco' ? 'Informe a área disponível e a altura de montagem. Ajuste as medidas da plataforma na aba Parâmetros.' : c.projectType === 'lounge' ? 'Informe a área disponível para o lounge. Selecione os móveis abaixo e ajuste os conjuntos na aba Parâmetros.' : c.projectType === 'activation' ? 'Interação em totem: configure as zonas e os acessos na aba Parâmetros. A área de participação acompanha cada estação.' : 'Informe as medidas do stand. A altura também define as paredes e os trilhos de iluminação.'}</p>
+      <p className="tab-help">{c.projectType === 'palco' ? 'Informe a área disponível e a altura de montagem. Ajuste as medidas da plataforma na aba Parâmetros.' : c.projectType === 'lounge' ? 'Informe a área disponível para o lounge. Selecione os móveis abaixo e ajuste os conjuntos na aba Parâmetros.' : c.projectType === 'activation' ? 'Escolha o modelo de ativação e configure as zonas e os acessos na aba Parâmetros. A montagem acompanha os ajustes da estação.' : 'Informe as medidas do stand. A altura também define as paredes e os trilhos de iluminação.'}</p>
       <div className="dimensions">{([{ key: 'width', label: 'Largura', min: 3, max: 30 }, { key: 'depth', label: 'Profundidade', min: 3, max: 30 }, { key: 'height', label: 'Altura', min: 2, max: 8 }] as const).map(f => <label className="field" key={f.key}>{f.label}<div className="unit-input"><input type="number" inputMode="decimal" min={f.min} max={f.max} step="0.1" value={Number.isNaN(c[f.key]) ? '' : c[f.key]} onChange={e => update(f.key, e.target.value === '' ? NaN : Number(e.target.value))}/><span>m</span></div></label>)}</div>
       <div className="area-summary"><Ruler size={16}/><span>Área de montagem</span><strong>{valid ? num(c.width * c.depth) : '—'} <small>m²</small></strong></div>
       {c.projectType === 'lounge' && <div className="parameter-section" aria-label="Resumo de assentos do lounge">
@@ -1196,7 +1222,7 @@ export default function Home() {
         </div>
       )}
       <div className="subheading elements-heading"><h3>Elementos</h3><span>Selecione o que entra</span></div>
-      <div className="element-list">{availableElements.map(f => <label className={'element ' + (c[f.key] ? 'selected' : '')} key={f.key}><span className="element-icon"><f.icon size={19}/></span><span className="element-text"><strong>{f.title}</strong><small>{f.text}</small></span><Checkbox checked={c[f.key]} disabled={(c.projectType === 'palco' && f.key === 'stage') || (c.projectType === 'activation' && f.key === 'touchScreens')} onCheckedChange={v => update(f.key, v === true)} aria-label={f.title}/></label>)}</div>
+      <div className="element-list">{availableElements.map(f => <label className={'element ' + (c[f.key] ? 'selected' : '')} key={f.key}><span className="element-icon"><f.icon size={19}/></span><span className="element-text"><strong>{f.title}</strong><small>{f.text}</small></span><Checkbox checked={c[f.key]} disabled={(c.projectType === 'palco' && f.key === 'stage') || (c.projectType === 'activation' && (f.key === 'touchScreens' || f.key === 'backdrops'))} onCheckedChange={v => update(f.key, v === true)} aria-label={f.title}/></label>)}</div>
       <div className="color-row"><label htmlFor="brand-color">Cor de destaque<small>Aplicada ao LED e aos elementos</small></label><div className="color-control"><input id="brand-color" type="color" value={c.color} onChange={e => update('color', e.target.value)}/><span>{c.color.toUpperCase()}</span></div></div>
       </TabsContent><TabsContent value="params">
       {c.projectType === 'activation' && <ActivationControls c={c} update={update} apply={next=>{
@@ -1312,7 +1338,7 @@ export default function Home() {
                     ? <>Cada mesa de centro forma um conjunto com até 4 assentos. Total: {c.coffeeTableCount} mesas, {c.armchairs ? c.coffeeTableCount * c.loungeArmchairsPerTable : 0} poltronas e {c.puffs ? c.coffeeTableCount * c.loungePuffsPerTable : 0} puffs. Limite de 100 unidades de cada tipo de assento.</>
                     : 'Mesas de centro, poltronas e puffs ocupam posições livres de forma independente.'}</p>
   </div>)} <div className="param-grid">{parameterFields[f.key].filter(field => {
-                if (c.projectType === 'activation' && field.key === 'touchGap') return false;
+                if (c.projectType === 'activation' && (field.key === 'touchGap' || field.key === 'backdropCount' || field.key === 'backdropGap')) return false;
                 if (field.key.startsWith('lounge') && c.loungeMode !== 'set')
                     return false;
                 if (field.key === 'coffeeTableGap' && c.loungeMode === 'set')
@@ -1331,7 +1357,7 @@ export default function Home() {
                 return c.chairGenerationMode !== 'fill' || !isQuantityField;
             }).map(field => <label className="field" key={field.key}>{field.key === 'coffeeTableCount' && c.loungeMode === 'set' ? 'Quantidade de conjuntos' : field.label}<div className="unit-input"><input type="number" inputMode={field.unit === 'un' ? 'numeric' : 'decimal'} min={field.min ?? .1} max={c.projectType === 'activation' && field.key === 'touchCount' ? 30 : field.max ?? 30} step={field.step ?? (field.unit === 'un' ? 1 : field.key === "showcaseGlassThickness" ? .001 : field.key === "roundTableTopThickness" || field.key === "rectTableTopThickness" || field.key === "bistroTableTopThickness" || field.key === "coffeeTableTopThickness" || field.key === "stoolSeatThickness" || field.key === "stoolBistroGap" ? 0.01 : 0.05)} value={Number.isNaN(c[field.key]) ? '' : c[field.key] as number} onChange={e => update(field.key, e.target.value === '' ? NaN : Number(e.target.value))}/><span>{field.unit ?? 'm'}</span></div></label>)}</div></div>)}
       {!availableElements.some(f => c[f.key]) && <p className="tab-help">Selecione um elemento na aba Projeto para ajustar suas medidas.</p>}
-      {c.led && <div className="texture-section"><h3>Textura da TV / LED</h3><p>Escolha a arte que vai aparecer na tela. A imagem inteira é ajustada às medidas do LED.</p><label className="upload-label" htmlFor="tv-image">Escolher imagem JPG ou PNG<input id="tv-image" type="file" accept="image/png,image/jpeg" onChange={handleImage}/></label><small>Até 2 MB · incorporada ao script · imagem estática</small>{c.screenImage ? <div className="texture-preview"><img src={c.screenImage} alt="Arte selecionada para a tela de TV"/><span>{c.screenName}</span><button onClick={() => { imageRequest.current += 1; setC(prev => ({ ...prev, screenImage: '', screenName: '' })); setNotice('Imagem removida.'); }}>Remover imagem</button></div> : <p className="tab-help">Sem imagem, a tela usa a cor de destaque.</p>}</div>}
+      {c.led && <div className="texture-section"><h3>Textura da TV / LED</h3><p>Escolha a arte que vai aparecer na tela. A imagem inteira é ajustada às medidas do LED.</p><label className="upload-label" htmlFor="tv-image">Escolher imagem JPG ou PNG<input id="tv-image" type="file" accept="image/png,image/jpeg" onChange={handleImage}/></label><small>Até 2 MB · incorporada ao script · imagem estática</small>{c.screenImage ? <div className="texture-preview"><ImagePreview src={c.screenImage} alt="Arte selecionada para a tela de TV" width={320} height={180} unoptimized/><span>{c.screenName}</span><button onClick={() => { imageRequest.current += 1; setC(prev => ({ ...prev, screenImage: '', screenName: '' })); setNotice('Imagem removida.'); }}>Remover imagem</button></div> : <p className="tab-help">Sem imagem, a tela usa a cor de destaque.</p>}</div>}
       </TabsContent><TabsContent value="materials"><p className="tab-help">Escolha o acabamento de cada parte. Madeira e concreto usam textura procedural; metal e vidro recebem propriedades de superfície.</p><div className="material-fields">{materialFields.filter((field) => {
             if (field.key === 'wallMat')
                 return c.back || c.left || c.right;
@@ -1368,7 +1394,7 @@ export default function Home() {
             Geração parcial confirmada.
             Clique em Gerar para exportar.
           </p>) : (<button type="button" className="generate-button" onClick={() => {
-                        setConfirmedPartial(configurationKey);
+                        setConfirmedPartial({ config: c, key: configurationKey });
                         setError("");
                     }}>
             Confirmar geração de{" "}
@@ -1391,7 +1417,7 @@ export default function Home() {
         </label>
         <p className="tab-help">Arraste e solte para aplicar. Vermelho indica uma posição inválida; ao soltar, o objeto volta. Pressione Esc para cancelar.</p>
         <label className="field">Objeto ou conjunto
-          <select aria-label="Selecionar objeto da montagem" value={selectedId ?? ''} onChange={event => setSelectedId(event.target.value || null)} style={{ width: '100%', padding: 10, marginTop: 8, background: '#0e1524', color: '#edf1fc', border: '1px solid #34405a', borderRadius: 6 }}>
+          <select aria-label="Selecionar objeto da montagem" value={selectedUnit?.id ?? ''} onChange={event => selectUnit(event.target.value || null)} style={{ width: '100%', padding: 10, marginTop: 8, background: '#0e1524', color: '#edf1fc', border: '1px solid #34405a', borderRadius: 6 }}>
             <option value="">Selecione um objeto</option>
             {assemblyUnits.map(unit => <option key={unit.id} value={unit.id}>{unit.label}{Object.hasOwn(c.objectTransforms, unit.id) ? ' · ajustado' : ''}</option>)}
           </select>
@@ -1400,7 +1426,7 @@ export default function Home() {
           <p className="tab-help">X: esquerda (−) / direita (+). Y: frente (−) / fundo (+). Posição medida no centro; rotação da unidade em torno do eixo Z da planta.</p>
           <div className="dimensions">
             {(['x', 'y', 'rotation'] as const).map(key => <label className="field" key={key}>{key === 'rotation' ? 'Rotação (°)' : `${key.toUpperCase()} (m)`}
-              <input aria-label={key === 'rotation' ? 'Rotação do objeto' : `Posição ${key.toUpperCase()} do objeto`} type="number" min={key === 'rotation' ? -360 : -30} max={key === 'rotation' ? 360 : 30} step={key === 'rotation' ? 5 : .1} readOnly={!!dragPreview} value={dragPreview?.id === selectedId ? String(Number(dragPreview.transform[key].toFixed(6))) : transformDraft[key]} onChange={event => setTransformDraft(prev => ({ ...prev, [key]: event.target.value }))} />
+              <input aria-label={key === 'rotation' ? 'Rotação do objeto' : `Posição ${key.toUpperCase()} do objeto`} type="number" min={key === 'rotation' ? -360 : -30} max={key === 'rotation' ? 360 : 30} step={key === 'rotation' ? 5 : .1} readOnly={!!dragPreview} value={dragPreview?.id === selectedId ? String(Number(dragPreview.transform[key].toFixed(6))) : transformDraft[key]} onChange={event => setEditedTransform({ config: c, id: selectedUnit.id, values: { ...transformDraft, [key]: event.target.value } })} />
             </label>)}
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
@@ -1413,7 +1439,7 @@ export default function Home() {
         {(dragPreview?.error || assemblyError) && <p role="alert" className="error">{dragPreview?.error || assemblyError}</p>}
       </div>
       <Tabs value={tab} onValueChange={setTab}><div className="result-header"><TabsList className="view-tabs"><TabsTrigger value="plan"><Square size={16}/>Planta</TabsTrigger><TabsTrigger value="code"><Code2 size={17}/>{c.target === 'max' ? 'MaxScript' : 'Script Python'}</TabsTrigger></TabsList><span className="plan-scale">{valid ? `${num(c.width)} × ${num(c.depth)} m` : 'Confira as medidas'}</span></div>
-      <TabsContent value="plan"><div className="plan-title"><span>VISTA SUPERIOR</span><small>Planta esquemática · sem perspectiva</small></div><div className="drawing">{valid ? <Plan c={display} selectedId={selectedId} onSelect={setSelectedId} snap={snapToGrid} onDragPreview={previewDrag} onDrop={dropObject}/> : <div className="empty"><Ruler size={32}/><p>{validationMessage}</p></div>}</div><div className="legend">{(c.back || c.left || c.right) && <span><i className="legend-wall"/>Parede</span>}<span><i style={{ background: c.color }}/>Elementos</span>{c.projectType === 'activation' ? <><span><i style={{background:'#fbbf24'}}/>Espera</span><span><i style={{background:'#34d399'}}/>Participação</span><span><i style={{background:'#60a5fa'}}/>Circulação</span></> : <span><i className="legend-light"/>Spots</span>}</div><div className="model-info"><div><span>ÁREA TOTAL</span><strong>{valid ? num(c.width * c.depth) : '—'} <small>m²</small></strong></div><div><span>ALTURA DE MONTAGEM</span><strong>{valid ? num(c.height) : '—'} <small>m</small></strong></div><div><span>{c.target === 'max' ? 'EXPORTAÇÃO' : 'RENDER'}</span><strong>{c.target === 'max' ? '3ds Max' : 'Cycles'} <small>{c.target === 'max' ? '.ms' : '64 samples'}</small></strong></div></div></TabsContent>
+      <TabsContent value="plan"><div className="plan-title"><span>VISTA SUPERIOR</span><small>Planta esquemática · sem perspectiva</small></div><div className="drawing">{valid ? <Plan c={display} selectedId={selectedUnit?.id ?? null} onSelect={selectUnit} snap={snapToGrid} onDragPreview={previewDrag} onDrop={dropObject}/> : <div className="empty"><Ruler size={32}/><p>{validationMessage}</p></div>}</div><div className="legend">{(c.back || c.left || c.right) && <span><i className="legend-wall"/>Parede</span>}<span><i style={{ background: c.color }}/>Elementos</span>{c.projectType === 'activation' ? <><span><i style={{background:'#fbbf24'}}/>Espera</span><span><i style={{background:'#34d399'}}/>Participação</span><span><i style={{background:'#60a5fa'}}/>Circulação</span>{c.activationModel === 'photo' && <span><i style={{background:'#c084fc'}}/>Captura / câmera</span>}</> : <span><i className="legend-light"/>Spots</span>}</div><div className="model-info"><div><span>ÁREA TOTAL</span><strong>{valid ? num(c.width * c.depth) : '—'} <small>m²</small></strong></div><div><span>ALTURA DE MONTAGEM</span><strong>{valid ? num(c.height) : '—'} <small>m</small></strong></div><div><span>{c.target === 'max' ? 'EXPORTAÇÃO' : 'RENDER'}</span><strong>{c.target === 'max' ? '3ds Max' : 'Cycles'} <small>{c.target === 'max' ? '.ms' : '64 samples'}</small></strong></div></div></TabsContent>
       <TabsContent value="code"><div className="code-toolbar"><span>{output ? filename(output.config) : 'Seu script aparecerá aqui'}</span><div><button onClick={copy} disabled={!output || !!dirty} aria-label="Copiar script">{copied ? <Check size={16}/> : <Copy size={16}/>} {copied ? 'Copiado' : 'Copiar'}</button><button onClick={download} disabled={!output || !!dirty}><Download size={16}/>Baixar {output?.config.target === 'max' ? '.ms' : '.py'}</button></div></div>{dirty && <div className="stale" role="status">Você alterou o projeto. Clique em “Gerar script” para atualizar o arquivo.</div>}{output ? <pre className="code"><code>{output.code.replace(/data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+/g, '[imagem incorporada — baixe ou copie o script completo]').replace(/local IMAGEM_TV = "[A-Za-z0-9+/=]+"/g, 'local IMAGEM_TV = "[imagem incorporada — baixe ou copie o script completo]"')}</code></pre> : <div className="empty"><Code2 size={38}/><h3>Seu projeto, em código.</h3><p>Escolha os elementos ao lado e clique em<br />“Gerar script”.</p></div>}</TabsContent>
     </Tabs><p className="notice" role="status" aria-live="polite">{notice}</p>
       <div className="blender-guide"><div className="guide-icon"><Box size={22}/></div><div><h3>Como abrir no {c.target === 'max' ? '3ds Max' : 'Blender'}</h3>{c.target === 'max' ? <ol><li><b>1</b>Baixe o arquivo <strong>.ms</strong>.</li><li><b>2</b>Abra o 3ds Max e entre em <strong>Scripting → Run Script</strong>.</li><li><b>3</b>Escolha o arquivo. Use <strong>CB_Camera_Frontal</strong> para visualizar.</li></ol> : <ol><li><b>1</b>Comece com uma cena vazia e entre em <strong>Scripting</strong>.</li><li><b>2</b>Em <strong>Open</strong>, abra o arquivo .py baixado.</li><li><b>3</b>Clique em <strong>Run Script</strong>. Use <strong>F12</strong> para renderizar.</li></ol>}</div></div>

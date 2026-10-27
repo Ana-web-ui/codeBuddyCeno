@@ -1,6 +1,14 @@
-export type ActivationModel = 'touch';
+export type ActivationModel = 'touch' | 'photo';
 
-export type ActivationConfig = {
+export const photoDefaults = {
+    activationPhotoPersonDistance: 1.2,
+    activationPhotoCameraDistance: 2.5,
+    activationPhotoCameraWidth: 1.2,
+    activationPhotoCameraDepth: 1,
+    activationPhotoCameraHeight: 1.5,
+};
+
+export type ActivationConfig = typeof photoDefaults & {
     activationModel: ActivationModel;
     activationEntranceSide: 'front' | 'back' | 'left' | 'right';
     activationExitSide: 'front' | 'back' | 'left' | 'right';
@@ -22,6 +30,7 @@ export type ActivationConfig = {
 
 export const activationDefaults: ActivationConfig = {
     activationModel: 'touch',
+    ...photoDefaults,
     activationEntranceSide: 'front', activationExitSide: 'right', activationEdgeMargin: 0.2,
     activationWaitingEnabled: true, activationWaitingWidth: 2, activationWaitingDepth: 2,
     activationWaitingManual: false, activationWaitingX: 0, activationWaitingY: 0,
@@ -35,4 +44,5 @@ export const activationModels = [
         value: 'touch',
         label: 'Interação em totem',
     },
+    { value: 'photo', label: 'Espaço para fotos' },
 ] as const;

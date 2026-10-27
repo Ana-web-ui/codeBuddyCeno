@@ -22,7 +22,7 @@ import type { StandLayout, FrontRotation, CornerOpenSide } from './stand-config.
 import { getStandWalls } from './stand-config.js';
 import { activationDefaults } from './activation';
 import { activationGeometry } from './activation-geometry';
-import { activationGuides } from './activation-exporters';
+import { activationGuides, activationPhotoCamera } from './activation-exporters';
 import type { ActivationConfig } from './activation';
 export type MaterialKind = 'white' | 'brand' | 'wood' | 'metal' | 'glass' | 'concrete' | 'plastic';
 export type ProjectType = 'stand' | 'palco' | 'lounge'| 'activation';
@@ -546,9 +546,10 @@ export function showcaseGeometry(c: Config) { if (!c.showcases)
 export function extraObjectGeometry(c: Config) {
     if (c.projectType === 'activation') {
         const g = activationGeometry(c)!;
-        // Reutiliza as verificações construtivas do totem, sem a distribuição genérica.
+        // Reutiliza as verificações construtivas, sem a distribuição genérica.
         const result = layoutExtraObjects({ ...c, touchCount: 1 }, () => []);
-        result.touchScreens = { positions: g.baseStations.map(s => [s.x, s.y]), generatedCount: g.stations.length };
+        const role = c.activationModel === 'photo' ? 'backdrops' : 'touchScreens';
+        result[role] = { positions: g.baseStations.map(s => [s.x, s.y]), generatedCount: g.stations.length };
         return result;
     }
     return layoutExtraObjects(c, (gap) => {
@@ -586,7 +587,7 @@ export function validate(c: Config) {
         throw new Error('Tipo de projeto inválido.');
     }
 
-    if (c.activationModel !== 'touch') {
+    if (c.activationModel !== 'touch' && c.activationModel !== 'photo') {
         throw new Error('Modelo de ativação inválido.');
     }
     if (c.projectType === 'palco') {
@@ -819,7 +820,7 @@ export function generate(c: Config, options: {
             "Confirme a geração parcial antes de continuar.");
     }
     if (c.projectType === 'activation' || Object.keys(c.objectTransforms).length || (c.projectType === 'lounge' && c.target === 'blender')) {
-        const units = assemblyScript(c) + activationGuides(c);
+        const units = assemblyScript(c) + activationPhotoCamera(c) + activationGuides(c);
         if (c.target === 'blender') return generateBlender(c, blenderChairs(c, chairLayout, { group: 'audience' }) + units);
         const script = generateMax(c), marker = 'select criados';
         if (!script.includes(marker)) throw new Error('Não encontrei o ponto de inserção dos objetos no MaxScript.');
