@@ -10,10 +10,20 @@ def cb_montar_unidade():
     anteriores = set(bpy.data.objects)
 ${code.split('\n').map(line => '    ' + line).join('\n')}
     novos = [obj for obj in bpy.data.objects if obj not in anteriores]
+    # Atualiza inclusive a última peça após os exportadores aplicarem suas rotações.
+    bpy.context.view_layer.update()
     movimento = Matrix.Translation((${t.x}, ${t.y}, 0)) @ Matrix.Rotation(${t.rotation * Math.PI / 180}, 4, 'Z') @ Matrix.Translation((${-unit.x}, ${-unit.y}, 0))
+    raiz = organizar(bpy.data.objects.new('${name}_Grupo', None))
+    raiz.matrix_world = Matrix.Translation((${t.x}, ${t.y}, 0.1)) @ Matrix.Rotation(${t.rotation * Math.PI / 180}, 4, 'Z')
+    raiz['code_buddy_id'] = '${unit.id}'
+    raiz['code_buddy_role'] = 'assembly_unit'
+    raiz['code_buddy_label'] = ${JSON.stringify(unit.label)}
+    bpy.context.view_layer.update()
     for i, obj in enumerate(novos, 1):
-        obj.matrix_world = movimento @ obj.matrix_world
-        obj.name = '${name}_%04d' % i
+        matriz = movimento @ obj.matrix_world.copy()
+        obj.parent = raiz
+        obj.matrix_world = matriz
+        obj.name = '${name}_' + obj.name
         obj['code_buddy_id'] = '${unit.id}'
 
 cb_montar_unidade()

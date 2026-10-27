@@ -1,5 +1,4 @@
-import type { MaterialKind } from './generator';
-
+import type { MaterialKind, ProjectType } from './generator';
 export type StorageDoorSide =
     | 'front'
     | 'back'
@@ -75,7 +74,7 @@ export type StorageRect = {
 };
 
 export type StorageSceneConfig = StorageConfig & {
-    projectType: 'stand' | 'palco';
+    projectType: ProjectType;
     width: number;
     depth: number;
     height: number;

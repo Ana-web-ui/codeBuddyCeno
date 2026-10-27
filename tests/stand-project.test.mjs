@@ -17,7 +17,10 @@ assert.equal(result.status, 0, result.stdout + result.stderr);
 writeFileSync(join(output, 'package.json'), '{"type":"commonjs"}');
 const { defaults, validate, generate } = require(join(output, 'generator.js'));
 const { createProjectConfig } = require(join(output, 'project-types.js'));
+const { projectTypes } = require(join(output, 'project-types.js'));
 const { getStandWalls } = require(join(output, 'stand-config.js'));
+const { libraryCatalog } = require(join(output, 'library.js'));
+const { assemblyGeometry } = require(join(output, 'generator.js'));
 const { parseProject, serializeProject, MAX_PROJECT_BYTES } = require(join(output, 'project-file.js'));
 const base = () => structuredClone(defaults);
 const old = () => {
@@ -122,4 +125,85 @@ test('edição real da interface aplica modelos, personaliza paredes e preserva 
     ctx.change('right',false); assert.equal(c.standLayout,'custom');
     assert.deepEqual(walls(c),[true,false,false]);
     assert.deepEqual(parseProject(serializeProject(c)),JSON.parse(JSON.stringify(c)));
+});
+
+test('troca para Lounge recupera rascunhos ausentes e parciais do recarregamento automático', () => {
+    const source=readFileSync(resolve('app/page.tsx'),'utf8');
+    const ast=ts.createSourceFile('page.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+    let fn;
+    function visit(n) {
+        if(ts.isFunctionDeclaration(n)&&n.name?.text==='changeProjectType') fn=n;
+        ts.forEachChild(n,visit);
+    }
+    visit(ast); assert.ok(fn);
+    for (const draft of [undefined, {target:'blender'}, {name:'Lounge editado',width:12,color:'#123456'}]) {
+        const c={...base(),name:'Meu estande editado',target:'max'};
+        let state=c;
+        const projectDrafts={current:{stand:c,palco:createProjectConfig('palco')}};
+        if(draft) projectDrafts.current.lounge=draft;
+        const ctx=vm.createContext({c,projectDrafts,projectTypes,createProjectConfig,
+            imageRequest:{current:0},setC:next=>{state=next;},
+            setSelectedId:()=>{},setAssemblyError:()=>{},setOutput:()=>{},
+            setTab:()=>{},setError:()=>{},setNotice:()=>{},setCopied:()=>{}});
+        vm.runInContext(ts.transpileModule(fn.getText(ast),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,ctx);
+        ctx.changeProjectType('lounge');
+        assert.equal(state.projectType,'lounge');
+        assert.equal(state.target,'max');
+        assert.equal(state.color.toUpperCase(),draft?.color?.toUpperCase()??defaults.color.toUpperCase());
+        assert.equal(state.name,draft?.name??'Meu primeiro lounge');
+        assert.equal(state.width,draft?.width??10);
+        validate(state);
+        assert.deepEqual(parseProject(serializeProject(state)),JSON.parse(JSON.stringify(state)));
+        ctx.c=state;
+        ctx.changeProjectType('stand');
+        assert.equal(state.name,'Meu estande editado');
+        assert.equal(state.target,'max');
+    }
+});
+
+test('Lounge libera somente o catálogo mínimo e conta assentos reais', () => {
+    assert.deepEqual(libraryCatalog.filter(item=>item.projectTypes.includes('lounge')).map(item=>item.id).sort(),
+        ['roundRugs','coffeeTables','armchairs','puffs','bistroTables','stools'].sort());
+    const c=createProjectConfig('lounge'); validate(c);
+    const count=config=>assemblyGeometry(config).flatMap(unit=>unit.members)
+        .filter(member=>['armchairs','puffs','stools'].includes(member.role)).length;
+    assert.equal(count(c),8);
+    const three={...c,coffeeTableCount:3}; validate(three); assert.equal(count(three),12);
+    const free={...c,loungeMode:'free'}; validate(free); assert.equal(count(free),8);
+    const bistro={...c,bistroTables:true,bistroTableCount:1,stools:true,stoolDistribution:'bistro',stoolsPerBistro:2};
+    validate(bistro); assert.equal(count(bistro),10);
+    assert.deepEqual(parseProject(serializeProject(bistro)),bistro);
+    for(const target of ['blender','max']) assert.ok(generate({...bistro,target}).length>1000);
+});
+
+test('controles reais de lounge e banquetas limpam ajustes ao trocar a distribuição', () => {
+    const source=readFileSync(resolve('app/page.tsx'),'utf8');
+    const ast=ts.createSourceFile('page.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+    const callbacks={};
+    function visit(n) {
+        if(ts.isJsxOpeningElement(n)&&n.tagName.getText(ast)==='Select') {
+            const attrs=n.attributes.properties;
+            const value=attrs.find(a=>ts.isJsxAttribute(a)&&a.name.getText(ast)==='value');
+            const handler=attrs.find(a=>ts.isJsxAttribute(a)&&a.name.getText(ast)==='onValueChange');
+            if(value?.initializer&&ts.isJsxExpression(value.initializer)&&handler?.initializer&&ts.isJsxExpression(handler.initializer)) {
+                callbacks[value.initializer.expression.getText(ast)]=handler.initializer.expression.getText(ast);
+            }
+        }
+        ts.forEachChild(n,visit);
+    }
+    visit(ast);
+    let state=createProjectConfig('lounge');
+    const ctx=vm.createContext({setC:fn=>{state=fn(state);},setSelectedId:()=>{},setAssemblyError:()=>{},setError:()=>{},setNotice:()=>{}});
+    for(const [property,values] of [['c.loungeMode',['free','set']],['c.stoolDistribution',['bistro','free']]]) {
+        assert.ok(callbacks[property]);
+        vm.runInContext(ts.transpileModule('globalThis.change='+callbacks[property],{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,ctx);
+        if(property==='c.stoolDistribution') state={...state,stools:true};
+        for(const value of values) {
+            state={...state,objectTransforms:{'coffeeTables:0':{x:0,y:0,rotation:0}}};
+            ctx.change(value);
+            assert.equal(Object.keys(state.objectTransforms).length,0);
+            validate(state);
+        }
+    }
+    assert.equal(state.bistroTables,true);
 });

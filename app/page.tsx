@@ -559,7 +559,7 @@ export default function Home() {
         setConfirmedPartial(null);
         confirmedPartialRef.current = null;
     }, [c]);
-    const projectDrafts = useRef<Record<ProjectType, Config>>({ stand: createProjectConfig("stand"), palco: createProjectConfig("palco") });
+    const projectDrafts = useRef<Record<ProjectType, Config>>({ stand: createProjectConfig("stand"), palco: createProjectConfig("palco"), lounge: createProjectConfig("lounge")});
     const [tab, setTab] = useState('plan');
     const [output, setOutput] = useState<{
         code: string;
@@ -597,6 +597,11 @@ export default function Home() {
     const needsPartialConfirmation = Boolean(seating && seating.missingCount > 0);
     const partialConfirmed = confirmedPartial === configurationKey;
     const assemblyUnits = valid ? assemblyGeometry(c) : [];
+    const loungeMembers = c.projectType === 'lounge' ? assemblyUnits.flatMap(unit => unit.members) : [];
+    const loungeArmchairSeats = loungeMembers.filter(member => member.role === 'armchairs').length;
+    const loungePuffSeats = loungeMembers.filter(member => member.role === 'puffs').length;
+    const loungeStoolSeats = loungeMembers.filter(member => member.role === 'stools').length;
+    const loungeSeatingTotal = loungeArmchairSeats + loungePuffSeats + loungeStoolSeats;
     const selectedUnit = assemblyUnits.find(unit => unit.id === selectedId);
     useEffect(() => {
         if (!selectedUnit) { setSelectedId(null); setAssemblyError(''); return; }
@@ -901,6 +906,8 @@ export default function Home() {
     const availableElements = elements.filter((element) => libraryCatalog.some((item) => item.id === element.key &&
         item.projectTypes.some((type) => type === c.projectType)));
     function changeProjectType(type: ProjectType) {
+        if (!projectTypes.some(project => project.value === type))
+            return;
         if (type === c.projectType)
             return;
         imageRequest.current += 1;
@@ -908,12 +915,17 @@ export default function Home() {
         const currentProjectType = c.projectType;
         // Guarda o preenchimento do projeto atual.
         projectDrafts.current[currentProjectType] = { ...c };
-        // Recupera o preenchimento do próximo projeto.
-        setC({
+        // Refs podem conservar rascunhos antigos durante o recarregamento automático.
+        // Completa os campos ausentes antes de apresentar o próximo projeto.
+        const nextProject: Config = {
+            ...createProjectConfig(type),
             ...projectDrafts.current[type],
+            projectType: type,
             // Mantém o programa de destino selecionado.
             target: c.target,
-        });
+        };
+        projectDrafts.current[type] = nextProject;
+        setC(nextProject);
         setOutput(null);
         setTab("plan");
         setError("");
@@ -940,9 +952,18 @@ export default function Home() {
       <label className="field engine-label"><span>Gerar para</span><Select value={c.target} onValueChange={v => update('target', v as Target)}><SelectTrigger aria-label="Programa de destino" className="full-select"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="blender">Blender · Python (.py)</SelectItem><SelectItem value="max">3ds Max · MaxScript (.ms)</SelectItem></SelectContent></Select></label>
       <Tabs defaultValue="stand" className="config-tabs"><TabsList className="config-tabs-list"><TabsTrigger value="stand">Projeto</TabsTrigger><TabsTrigger value="params">Parâmetros</TabsTrigger><TabsTrigger value="materials">Materiais</TabsTrigger></TabsList><TabsContent value="stand">
       <label className="field">Nome do projeto<input value={c.name} maxLength={80} onChange={e => update('name', e.target.value)} placeholder="Ex.: Stand KitKat"/></label>
-      <p className="tab-help">{c.projectType === 'palco' ? 'Informe a área disponível e a altura de montagem. Ajuste as medidas da plataforma na aba Parâmetros.' : 'Informe as medidas do stand. A altura também define as paredes e os trilhos de iluminação.'}</p>
+      <p className="tab-help">{c.projectType === 'palco' ? 'Informe a área disponível e a altura de montagem. Ajuste as medidas da plataforma na aba Parâmetros.' : c.projectType === 'lounge' ? 'Informe a área disponível para o lounge. Selecione os móveis abaixo e ajuste os conjuntos na aba Parâmetros.' : 'Informe as medidas do stand. A altura também define as paredes e os trilhos de iluminação.'}</p>
       <div className="dimensions">{([{ key: 'width', label: 'Largura', min: 3, max: 30 }, { key: 'depth', label: 'Profundidade', min: 3, max: 30 }, { key: 'height', label: 'Altura', min: 2, max: 8 }] as const).map(f => <label className="field" key={f.key}>{f.label}<div className="unit-input"><input type="number" inputMode="decimal" min={f.min} max={f.max} step="0.1" value={Number.isNaN(c[f.key]) ? '' : c[f.key]} onChange={e => update(f.key, e.target.value === '' ? NaN : Number(e.target.value))}/><span>m</span></div></label>)}</div>
       <div className="area-summary"><Ruler size={16}/><span>Área de montagem</span><strong>{valid ? num(c.width * c.depth) : '—'} <small>m²</small></strong></div>
+      {c.projectType === 'lounge' && <div className="parameter-section" aria-label="Resumo de assentos do lounge">
+        <h3>Assentos do lounge</h3>
+        {valid ? <>
+          <p className="tab-help">Poltronas: {loungeArmchairSeats} · Puffs: {loungePuffSeats} · Banquetas: {loungeStoolSeats}</p>
+          <strong>Total: {loungeSeatingTotal} assentos</strong>
+          <p className="tab-help">Contagem do mobiliário da montagem. Não representa lotação regulamentar.</p>
+        </> : <p className="tab-help">Corrija os parâmetros da montagem para calcular os assentos.</p>}
+        <p className="tab-help">Para ajustar os conjuntos, abra Parâmetros e localize Mesas de centro. No modo avulso, cada tipo de móvel usa sua própria quantidade.</p>
+      </div>}
       {c.projectType === 'stand' && (
         <>
           <div className="subheading">
@@ -1218,9 +1239,12 @@ export default function Home() {
                     if (value !== 'free' && value !== 'bistro')
                         return;
                     setC(prev => ({ ...prev, stoolDistribution: value,
-                        bistroTables: value === 'bistro' ? true : prev.bistroTables }));
+                        bistroTables: value === 'bistro' ? true : prev.bistroTables,
+                        objectTransforms: {} }));
+                    setSelectedId(null);
+                    setAssemblyError('');
                     setError('');
-                    setNotice('');
+                    setNotice('Distribuição das banquetas alterada. Os ajustes individuais foram restaurados.');
                 }}>
       <SelectTrigger id="stool-distribution" className="full-select"><SelectValue /></SelectTrigger>
       <SelectContent>
@@ -1249,10 +1273,14 @@ export default function Home() {
                     if (value !== 'free' && value !== 'set')
                         return;
                     setC(prev => ({ ...prev, loungeMode: value,
+                        coffeeTables: value === 'set' ? true : prev.coffeeTables,
                         armchairs: value === 'set' && prev.loungeArmchairsPerTable > 0 ? true : prev.armchairs,
-                        puffs: value === 'set' && prev.loungePuffsPerTable > 0 ? true : prev.puffs }));
+                        puffs: value === 'set' && prev.loungePuffsPerTable > 0 ? true : prev.puffs,
+                        objectTransforms: {} }));
+                    setSelectedId(null);
+                    setAssemblyError('');
                     setError('');
-                    setNotice('');
+                    setNotice('Modo de montagem alterado. Os ajustes individuais foram restaurados.');
                 }}>
       <SelectTrigger id="lounge-mode" className="full-select"><SelectValue /></SelectTrigger>
       <SelectContent><SelectItem value="free">Móveis avulsos</SelectItem><SelectItem value="set">Conjunto de lounge</SelectItem></SelectContent>

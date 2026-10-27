@@ -7,7 +7,7 @@ import { materials } from './generator';
 
 export const MAX_PROJECT_BYTES = 4 * 1024 * 1024;
 const FORMAT = 'code-buddy-project';
-const VERSION = 4;
+const VERSION = 5;
 
 function object(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -19,8 +19,14 @@ function checkedConfig(
     legacy = false,
     migrateStorage = false,
 ): Config  {
-    if (!object(value)) throw new Error('O arquivo não contém uma configuração de projeto válida.');
-    if (value.projectType !== 'stand' && value.projectType !== 'palco') {
+    if (!object(value)) {
+        throw new Error('O projeto é inválido.');
+    }
+    if (
+        value.projectType !== 'stand' &&
+        value.projectType !== 'palco' &&
+        value.projectType !== 'lounge'
+    ) {
         throw new Error('Tipo de projeto inválido.');
     }
     if (Object.keys(value).some(key => !Object.hasOwn(defaults, key))) {
@@ -97,15 +103,17 @@ export function parseProject(text: string): Config {
     if (!object(document)) throw new Error('O arquivo de projeto é inválido.');
     if (Object.hasOwn(document, 'format') || Object.hasOwn(document, 'version')) {
         if (document.format !== FORMAT) throw new Error('Escolha um projeto JSON salvo pelo Code Buddy.');
-                if (
+                  if (
             document.version !== 1 &&
             document.version !== 2 &&
             document.version !== 3 &&
+            document.version !== 4 &&
             document.version !== VERSION
         ) {
             throw new Error(
                 'A versão deste arquivo de projeto não é compatível com este Code Buddy.',
             );
+        
         }
 
         return checkedConfig(

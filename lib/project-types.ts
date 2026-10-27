@@ -6,6 +6,7 @@ export const projectTypes: {
 }[] = [
     { value: 'stand', label: 'Stand' },
     { value: 'palco', label: 'Palco / plenária' },
+    { value: 'lounge', label: 'Lounge' },
 ];
 export function createProjectConfig(type: ProjectType): Config {
     if (type === 'stand') {
@@ -13,6 +14,63 @@ export function createProjectConfig(type: ProjectType): Config {
             ...defaults,
             projectType: 'stand',
             chairs: false,
+        };
+    }
+
+    if (type === 'lounge') {
+        return {
+            ...defaults,
+
+            projectType: 'lounge',
+            name: 'Meu primeiro lounge',
+
+            width: 10,
+            depth: 8,
+            height: 3.5,
+
+            standLayout: 'custom',
+            frontRotation: 0,
+            cornerOpenSide: 'right',
+
+            back: false,
+            left: false,
+            right: false,
+
+            stage: false,
+            chairs: false,
+            led: false,
+            counter: false,
+            totem: false,
+            spots: false,
+            storageEnabled: false,
+
+            roundTables: false,
+            rectTables: false,
+            bistroTables: false,
+            stools: false,
+
+            loungeMode: 'set',
+            coffeeTables: true,
+            coffeeTableCount: 2,
+
+            armchairs: true,
+            loungeArmchairsPerTable: 2,
+            armchairCount: 4,
+
+            puffs: true,
+            loungePuffsPerTable: 2,
+            puffCount: 4,
+
+            loungeTableSeatGap: 0.25,
+            loungeSeatGap: 0.1,
+            loungeSetGap: 0.8,
+
+            floorMat: 'white',
+            coffeeTableMat: 'wood',
+            armchairMat: 'plastic',
+            puffMat: 'plastic',
+
+            objectTransforms: {},
         };
     }
     return {

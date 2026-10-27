@@ -4,6 +4,7 @@ import { wrapBlenderUnit, wrapMaxUnit } from './assembly-exporters.js';
 import { blenderStandardObjects, maxStandardObjects } from './standard-object-exporters';
 import { blenderShowcases, maxShowcases } from './showcase-exporters';
 import { blenderLounge, maxLounge } from './lounge-exporters';
+import { blenderCoffeeTables, maxCoffeeTables } from './coffee-table-exporters';
 import { blenderPedestals, maxPedestals } from './pedestal-exporters';
 import { generateMax } from './maxscript';
 import { exportProjectKey } from './export-project';
@@ -20,7 +21,7 @@ import type { StorageConfig } from './storage';
 import type { StandLayout, FrontRotation, CornerOpenSide } from './stand-config.js';
 import { getStandWalls } from './stand-config.js';
 export type MaterialKind = 'white' | 'brand' | 'wood' | 'metal' | 'glass' | 'concrete' | 'plastic';
-export type ProjectType = 'stand' | 'palco';
+export type ProjectType = 'stand' | 'palco' | 'lounge';
 export type Target = 'blender' | 'max';
 export const materials: {
     value: MaterialKind;
@@ -75,17 +76,6 @@ export type Config = StorageConfig & AssemblyConfig & ChairConfig & RoundTableCo
     screenImage: string;
     screenName: string;
 };
-function blenderCoffeeTables(c: Config, layout: {
-    positions: [
-        number,
-        number
-    ][];
-}): string {
-    return layout.positions.map(([x, y], index) => `caixa('Mesa_Centro_${index + 1}', (${c.coffeeTableWidth}, ${c.coffeeTableDepth}, ${c.coffeeTableHeight}), (${x}, ${y}, ${0.1 + c.coffeeTableHeight / 2}), acabamento('${c.coffeeTableMat}'))`).join('\n');
-}
-function maxCoffeeTables(c: Config, layout: { positions: [number, number][] }): string {
-    return layout.positions.map(([x, y], index) => `cbCaixa "Mesa_Centro_${index + 1}" ${c.coffeeTableWidth} ${c.coffeeTableDepth} ${c.coffeeTableHeight} ${x} ${y} ${0.1 + c.coffeeTableHeight / 2} (cbMaterial "${c.coffeeTableMat}")`).join('\n');
-}
 export const defaults: Config = {
     standLayout: 'custom',
     frontRotation: 0,
@@ -239,6 +229,7 @@ export function findStoragePosition(
     ): { storageX: number; storageY: number } | null {
         const next: Config = {
             ...c,
+            projectType: 'stand',
             storageEnabled: true,
             storageX: Number(x.toFixed(6)),
             storageY: Number(y.toFixed(6)),
@@ -575,7 +566,7 @@ export function validate(c: Config) {
         throw new Error('Selecione um modo válido para o lounge.');
     if (!c.name.trim() || c.name.length > 80)
         throw new Error('Dê um nome ao projeto, com até 80 caracteres.');
-    if (!['stand', 'palco'].includes(c.projectType))
+    if (!['stand', 'palco', 'lounge'].includes(c.projectType))
         throw new Error('Tipo de projeto inválido.');
     if (c.projectType === 'palco') {
         if (!c.stage)
@@ -583,6 +574,12 @@ export function validate(c: Config) {
         if (c.back || c.left || c.right || c.counter || c.totem) {
             throw new Error("Nesta versão, paredes, balcões e totens ainda não estão disponíveis em Palco / plenária.");
         }
+    }
+    if (c.projectType === 'lounge' && [c.back, c.left, c.right, c.stage, c.chairs,
+        c.led, c.counter, c.totem, c.spots, c.storageEnabled, c.roundTables,
+        c.rectTables, c.shelving, c.backdrops, c.touchScreens, c.cabinets,
+        c.openCubes, c.showcases, c.pedestals].some(Boolean)) {
+        throw new Error('O projeto Lounge contém elementos que não estão disponíveis neste tipo de projeto.');
     }
     for (const k of ['width', 'depth', 'height'] as const) {
         const min = k === 'height' ? 2 : 3;
@@ -801,7 +798,7 @@ export function generate(c: Config, options: {
             `mas cabem ${chairLayout.generatedCount}. ` +
             "Confirme a geração parcial antes de continuar.");
     }
-    if (Object.keys(c.objectTransforms).length) {
+    if (Object.keys(c.objectTransforms).length || (c.projectType === 'lounge' && c.target === 'blender')) {
         const units = assemblyScript(c);
         if (c.target === 'blender') return generateBlender(c, blenderChairs(c, chairLayout, { group: 'audience' }) + units);
         const script = generateMax(c), marker = 'select criados';
