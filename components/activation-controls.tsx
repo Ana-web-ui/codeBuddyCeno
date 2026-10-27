@@ -1,4 +1,5 @@
 'use client';
+import { DemoControls } from '@/components/demo-controls';
 import { useState } from 'react';
 import { activationModels } from '@/lib/activation';
 import type { Config } from '@/lib/generator';
@@ -24,7 +25,8 @@ export function ActivationControls({c,update,apply}:{c:Config;update:<K extends 
     ] as const;
     return <div className="parameter-section" aria-label="Zonas da ativação">
       <h3>Zonas da ativação · {activationModels.find(model=>model.value===c.activationModel)?.label}</h3>
-      <p className="tab-help">{c.activationModel === 'photo' ? 'Um backdrop com posição da pessoa, câmera e faixa reservada à captura. A circulação chega pela lateral, sem atravessar a foto.' : 'Distribuição inicial em fileira.'} Espera em amarelo, participação em verde e circulação em azul. As medidas são parâmetros de estudo da montagem.</p>
+      <p className="tab-help">{c.activationModel === 'demo' ? 'Uma bancada com produto, demonstrador atrás e público à frente. A circulação atende as duas zonas pela lateral.' : c.activationModel === 'photo' ? 'Um backdrop com posição da pessoa, câmera e faixa reservada à captura. A circulação chega pela lateral, sem atravessar a foto.' : 'Distribuição inicial em fileira.'} Espera em amarelo, participação em verde e circulação em azul. As medidas são parâmetros de estudo da montagem.</p>
+      <>{c.activationModel === 'demo' && <DemoControls c={c} update={update}/>}</>
       <div className="param-grid">
         {(['activationEntranceSide','activationExitSide'] as const).map(key=><div className="field" key={key}><span>{key==='activationEntranceSide'?'Lado da entrada':'Lado da saída'}</span>
           <Select value={c[key]} onValueChange={value=>update(key,value as Config[typeof key])}>
@@ -32,7 +34,7 @@ export function ActivationControls({c,update,apply}:{c:Config;update:<K extends 
             <SelectContent><SelectItem value="front">Frente (−Y)</SelectItem><SelectItem value="back">Fundo (+Y)</SelectItem><SelectItem value="left">Esquerda (−X)</SelectItem><SelectItem value="right">Direita (+X)</SelectItem></SelectContent>
           </Select>
         </div>)}
-        {fields.filter(([key])=>(c.activationWaitingEnabled||!key.startsWith('activationWaiting')) && (c.activationModel==='photo'?!['activationStationGap'].includes(key):!key.startsWith('activationPhoto'))).map(([key,label,min,max])=><label className="field" key={key}>{label}<div className="unit-input">
+        {fields.filter(([key])=>(c.activationWaitingEnabled||!key.startsWith('activationWaiting')) && (!key.startsWith('activationPhoto')||c.activationModel==='photo') && (key!=='activationStationGap'||c.activationModel==='touch')).map(([key,label,min,max])=><label className="field" key={key}>{c.activationModel === 'demo' && key === 'activationParticipationWidth' ? 'Largura da área do público' : c.activationModel === 'demo' && key === 'activationParticipationDepth' ? 'Profundidade da área do público' : label}<div className="unit-input">
           <input type="number" min={min} max={max} step="0.1" value={Number.isNaN(c[key])?'':c[key]} onChange={e=>update(key,e.target.value===''?NaN:Number(e.target.value))}/><span>m</span>
         </div></label>)}
       </div>
@@ -47,6 +49,6 @@ export function ActivationControls({c,update,apply}:{c:Config;update:<K extends 
         <button type="button" className="generate-button" onClick={()=>apply({...c,activationWaitingManual:false})}>Restaurar espera automática</button>
       </>}
       <label className="element"><span>Exportar zonas como referências sem render</span><input type="checkbox" checked={c.activationExportGuides} onChange={e=>update('activationExportGuides',e.target.checked)}/></label>
-      <p className="tab-help">{c.activationModel === 'photo' ? 'Selecione o espaço para fotos na planta para mover ou girar backdrop, pessoa e câmera juntos. A câmera de foto é uma referência independente da câmera geral do render. Ajuste o enquadramento no Blender ou no Max.' : 'Selecione uma estação na planta para mover o totem junto com a área de participação. O participante fica à frente da tela.'} Em rotações livres, a reserva de espaço usa uma envoltória conservadora. Um ajuste que bloqueie a circulação é recusado.</p>
+      <p className="tab-help">{c.activationModel === 'demo' ? 'Selecione a bancada na planta para mover ou girar bancada, produto e zonas juntos. Público e demonstrador têm acessos laterais; o percurso não atravessa a estação.' : c.activationModel === 'photo' ? 'Selecione o espaço para fotos na planta para mover ou girar backdrop, pessoa e câmera juntos. A câmera de foto é uma referência independente da câmera geral do render. Ajuste o enquadramento no Blender ou no Max.' : 'Selecione uma estação na planta para mover o totem junto com a área de participação. O participante fica à frente da tela.'} Em rotações livres, a reserva de espaço usa uma envoltória conservadora. Um ajuste que bloqueie a circulação é recusado.</p>
     </div>;
 }

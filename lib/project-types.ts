@@ -4,18 +4,23 @@ import type { ActivationModel } from './activation';
 
 /** A troca do modelo inicia uma distribuição coerente e mantém os dados gerais do projeto. */
 export function createActivationModelConfig(current: Config, model: ActivationModel): Config {
-    if (model !== 'touch' && model !== 'photo') throw new Error('Modelo de ativação inválido.');
+    if (!['touch', 'photo', 'demo'].includes(model)) throw new Error('Modelo de ativação inválido.');
     const initial = createProjectConfig('activation');
     return {
         ...initial, name: current.name, target: current.target, color: current.color,
-        floorMat: current.floorMat, width: Math.max(current.width, model === 'photo' ? 10 : 8),
-        depth: Math.max(current.depth, model === 'photo' ? 9 : 6), height: Math.max(current.height, 2.5),
+        floorMat: current.floorMat, width: Math.max(current.width, model !== 'touch' ? 10 : 8),
+        depth: Math.max(current.depth, model !== 'touch' ? 9 : 6), height: Math.max(current.height, 2.5),
         activationModel: model,
         ...(model === 'photo' ? {
             touchScreens: false, backdrops: true, backdropCount: 1, backdropWidth: 3,
             backdropHeight: 2.5, backdropThickness: .06, backdropBaseDepth: .6,
             backdropMat: 'brand' as const, activationParticipationWidth: 2,
             activationParticipationDepth: 1.2, activationExportGuides: true,
+        } : {}),
+        ...(model === 'demo' ? {
+            touchScreens: false, backdrops: false,
+            activationParticipationWidth: 2.5, activationParticipationDepth: 1.5,
+            activationExportGuides: true,
         } : {}),
     };
 }

@@ -232,10 +232,10 @@ const parameterFields: Record<'led' | 'counter' | 'stage' | 'totem' | 'spots' | 
     roundRugs: [{ "key": "rugCount", "label": "Quantidade", "min": 1, "max": 100, "unit": "un" }, { "key": "rugDiameter", "label": "Diâmetro", "min": 0.4, "max": 10 }, { "key": "rugGap", "label": "Vão livre entre unidades", "min": 0, "max": 3 }],
 };
 const materialFields: {
-    key: 'floorMat' | 'wallMat' | 'counterMat' | 'stageMat' | 'totemMat' | 'roundTableMat' | 'rectTableMat' | 'bistroTableMat' | 'stoolMat' | 'pedestalMat' | 'armchairMat' | 'puffMat' | 'coffeeTableMat' | 'showcaseBaseMat' | 'shelfMat' | 'backdropMat' | 'touchMat' | 'cabinetMat' | 'openCubeMat' | 'rugMat';
+    key: 'demoBenchMat' | 'demoProductMat' | 'floorMat' | 'wallMat' | 'counterMat' | 'stageMat' | 'totemMat' | 'roundTableMat' | 'rectTableMat' | 'bistroTableMat' | 'stoolMat' | 'pedestalMat' | 'armchairMat' | 'puffMat' | 'coffeeTableMat' | 'showcaseBaseMat' | 'shelfMat' | 'backdropMat' | 'touchMat' | 'cabinetMat' | 'openCubeMat' | 'rugMat';
     label: string;
     enabled?: 'counter' | 'stage' | 'totem' | 'roundTables' | 'rectTables' | 'bistroTables' | 'stools' | 'pedestals' | 'armchairs' | 'puffs' | 'coffeeTables' | 'showcases' | 'shelving' | 'backdrops' | 'touchScreens' | 'cabinets' | 'openCubes' | 'roundRugs';
-}[] = [{ key: 'floorMat', label: 'Piso' },
+}[] = [{ key: 'demoBenchMat', label: 'Corpo da bancada de demonstração' }, { key: 'demoProductMat', label: 'Produto de referência' }, { key: 'floorMat', label: 'Piso' },
     { key: 'wallMat', label: 'Paredes' },
     { key: 'counterMat', label: 'Corpo do balcão', enabled: 'counter' },
     { key: 'stageMat', label: 'Palco', enabled: 'stage' },
@@ -406,11 +406,12 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
               return <g key={`${m.role}:${m.index}`} transform={`translate(${mx} ${my}) rotate(${-m.rotation})`}>
                 {m.circle ? <circle r={m.width * s / 2} fill={fill} fillOpacity={floor ? .45 : 1} stroke={stroke} strokeWidth={selected ? 2.5 : 1} />
                   : <rect x={-m.width * s / 2} y={-m.depth * s / 2} width={m.width * s} height={m.depth * s} rx="1" fill={fill} fillOpacity={m.role === 'showcases' ? .4 : m.role === 'openCubes' ? .25 : 1} stroke={stroke} strokeWidth={selected ? 2.5 : 1} />}
+                {m.role === 'demoStations' && <rect x={(c.demoProductX-c.demoProductWidth/2)*s} y={-(c.demoProductY+c.demoProductDepth/2)*s} width={c.demoProductWidth*s} height={c.demoProductDepth*s} fill={c.demoProductMat === 'brand' ? c.color : materials.find(mat=>mat.value===c.demoProductMat)?.color ?? '#c8cedb'} stroke="#101827" strokeWidth="1"/>}
                 {m.role === 'openCubes' && <rect x={(-m.width / 2 + c.openCubeWallThickness) * s} y={-m.depth * s / 2} width={(m.width - 2 * c.openCubeWallThickness) * s} height={m.depth * s} fill="none" stroke="#8795ad" strokeDasharray="2 2" />}
                 {!m.circle && <path d={`M ${-m.width * s / 3} ${-m.depth * s / 2} H ${m.width * s / 3}`} stroke="#fff" strokeWidth="2" />}
               </g>;
           })}
-          <PlanText counterRotation={t.rotation} x="0" y="3" textAnchor="middle" fontSize="9" fill={selected ? '#ffce57' : '#101827'} stroke={selected ? '#101827' : 'none'} strokeWidth=".4">{c.projectType === 'activation' && c.activationModel === 'photo' ? 'FOTO' : unit.label.replace(/ [0-9]+$/, '').slice(0, 2).toUpperCase() + (Number(unit.id.split(':')[1]) + 1)}</PlanText>
+          <PlanText counterRotation={t.rotation} x="0" y={unit.id.startsWith('demoStations:') ? -(c.demoBenchDepth+.08)*s/2-5 : 3} textAnchor="middle" fontSize="9" fill={selected ? '#ffce57' : unit.id.startsWith('demoStations:') ? '#e5edf9' : '#101827'} stroke={selected ? '#101827' : 'none'} strokeWidth=".4">{c.projectType === 'activation' && c.activationModel === 'demo' ? 'DEMO' : c.projectType === 'activation' && c.activationModel === 'photo' ? 'FOTO' : unit.label.replace(/ [0-9]+$/, '').slice(0, 2).toUpperCase() + (Number(unit.id.split(':')[1]) + 1)}</PlanText>
         </g>;
     });
     const g = geometry(c);
@@ -519,6 +520,11 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
     <rect x={x} y={y} width={w} height={h} fill={(c.floorMat === 'brand' ? c.color : materials.find(m => m.value === c.floorMat)?.color) + '25'} stroke="#687695" strokeDasharray="5 5"/>
     {drawUnits(true)}
     {activation && <g aria-label="Espera, participação e circulação" pointerEvents="none">
+      {activation.demo && <g>
+        <rect x={px(activation.demo.reserved.x-activation.demo.reserved.width/2)} y={py(activation.demo.reserved.y+activation.demo.reserved.depth/2)} width={activation.demo.reserved.width*s} height={activation.demo.reserved.depth*s} fill="#c084fc" fillOpacity="0.04" stroke="#c084fc" strokeDasharray="6 4"/>
+        <rect x={px(activation.demo.presenter.x-activation.demo.presenter.width/2)} y={py(activation.demo.presenter.y+activation.demo.presenter.depth/2)} width={activation.demo.presenter.width*s} height={activation.demo.presenter.depth*s} fill="#fb923c" fillOpacity="0.18" stroke="#fb923c" strokeDasharray="4 3"/>
+        <PlanText x={px(activation.demo.presenter.x)} y={py(activation.demo.presenter.y)+3} textAnchor="middle" fill="#e5edf9" fontSize="9">Demonstrador</PlanText>
+      </g>}
       {activation.photo && <g>
         <rect x={px(activation.photo.capture.x-activation.photo.capture.width/2)} y={py(activation.photo.capture.y+activation.photo.capture.depth/2)} width={activation.photo.capture.width*s} height={activation.photo.capture.depth*s} fill="#c084fc" fillOpacity="0.06" stroke="#c084fc" strokeDasharray="6 4"/>
         <line x1={px(activation.photo.person.x)} y1={py(activation.photo.person.y)} x2={px(activation.photo.camera.x)} y2={py(activation.photo.camera.y)} stroke="#c084fc" strokeDasharray="3 3"/>
@@ -683,7 +689,9 @@ export default function Home() {
                 'screenName',
                 'frontRotation',
                 'activationExportGuides',
-            ].includes(key) || key.endsWith('Mat');
+            ].includes(key) || key.endsWith('Mat') ||
+            (c.projectType === 'activation' && c.activationModel === 'demo' &&
+                ['demoProductX','demoProductY','demoProductWidth','demoProductDepth','demoProductHeight','demoBenchHeight'].includes(key));
 
         setC(prev => {
             const next: Config = {
@@ -937,7 +945,7 @@ export default function Home() {
         return () => controller.abort();
     }, []);
     const availableElements = elements.filter((element) => libraryCatalog.some((item) => item.id === element.key &&
-        item.projectTypes.some((type) => type === c.projectType)) && (c.projectType !== 'activation' || element.key === (c.activationModel === 'photo' ? 'backdrops' : 'touchScreens')));
+        item.projectTypes.some((type) => type === c.projectType)) && (c.projectType !== 'activation' || (c.activationModel !== 'demo' && element.key === (c.activationModel === 'photo' ? 'backdrops' : 'touchScreens'))));
     function changeProjectType(type: ProjectType) {
         if (!projectTypes.some(project => project.value === type))
             return;
@@ -1221,7 +1229,8 @@ export default function Home() {
           </>}
         </div>
       )}
-      <div className="subheading elements-heading"><h3>Elementos</h3><span>Selecione o que entra</span></div>
+      {c.projectType === 'activation' && c.activationModel === 'demo' && <p className="tab-help">Bancada, produto e áreas do demonstrador e do público incluídos. Ajuste as medidas na aba Parâmetros.</p>}
+      <div className="subheading elements-heading"><h3>{c.projectType === 'activation' && c.activationModel === 'demo' ? 'Estação de demonstração' : 'Elementos'}</h3><span>{c.projectType === 'activation' && c.activationModel === 'demo' ? 'Uma bancada e um produto' : 'Selecione o que entra'}</span></div>
       <div className="element-list">{availableElements.map(f => <label className={'element ' + (c[f.key] ? 'selected' : '')} key={f.key}><span className="element-icon"><f.icon size={19}/></span><span className="element-text"><strong>{f.title}</strong><small>{f.text}</small></span><Checkbox checked={c[f.key]} disabled={(c.projectType === 'palco' && f.key === 'stage') || (c.projectType === 'activation' && (f.key === 'touchScreens' || f.key === 'backdrops'))} onCheckedChange={v => update(f.key, v === true)} aria-label={f.title}/></label>)}</div>
       <div className="color-row"><label htmlFor="brand-color">Cor de destaque<small>Aplicada ao LED e aos elementos</small></label><div className="color-control"><input id="brand-color" type="color" value={c.color} onChange={e => update('color', e.target.value)}/><span>{c.color.toUpperCase()}</span></div></div>
       </TabsContent><TabsContent value="params">
@@ -1356,9 +1365,10 @@ export default function Home() {
                 const isQuantityField = field.key === 'attendeeCount' || field.key === 'chairExtraCount';
                 return c.chairGenerationMode !== 'fill' || !isQuantityField;
             }).map(field => <label className="field" key={field.key}>{field.key === 'coffeeTableCount' && c.loungeMode === 'set' ? 'Quantidade de conjuntos' : field.label}<div className="unit-input"><input type="number" inputMode={field.unit === 'un' ? 'numeric' : 'decimal'} min={field.min ?? .1} max={c.projectType === 'activation' && field.key === 'touchCount' ? 30 : field.max ?? 30} step={field.step ?? (field.unit === 'un' ? 1 : field.key === "showcaseGlassThickness" ? .001 : field.key === "roundTableTopThickness" || field.key === "rectTableTopThickness" || field.key === "bistroTableTopThickness" || field.key === "coffeeTableTopThickness" || field.key === "stoolSeatThickness" || field.key === "stoolBistroGap" ? 0.01 : 0.05)} value={Number.isNaN(c[field.key]) ? '' : c[field.key] as number} onChange={e => update(field.key, e.target.value === '' ? NaN : Number(e.target.value))}/><span>{field.unit ?? 'm'}</span></div></label>)}</div></div>)}
-      {!availableElements.some(f => c[f.key]) && <p className="tab-help">Selecione um elemento na aba Projeto para ajustar suas medidas.</p>}
+      {!(c.projectType === 'activation' && c.activationModel === 'demo') && !availableElements.some(f => c[f.key]) && <p className="tab-help">Selecione um elemento na aba Projeto para ajustar suas medidas.</p>}
       {c.led && <div className="texture-section"><h3>Textura da TV / LED</h3><p>Escolha a arte que vai aparecer na tela. A imagem inteira é ajustada às medidas do LED.</p><label className="upload-label" htmlFor="tv-image">Escolher imagem JPG ou PNG<input id="tv-image" type="file" accept="image/png,image/jpeg" onChange={handleImage}/></label><small>Até 2 MB · incorporada ao script · imagem estática</small>{c.screenImage ? <div className="texture-preview"><ImagePreview src={c.screenImage} alt="Arte selecionada para a tela de TV" width={320} height={180} unoptimized/><span>{c.screenName}</span><button onClick={() => { imageRequest.current += 1; setC(prev => ({ ...prev, screenImage: '', screenName: '' })); setNotice('Imagem removida.'); }}>Remover imagem</button></div> : <p className="tab-help">Sem imagem, a tela usa a cor de destaque.</p>}</div>}
       </TabsContent><TabsContent value="materials"><p className="tab-help">Escolha o acabamento de cada parte. Madeira e concreto usam textura procedural; metal e vidro recebem propriedades de superfície.</p><div className="material-fields">{materialFields.filter((field) => {
+            if (field.key === 'demoBenchMat' || field.key === 'demoProductMat') return c.projectType === 'activation' && c.activationModel === 'demo';
             if (field.key === 'wallMat')
                 return c.back || c.left || c.right;
             return !field.enabled || c[field.enabled];
@@ -1435,11 +1445,11 @@ export default function Home() {
           </div>
         </>}
         {Object.keys(c.objectTransforms).length > 0 && <button type="button" className="generate-button" onClick={() => commitTransforms({})}>Restaurar toda a distribuição</button>}
-        <p className="tab-help">Alterar medidas, quantidades ou distribuição restaura os ajustes individuais. Materiais e cores preservam as posições.</p>
+        <p className="tab-help">{c.projectType === 'activation' && c.activationModel === 'demo' ? 'Medidas que alteram a ocupação no piso restauram a distribuição. Produto, altura da bancada, materiais e cores preservam a posição da estação.' : 'Alterar medidas, quantidades ou distribuição restaura os ajustes individuais. Materiais e cores preservam as posições.'}</p>
         {(dragPreview?.error || assemblyError) && <p role="alert" className="error">{dragPreview?.error || assemblyError}</p>}
       </div>
       <Tabs value={tab} onValueChange={setTab}><div className="result-header"><TabsList className="view-tabs"><TabsTrigger value="plan"><Square size={16}/>Planta</TabsTrigger><TabsTrigger value="code"><Code2 size={17}/>{c.target === 'max' ? 'MaxScript' : 'Script Python'}</TabsTrigger></TabsList><span className="plan-scale">{valid ? `${num(c.width)} × ${num(c.depth)} m` : 'Confira as medidas'}</span></div>
-      <TabsContent value="plan"><div className="plan-title"><span>VISTA SUPERIOR</span><small>Planta esquemática · sem perspectiva</small></div><div className="drawing">{valid ? <Plan c={display} selectedId={selectedUnit?.id ?? null} onSelect={selectUnit} snap={snapToGrid} onDragPreview={previewDrag} onDrop={dropObject}/> : <div className="empty"><Ruler size={32}/><p>{validationMessage}</p></div>}</div><div className="legend">{(c.back || c.left || c.right) && <span><i className="legend-wall"/>Parede</span>}<span><i style={{ background: c.color }}/>Elementos</span>{c.projectType === 'activation' ? <><span><i style={{background:'#fbbf24'}}/>Espera</span><span><i style={{background:'#34d399'}}/>Participação</span><span><i style={{background:'#60a5fa'}}/>Circulação</span>{c.activationModel === 'photo' && <span><i style={{background:'#c084fc'}}/>Captura / câmera</span>}</> : <span><i className="legend-light"/>Spots</span>}</div><div className="model-info"><div><span>ÁREA TOTAL</span><strong>{valid ? num(c.width * c.depth) : '—'} <small>m²</small></strong></div><div><span>ALTURA DE MONTAGEM</span><strong>{valid ? num(c.height) : '—'} <small>m</small></strong></div><div><span>{c.target === 'max' ? 'EXPORTAÇÃO' : 'RENDER'}</span><strong>{c.target === 'max' ? '3ds Max' : 'Cycles'} <small>{c.target === 'max' ? '.ms' : '64 samples'}</small></strong></div></div></TabsContent>
+      <TabsContent value="plan"><div className="plan-title"><span>VISTA SUPERIOR</span><small>Planta esquemática · sem perspectiva</small></div><div className="drawing">{valid ? <Plan c={display} selectedId={selectedUnit?.id ?? null} onSelect={selectUnit} snap={snapToGrid} onDragPreview={previewDrag} onDrop={dropObject}/> : <div className="empty"><Ruler size={32}/><p>{validationMessage}</p></div>}</div><div className="legend">{(c.back || c.left || c.right) && <span><i className="legend-wall"/>Parede</span>}<span><i style={{ background: c.color }}/>Elementos</span>{c.projectType === 'activation' ? <><span><i style={{background:'#fbbf24'}}/>Espera</span><span><i style={{background:'#34d399'}}/>Participação</span><span><i style={{background:'#60a5fa'}}/>Circulação</span>{c.activationModel === 'photo' && <span><i style={{background:'#c084fc'}}/>Captura / câmera</span>}{c.activationModel === 'demo' && <span><i style={{background:'#fb923c'}}/>Demonstrador</span>}</> : <span><i className="legend-light"/>Spots</span>}</div><div className="model-info"><div><span>ÁREA TOTAL</span><strong>{valid ? num(c.width * c.depth) : '—'} <small>m²</small></strong></div><div><span>ALTURA DE MONTAGEM</span><strong>{valid ? num(c.height) : '—'} <small>m</small></strong></div><div><span>{c.target === 'max' ? 'EXPORTAÇÃO' : 'RENDER'}</span><strong>{c.target === 'max' ? '3ds Max' : 'Cycles'} <small>{c.target === 'max' ? '.ms' : '64 samples'}</small></strong></div></div></TabsContent>
       <TabsContent value="code"><div className="code-toolbar"><span>{output ? filename(output.config) : 'Seu script aparecerá aqui'}</span><div><button onClick={copy} disabled={!output || !!dirty} aria-label="Copiar script">{copied ? <Check size={16}/> : <Copy size={16}/>} {copied ? 'Copiado' : 'Copiar'}</button><button onClick={download} disabled={!output || !!dirty}><Download size={16}/>Baixar {output?.config.target === 'max' ? '.ms' : '.py'}</button></div></div>{dirty && <div className="stale" role="status">Você alterou o projeto. Clique em “Gerar script” para atualizar o arquivo.</div>}{output ? <pre className="code"><code>{output.code.replace(/data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+/g, '[imagem incorporada — baixe ou copie o script completo]').replace(/local IMAGEM_TV = "[A-Za-z0-9+/=]+"/g, 'local IMAGEM_TV = "[imagem incorporada — baixe ou copie o script completo]"')}</code></pre> : <div className="empty"><Code2 size={38}/><h3>Seu projeto, em código.</h3><p>Escolha os elementos ao lado e clique em<br />“Gerar script”.</p></div>}</TabsContent>
     </Tabs><p className="notice" role="status" aria-live="polite">{notice}</p>
       <div className="blender-guide"><div className="guide-icon"><Box size={22}/></div><div><h3>Como abrir no {c.target === 'max' ? '3ds Max' : 'Blender'}</h3>{c.target === 'max' ? <ol><li><b>1</b>Baixe o arquivo <strong>.ms</strong>.</li><li><b>2</b>Abra o 3ds Max e entre em <strong>Scripting → Run Script</strong>.</li><li><b>3</b>Escolha o arquivo. Use <strong>CB_Camera_Frontal</strong> para visualizar.</li></ol> : <ol><li><b>1</b>Comece com uma cena vazia e entre em <strong>Scripting</strong>.</li><li><b>2</b>Em <strong>Open</strong>, abra o arquivo .py baixado.</li><li><b>3</b>Clique em <strong>Run Script</strong>. Use <strong>F12</strong> para renderizar.</li></ol>}</div></div>

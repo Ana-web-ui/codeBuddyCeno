@@ -5,7 +5,7 @@ import type { ReservedArea } from './library.js';
 
 export type ObjectTransform = { x: number; y: number; rotation: number };
 export type AssemblyConfig = { objectTransforms: Record<string, ObjectTransform> };
-export type AssemblyRole = 'roundTables' | 'rectTables' | 'bistroTables' | 'tableChairs' | 'stools' | 'pedestals' | 'armchairs' | 'puffs' | 'coffeeTables' | 'showcases' | typeof extraObjectDefinitions[number]['id'];
+export type AssemblyRole = 'demoStations' | 'roundTables' | 'rectTables' | 'bistroTables' | 'tableChairs' | 'stools' | 'pedestals' | 'armchairs' | 'puffs' | 'coffeeTables' | 'showcases' | typeof extraObjectDefinitions[number]['id'];
 export type AssemblyMember = {
     role: AssemblyRole; index: number; x: number; y: number; rotation: number;
     width: number; depth: number; circle: boolean; material: Config['floorMat'];
@@ -24,6 +24,7 @@ export function buildAssembly(c: Config, scene: AssemblyScene): AssemblyUnit[] {
         const common = { role, index, x, y, rotation: (scene[role].rotations?.[index] ?? 0) * 180 / Math.PI };
         const shape = (width: number, depth: number, material: Config['floorMat'], circle = false): AssemblyMember => ({ ...common, width, depth, material, circle });
         switch (role) {
+            case 'demoStations': return shape(c.demoBenchWidth+.08,c.demoBenchDepth+.08,c.demoBenchMat);
             case 'roundTables': return shape(c.roundTableDiameter, c.roundTableDiameter, c.roundTableMat, true);
             case 'rectTables': return shape(c.rectTableWidth, c.rectTableDepth, c.rectTableMat);
             case 'bistroTables': return shape(c.bistroTableDiameter, c.bistroTableDiameter, c.bistroTableMat, true);
@@ -67,11 +68,12 @@ export function buildAssembly(c: Config, scene: AssemblyScene): AssemblyUnit[] {
     }
     add('showcases', 'Vitrine');
     for (const def of extraObjectDefinitions) add(def.id, def.label);
+    add('demoStations', 'Demonstração de produto');
     if (c.projectType === 'activation') {
         const stations = activationGeometry(c)!.baseStations;
         for (const unit of units) {
             const station = stations.find(s => s.id === unit.id);
-            if (station) { unit.rotation = station.rotation; unit.label = c.activationModel === 'photo' ? 'Espaço para fotos' : `Estação de interação ${Number(unit.id.split(':')[1]) + 1}`; }
+            if (station) { unit.rotation = station.rotation; unit.label = c.activationModel === 'demo' ? 'Demonstração de produto' : c.activationModel === 'photo' ? 'Espaço para fotos' : `Estação de interação ${Number(unit.id.split(':')[1]) + 1}`; }
         }
     }
     return units;

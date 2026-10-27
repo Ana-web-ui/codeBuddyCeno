@@ -47,6 +47,11 @@ ${code}
         setUserProp obj "code_buddy_id" "${unit.id}"
         if (findItem criados obj) == 0 do cbRegistrar obj
     )
+${unit.id.startsWith('demoStations:')?`    local raizDemo = cbRegistrar (Dummy name:"${name}_Grupo" pos:[(${t.x}*METRO),(${t.y}*METRO),(0.1*METRO)])
+    raizDemo.rotation = angleaxis ${t.rotation} [0,0,1]
+    setUserProp raizDemo "code_buddy_role" "assembly_unit"
+    setUserProp raizDemo "code_buddy_id" "${unit.id}"
+    for obj in cbNovos do obj.parent = raizDemo`:''}
 )
 `;
 }

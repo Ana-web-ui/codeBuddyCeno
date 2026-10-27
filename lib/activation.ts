@@ -1,4 +1,15 @@
-export type ActivationModel = 'touch' | 'photo';
+import type { MaterialKind } from './generator';
+export type ActivationModel = 'touch' | 'photo' | 'demo';
+
+export const demoDefaults = {
+    demoBenchWidth: 2, demoBenchDepth: .8, demoBenchHeight: 1,
+    demoBenchMat: 'brand' as MaterialKind,
+    demoProductWidth: .4, demoProductDepth: .3, demoProductHeight: .4,
+    demoProductMat: 'white' as MaterialKind,
+    demoProductX: 0, demoProductY: 0,
+    demoPresenterWidth: 1.2, demoPresenterDepth: 1.2,
+    demoPresenterGap: .3, demoAudienceGap: .6,
+};
 
 export const photoDefaults = {
     activationPhotoPersonDistance: 1.2,
@@ -8,7 +19,7 @@ export const photoDefaults = {
     activationPhotoCameraHeight: 1.5,
 };
 
-export type ActivationConfig = typeof photoDefaults & {
+export type ActivationConfig = typeof photoDefaults & typeof demoDefaults & {
     activationModel: ActivationModel;
     activationEntranceSide: 'front' | 'back' | 'left' | 'right';
     activationExitSide: 'front' | 'back' | 'left' | 'right';
@@ -31,6 +42,7 @@ export type ActivationConfig = typeof photoDefaults & {
 export const activationDefaults: ActivationConfig = {
     activationModel: 'touch',
     ...photoDefaults,
+    ...demoDefaults,
     activationEntranceSide: 'front', activationExitSide: 'right', activationEdgeMargin: 0.2,
     activationWaitingEnabled: true, activationWaitingWidth: 2, activationWaitingDepth: 2,
     activationWaitingManual: false, activationWaitingX: 0, activationWaitingY: 0,
@@ -45,4 +57,5 @@ export const activationModels = [
         label: 'Interação em totem',
     },
     { value: 'photo', label: 'Espaço para fotos' },
+    { value: 'demo', label: 'Demonstração de produto' },
 ] as const;
