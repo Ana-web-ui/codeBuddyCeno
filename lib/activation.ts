@@ -1,5 +1,6 @@
 import type { MaterialKind } from './generator';
-export type ActivationModel = 'touch' | 'photo' | 'demo';
+import { samplingDefaults } from './sampling';
+export type ActivationModel = 'touch' | 'photo' | 'demo' | 'sampling';
 
 export const demoDefaults = {
     demoBenchWidth: 2, demoBenchDepth: .8, demoBenchHeight: 1,
@@ -19,7 +20,7 @@ export const photoDefaults = {
     activationPhotoCameraHeight: 1.5,
 };
 
-export type ActivationConfig = typeof photoDefaults & typeof demoDefaults & {
+export type ActivationConfig = typeof photoDefaults & typeof demoDefaults & typeof samplingDefaults & {
     activationModel: ActivationModel;
     activationEntranceSide: 'front' | 'back' | 'left' | 'right';
     activationExitSide: 'front' | 'back' | 'left' | 'right';
@@ -43,6 +44,7 @@ export const activationDefaults: ActivationConfig = {
     activationModel: 'touch',
     ...photoDefaults,
     ...demoDefaults,
+    ...samplingDefaults,
     activationEntranceSide: 'front', activationExitSide: 'right', activationEdgeMargin: 0.2,
     activationWaitingEnabled: true, activationWaitingWidth: 2, activationWaitingDepth: 2,
     activationWaitingManual: false, activationWaitingX: 0, activationWaitingY: 0,
@@ -58,4 +60,5 @@ export const activationModels = [
     },
     { value: 'photo', label: 'Espaço para fotos' },
     { value: 'demo', label: 'Demonstração de produto' },
+    { value: 'sampling', label: 'Experimentação e amostras' },
 ] as const;

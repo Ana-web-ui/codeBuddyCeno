@@ -208,7 +208,7 @@ test('controles reais de lounge e banquetas limpam ajustes ao trocar a distribui
     assert.equal(state.bistroTables,true);
 });
 
-test('ativação inicial contém somente dois equipamentos touch e salva JSON versão 9',()=>{
+test('ativação inicial contém somente dois equipamentos touch e salva JSON versão 10',()=>{
     const c=createProjectConfig('activation');
     validate(c);
     assert.equal(c.projectType,'activation'); assert.equal(c.activationModel,'touch');
@@ -218,7 +218,7 @@ test('ativação inicial contém somente dois equipamentos touch e salva JSON ve
     assert.equal(units.length,2);
     assert.ok(units.every(unit=>unit.id.startsWith('touchScreens:')));
     const text=serializeProject(c);
-    assert.equal(JSON.parse(text).version,9);
+    assert.equal(JSON.parse(text).version,10);
     writeFileSync(join(output,'activation.json'),text);
     const restored=parseProject(readFileSync(join(output,'activation.json'),'utf8'));
     assert.deepEqual(restored,c);
@@ -257,7 +257,7 @@ test('JSON versão 6 exige modelo e versões antigas não mascaram modelo invál
         assert.throws(()=>parseProject(JSON.stringify({format:'code-buddy-project',version,
             config:{...createProjectConfig('activation'),activationModel}})));
     }
-    assert.throws(()=>parseProject(JSON.stringify({...doc,version:10})),/versão/);
+    assert.throws(()=>parseProject(JSON.stringify({...doc,version:11})),/versão/);
 });
 
 test('troca real para ativação recupera rascunho ausente e preserva o estande',()=>{

@@ -5,8 +5,8 @@ import { activationGeometry } from './activation-geometry';
 export function activationGuides(c: Config): string {
     if(c.projectType!=='activation'||!c.activationExportGuides) return '';
     const g=activationGeometry(c)!;
-    const zones=[...(g.waiting?[g.waiting]:[]),...g.participation,...(g.photo?[g.photo.capture,g.photo.camera]:[]),...(g.demo?[g.demo.presenter,g.demo.reserved]:[]),...g.circulation];
-    const owner=(z:typeof zones[number])=>g.participation.includes(z)?g.stations[g.participation.indexOf(z)].id:g.demo&&(z===g.demo.presenter||z===g.demo.reserved)?g.demo.stationId:g.photo&&(z===g.photo.capture||z===g.photo.camera)?g.photo.stationId:'';
+    const zones=[...(g.waiting?[g.waiting]:[]),...g.participation,...(g.photo?[g.photo.capture,g.photo.camera]:[]),...(g.demo?[g.demo.presenter,g.demo.reserved]:[]),...(g.sampling?[g.sampling.team,g.sampling.reserved]:[]),...g.circulation];
+    const owner=(z:typeof zones[number])=>g.participation.includes(z)?g.stations[g.participation.indexOf(z)].id:g.sampling&&(z===g.sampling.team||z===g.sampling.reserved)?g.sampling.stationId:g.demo&&(z===g.demo.presenter||z===g.demo.reserved)?g.demo.stationId:g.photo&&(z===g.photo.capture||z===g.photo.camera)?g.photo.stationId:'';
     if(c.target==='blender') return `
 # Zonas conceituais: referências sem geometria renderizável.
 guias_ativacao = bpy.data.collections.new('CB_Zonas_Ativacao')
@@ -37,7 +37,7 @@ for nome, x, y, largura, profundidade, unidade_id in ${JSON.stringify(zones.map(
 ${zones.map(z=>`    guiaZona = cbRegistrar (Dummy name:"${z.name}" boxsize:[(${z.width}*METRO),(${z.depth}*METRO),(0.01*METRO)] pos:[(${z.x}*METRO),(${z.y}*METRO),(0.105*METRO)])
     camadaZonas.addNode guiaZona
     guiaZona.renderable = false
-    setUserProp guiaZona "code_buddy_role" "activation_zone"${owner(z)&&(g.photo||g.demo)?`
+    setUserProp guiaZona "code_buddy_role" "activation_zone"${owner(z)&&(g.photo||g.demo||g.sampling)?`
     setUserProp guiaZona "code_buddy_id" "${owner(z)}"
     local raizesFoto = for obj in objects where (getUserProp obj "CodeBuddy") == nomeGeracao and (getUserProp obj "code_buddy_role") == "assembly_unit" and (getUserProp obj "code_buddy_id") == "${owner(z)}" collect obj
     if raizesFoto.count > 0 do guiaZona.parent = raizesFoto[1]`:''}`).join('\n')}

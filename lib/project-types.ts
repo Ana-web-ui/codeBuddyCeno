@@ -4,7 +4,7 @@ import type { ActivationModel } from './activation';
 
 /** A troca do modelo inicia uma distribuição coerente e mantém os dados gerais do projeto. */
 export function createActivationModelConfig(current: Config, model: ActivationModel): Config {
-    if (!['touch', 'photo', 'demo'].includes(model)) throw new Error('Modelo de ativação inválido.');
+    if (!['touch', 'photo', 'demo', 'sampling'].includes(model)) throw new Error('Modelo de ativação inválido.');
     const initial = createProjectConfig('activation');
     return {
         ...initial, name: current.name, target: current.target, color: current.color,
@@ -21,6 +21,11 @@ export function createActivationModelConfig(current: Config, model: ActivationMo
             touchScreens: false, backdrops: false,
             activationParticipationWidth: 2.5, activationParticipationDepth: 1.5,
             activationExportGuides: true,
+        } : {}),
+        ...(model === 'sampling' ? {
+            touchScreens:false, backdrops:false,
+            activationParticipationWidth:2, activationParticipationDepth:1.2,
+            activationExportGuides:true,
         } : {}),
     };
 }

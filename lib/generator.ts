@@ -23,6 +23,7 @@ import { getStandWalls } from './stand-config.js';
 import { activationDefaults } from './activation';
 import { activationGeometry } from './activation-geometry';
 import { activationGuides, activationPhotoCamera } from './activation-exporters';
+import { blenderSampling, maxSampling } from './sampling-exporters';
 import { blenderDemoStation, maxDemoStation } from './demo-exporters';
 import type { ActivationConfig } from './activation';
 export type MaterialKind = 'white' | 'brand' | 'wood' | 'metal' | 'glass' | 'concrete' | 'plastic';
@@ -550,7 +551,7 @@ export function extraObjectGeometry(c: Config) {
         // Reutiliza as verificações construtivas, sem a distribuição genérica.
         const result = layoutExtraObjects({ ...c, touchCount: 1 }, () => []);
         const role = c.activationModel === 'photo' ? 'backdrops' : 'touchScreens';
-        if(c.activationModel !== 'demo') result[role] = { positions: g.baseStations.map(s => [s.x, s.y]), generatedCount: g.stations.length };
+        if(c.activationModel !== 'demo' && c.activationModel !== 'sampling') result[role] = { positions: g.baseStations.map(s => [s.x, s.y]), generatedCount: g.stations.length };
         return result;
     }
     return layoutExtraObjects(c, (gap) => {
@@ -588,7 +589,7 @@ export function validate(c: Config) {
         throw new Error('Tipo de projeto inválido.');
     }
 
-    if (!['touch','photo','demo'].includes(c.activationModel)) {
+    if (!['touch','photo','demo','sampling'].includes(c.activationModel)) {
         throw new Error('Modelo de ativação inválido.');
     }
     if (c.projectType === 'palco') {
@@ -619,7 +620,7 @@ export function validate(c: Config) {
     for (const [key, initial] of Object.entries(defaults))
         if (typeof initial === 'number' && (!Number.isFinite(c[key as keyof Config] as number)))
             throw new Error('Confira os parâmetros dos elementos: todas as medidas e quantidades devem conter números.');
-    for (const k of ['demoBenchMat', 'demoProductMat', 'floorMat', 'wallMat', 'counterMat', 'stageMat', 'totemMat', 'roundTableMat', 'rectTableMat', 'bistroTableMat', 'stoolMat', 'pedestalMat', 'armchairMat', 'puffMat', 'coffeeTableMat', 'showcaseBaseMat', 'shelfMat', 'backdropMat', 'touchMat', 'cabinetMat', 'openCubeMat', 'rugMat'] as const)
+    for (const k of ['samplingCounterMat','samplingSupportMat','samplingSampleMat','demoBenchMat', 'demoProductMat', 'floorMat', 'wallMat', 'counterMat', 'stageMat', 'totemMat', 'roundTableMat', 'rectTableMat', 'bistroTableMat', 'stoolMat', 'pedestalMat', 'armchairMat', 'puffMat', 'coffeeTableMat', 'showcaseBaseMat', 'shelfMat', 'backdropMat', 'touchMat', 'cabinetMat', 'openCubeMat', 'rugMat'] as const)
         if (!materials.some(m => m.value === c[k]))
             throw new Error('Material inválido.');
     const check = (keys: (keyof Config)[], label: string) => {
@@ -744,9 +745,10 @@ export function validate(c: Config) {
 /** Posições automáticas são a base dos ajustes; não chama validate para evitar recursão. */
 export function assemblyScene(c: Config): AssemblyScene {
     const tables = tableGeometry(c), lounge = loungeGeometry(c);
-    const demo = c.projectType === 'activation' && c.activationModel === 'demo' ? activationGeometry(c) : null;
+    const demo = c.projectType === 'activation' && (c.activationModel === 'demo' || c.activationModel === 'sampling') ? activationGeometry(c) : null;
     return { roundTables: tables.roundTables, rectTables: tables.rectTables, bistroTables: tables.bistroTables,
-        demoStations: { positions: demo ? demo.baseStations.map(s=>[s.x,s.y]) : [] },
+        demoStations: { positions: demo?.demo ? demo.baseStations.map(s=>[s.x,s.y]) : [] },
+        samplingStations: { positions: demo?.sampling ? demo.baseStations.map(s=>[s.x,s.y]) : [] },
         tableChairs: tables.tableChairs, stools: stoolGeometry(c), pedestals: pedestalGeometry(c),
         armchairs: lounge.armchairs, puffs: lounge.puffs, coffeeTables: coffeeTableGeometry(c),
         showcases: showcaseGeometry(c), ...extraObjectGeometry(c) };
@@ -771,6 +773,7 @@ function assemblyScript(c: Config): string {
             // Os exportadores existentes precisam apenas das posições, rotação e contagem.
             const positions = { ...layout, generatedCount: indices.length, rows: 0 };
             switch (role) {
+                case 'samplingStations': return blender ? blenderSampling(c,positions) : maxSampling(c,positions);
                 case 'demoStations': return blender ? blenderDemoStation(c,positions) : maxDemoStation(c,positions);
                 case 'roundTables': return blender ? blenderRoundTables(c, positions) : maxRoundTables(c, positions);
                 case 'rectTables': return blender ? blenderRectTables(c, positions) : maxRectTables(c, positions);

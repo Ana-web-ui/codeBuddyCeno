@@ -5,10 +5,11 @@ import { checkTransforms } from './assembly';
 import { storageDefaults } from './storage';
 import { activationDefaults, photoDefaults, demoDefaults } from './activation';
 import { materials } from './generator';
+import { samplingDefaults } from './sampling';
 
 export const MAX_PROJECT_BYTES = 4 * 1024 * 1024;
 const FORMAT = 'code-buddy-project';
-const VERSION = 9;
+const VERSION = 10;
 
 function object(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -23,6 +24,7 @@ function checkedConfig(
     migrateZones = false,
     migratePhoto = false,
     migrateDemo = false,
+    migrateSampling = false,
 ): Config  {
     if (!object(value)) {
         throw new Error('O projeto é inválido.');
@@ -44,7 +46,8 @@ function checkedConfig(
         const present = Object.hasOwn(value, key);
 
         const canUseDefault =
-            legacy || (migrateDemo && Object.hasOwn(demoDefaults, key)) ||
+            legacy || (migrateSampling && Object.hasOwn(samplingDefaults,key)) ||
+            (migrateDemo && Object.hasOwn(demoDefaults, key)) ||
             (migratePhoto && Object.hasOwn(photoDefaults, key)) ||
             (migrateZones && key !== 'activationModel' && Object.hasOwn(activationDefaults, key)) ||
             (
@@ -72,7 +75,8 @@ function checkedConfig(
         }
     }
     const enums: Record<string, readonly string[]> = {
-        activationModel: ['touch', 'photo', 'demo'],
+        activationModel: ['touch', 'photo', 'demo', 'sampling'],
+        samplingWasteSide: ['left','right'],
         chairDistribution: ['central', 'lateral'],
         chairGenerationMode: ['quantity', 'fill'],
         stoolDistribution: ['free', 'bistro'],
@@ -125,6 +129,7 @@ export function parseProject(text: string): Config {
             document.version !== 6 &&
             document.version !== 7 &&
             document.version !== 8 &&
+            document.version !== 9 &&
             document.version !== VERSION
         ) {
             throw new Error(
@@ -141,6 +146,7 @@ export function parseProject(text: string): Config {
             typeof document.version === 'number' && document.version <= 6,
             typeof document.version === 'number' && document.version <= 7,
             typeof document.version === 'number' && document.version <= 8,
+            typeof document.version === 'number' && document.version <= 9,
         );
     }
     // Formatos antigos da interface: { config } e configuração direta.

@@ -1,10 +1,12 @@
 import type { Config } from './generator';
+import { samplingLayout, validateSampling } from './sampling';
 
 export type Zone = { name: string; x: number; y: number; width: number; depth: number };
 export type DemoGeometry = {
     bench: Zone; product: Zone & { z: number; height: number };
     presenter: Zone; audience: Zone; reserved: Zone; stationId: string; rotation: number;
 };
+export type SamplingGeometry = ReturnType<typeof samplingLayout> & { stationId:string; rotation:number };
 type Point = { x: number; y: number };
 const EPS = 1e-7;
 export function zonesOverlap(a: Zone, b: Zone) {
@@ -60,12 +62,16 @@ export function activationGeometry(c: Config) {
         throw new Error('Escolha lados diferentes para entrada e saída.');
     if(c.activationEntranceWidth<c.activationCirculationWidth||c.activationExitWidth<c.activationCirculationWidth)
         throw new Error('Entrada e saída devem ter pelo menos a largura da circulação.');
-    const isPhoto=c.activationModel==='photo', isDemo=c.activationModel==='demo';
-    if(!isPhoto&&!isDemo&&(!c.touchScreens||!Number.isInteger(c.touchCount)||c.touchCount<1||c.touchCount>30))
+    const isPhoto=c.activationModel==='photo', isDemo=c.activationModel==='demo',isSampling=c.activationModel==='sampling';
+    if(!isPhoto&&!isDemo&&!isSampling&&(!c.touchScreens||!Number.isInteger(c.touchCount)||c.touchCount<1||c.touchCount>30))
         throw new Error('A ativação precisa de 1 a 30 totens de interação.');
     if(isPhoto&&(!c.backdrops||c.backdropCount!==1||c.touchScreens))
         throw new Error('Espaço para fotos precisa de um backdrop e não inclui totens touch.');
     if(isDemo&&(c.backdrops||c.touchScreens)) throw new Error('Demonstração de produto inclui apenas a bancada, o produto e as zonas de atividade.');
+    if(isSampling) {
+        if(c.backdrops||c.touchScreens)throw new Error('Experimentação e amostras não inclui backdrop ou totem touch.');
+        validateSampling(c);
+    }
     if(!isPhoto&&c.backdrops) throw new Error('Interação em totem não inclui backdrop.');
     if([c.back,c.left,c.right,c.led,c.counter,c.stage,c.totem,c.spots,c.chairs,c.storageEnabled,c.roundTables,c.rectTables,c.bistroTables,c.stools,c.coffeeTables,c.armchairs,c.puffs,c.pedestals,c.showcases,c.shelving,c.cabinets,c.openCubes,c.roundRugs].some(Boolean))
         throw new Error('Este modelo de ativação contém elementos que não estão disponíveis.');
@@ -101,8 +107,9 @@ export function activationGeometry(c: Config) {
     const margin=c.activationEdgeMargin, cw=c.activationCirculationWidth;
     const area:Zone={name:'Área',x:0,y:0,width:c.width-2*margin,depth:c.depth-2*margin};
     const orient=(z:Zone):Zone=>({...z,...rotate(z),width:sideways?z.depth:z.width,depth:sideways?z.width:z.depth});
-    const stationWidth=isDemo?Math.max(c.demoBenchWidth+.08,c.demoPresenterWidth,c.activationParticipationWidth):isPhoto?Math.max(c.backdropWidth,c.activationParticipationWidth,c.activationPhotoCameraWidth):Math.max(c.touchWidth+.1,c.activationParticipationWidth);
-    const stationCount=isPhoto||isDemo?1:c.touchCount,baseDepth=isDemo?c.demoBenchDepth+.08:isPhoto?c.backdropBaseDepth:c.touchBaseDepth;
+    const localSampling=isSampling?samplingLayout(c):null;
+    const stationWidth=localSampling?localSampling.reserved.width:isDemo?Math.max(c.demoBenchWidth+.08,c.demoPresenterWidth,c.activationParticipationWidth):isPhoto?Math.max(c.backdropWidth,c.activationParticipationWidth,c.activationPhotoCameraWidth):Math.max(c.touchWidth+.1,c.activationParticipationWidth);
+    const stationCount=isPhoto||isDemo||isSampling?1:c.touchCount,baseDepth=isDemo?c.demoBenchDepth+.08:isPhoto?c.backdropBaseDepth:c.touchBaseDepth;
     const opposite=sides.indexOf(c.activationExitSide)===(sides.indexOf(c.activationEntranceSide)+2)%4;
     const centerGap=opposite?Math.max(c.activationStationGap,c.activationExitWidth,cw):c.activationStationGap;
     const span=stationCount*stationWidth+(stationCount-1)*c.activationStationGap+(opposite?centerGap-c.activationStationGap:0);
@@ -110,8 +117,8 @@ export function activationGeometry(c: Config) {
     const leftCount=Math.ceil(stationCount/2);
     const baseStations=Array.from({length:stationCount},(_,i)=>{
         const x=opposite?(i<leftCount?-centerGap/2-stationWidth/2-(leftCount-1-i)*(stationWidth+c.activationStationGap):centerGap/2+stationWidth/2+(i-leftCount)*(stationWidth+c.activationStationGap)):(i-(stationCount-1)/2)*(stationWidth+c.activationStationGap);
-        const y=depth/2-margin-baseDepth/2-(isDemo?c.demoPresenterDepth+c.demoPresenterGap:0);
-        return {...rotate({x,y}),rotation:angle,id:`${isDemo?'demoStations':isPhoto?'backdrops':'touchScreens'}:${i}`};
+        const y=localSampling?depth/2-margin-localSampling.reserved.y-localSampling.reserved.depth/2:depth/2-margin-baseDepth/2-(isDemo?c.demoPresenterDepth+c.demoPresenterGap:0);
+        return {...rotate({x:x-(localSampling?.reserved.x??0),y}),rotation:angle,id:`${isSampling?'samplingStations':isDemo?'demoStations':isPhoto?'backdrops':'touchScreens'}:${i}`};
     });
     const stations=baseStations.map(base=>({...base,...c.objectTransforms[base.id]}));
     for(const id of Object.keys(c.objectTransforms)) if(!stations.some(s=>s.id===id)) throw new Error('Há um ajuste de objeto que não existe nesta ativação. Restaure a distribuição.');
@@ -129,8 +136,25 @@ export function activationGeometry(c: Config) {
     }
     let photo: { capture:Zone; person:Zone; camera:Zone; stationId:string; rotation:number } | null=null;
     let demo: DemoGeometry | null=null;
+    let sampling:SamplingGeometry|null=null;
     stations.forEach((s,i)=>{
         const a=s.rotation*Math.PI/180,n={x:Math.sin(a),y:-Math.cos(a)},cos=Math.abs(Math.cos(a)),sin=Math.abs(Math.sin(a));
+        if(localSampling) {
+            const placed=(z:Zone):Zone=>({...z,x:s.x+Math.cos(a)*z.x-Math.sin(a)*z.y,y:s.y+Math.sin(a)*z.x+Math.cos(a)*z.y,width:cos*z.width+sin*z.depth,depth:sin*z.width+cos*z.depth});
+            const data={counter:placed(localSampling.counter),support:placed(localSampling.support),team:placed(localSampling.team),audience:placed(localSampling.audience),waste:localSampling.waste?placed(localSampling.waste):null,reserved:placed(localSampling.reserved),samples:localSampling.samples.map(placed),stationId:s.id,rotation:s.rotation};
+            for(const z of [data.counter,data.support,data.team,data.audience,data.reserved,...(data.waste?[data.waste]:[])])inside(z);
+            sampling=data;
+            equipment.push(data.counter,data.support,...(data.waste?[data.waste]:[]));participation.push(data.audience);
+            const side={x:Math.cos(a),y:Math.sin(a)};
+            const normal=Math.abs(side.x)>Math.abs(side.y)?{x:Math.sign(side.x),y:0}:{x:0,y:Math.sign(side.y)};
+            for(const z of [data.team,data.audience])access({...data.reserved,...(normal.x?{y:z.y}:{x:z.x})},normal);
+            if(data.waste) {
+                const sign=c.samplingWasteSide==='left'?-1:1;
+                const wasteNormal={x:normal.x*sign,y:normal.y*sign};
+                access({...data.reserved,...(wasteNormal.x?{y:data.waste.y}:{x:data.waste.x})},wasteNormal);
+            }
+            return;
+        }
         if(isDemo) {
             const zone=(name:string,distance:number,w:number,d:number):Zone=>({name,x:s.x+n.x*distance,y:s.y+n.y*distance,width:cos*w+sin*d,depth:sin*w+cos*d});
             const bench=zone('Bancada',0,c.demoBenchWidth+.08,baseDepth);
@@ -179,7 +203,8 @@ export function activationGeometry(c: Config) {
     if(waiting) {inside(waiting);access(waiting,rotate({x:0,y:1}));}
     const photoGeometry=photo as { capture:Zone; person:Zone; camera:Zone; stationId:string; rotation:number } | null;
     const demoGeometry=demo as DemoGeometry | null;
-    const occupied=[...(demoGeometry?[demoGeometry.reserved]:photoGeometry?[photoGeometry.capture]:[...equipment,...participation]),...(waiting?[waiting]:[])];
+    const samplingGeometry=sampling as SamplingGeometry|null;
+    const occupied=[...(samplingGeometry?[samplingGeometry.reserved]:demoGeometry?[demoGeometry.reserved]:photoGeometry?[photoGeometry.capture]:[...equipment,...participation]),...(waiting?[waiting]:[])];
     occupied.forEach((a,i)=>{if(occupied.slice(i+1).some(b=>{
         const ownStation=(a.name.startsWith('Totem ')&&b.name===a.name.replace('Totem ','Participação '));
         return !ownStation&&zonesOverlap(a,b);
@@ -201,5 +226,5 @@ export function activationGeometry(c: Config) {
     const circulation=[entrance,exit,...(margin>0?[edgeAccess(c.activationEntranceSide,c.activationEntranceWidth),edgeAccess(c.activationExitSide,c.activationExitWidth)]:[]),...connectors,...route(entrance,exit,occupied,cw,area)];
     for(const terminal of terminals) circulation.push(...route(entrance,terminal,occupied,cw,area));
     const uniqueCirculation=[...new Map(circulation.map(z=>[[z.x,z.y,z.width,z.depth].map(v=>v.toFixed(7)).join(','),z])).values()];
-    return {baseStations,stations,equipment,participation,waiting,entrance,exit,circulation:uniqueCirculation,photo:photoGeometry,demo:demoGeometry};
+    return {baseStations,stations,equipment,participation,waiting,entrance,exit,circulation:uniqueCirculation,photo:photoGeometry,demo:demoGeometry,sampling:samplingGeometry};
 }
