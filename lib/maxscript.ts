@@ -1,6 +1,7 @@
 import type {Config} from './generator';
 import { geometry } from './generator';
 import { exportProjectKey } from './export-project';
+import { receptionExport } from './reception-exporters';
 import { maxCounters } from './counter-exporters';
 import { maxStorage } from './storage-exporters';
 const msString=(value:string)=>'"'+value.replace(/\\/g,'\\\\').replace(/"/g,'\\"').replace(/[\r\n]/g,' ')+'"';
@@ -215,10 +216,11 @@ ${c.counterDetailed ? maxCounters(c, geometry(c).counterXs, geometry(c).counterY
     renderHeight = 1080
 )
 ${maxStorage(c)}
+${receptionExport(c)}
 select criados
 undo "Orientar estande Code Buddy" on
 (
-    local anguloFrente = ${c.projectType === 'stand' ? c.frontRotation : 0}
+    local anguloFrente = ${c.projectType === 'stand' || c.projectType === 'reception' ? c.frontRotation : 0}
     if anguloFrente != 0 do
     (
         local objetosGeracao = for obj in criados collect obj

@@ -85,6 +85,6 @@ test('JSON versão 8 migra todos os tipos e modelos existentes sem perder ajuste
    const old={...c};for(const key of Object.keys(demoDefaults))delete old[key];
    assert.deepEqual(parseProject(JSON.stringify({format:'code-buddy-project',version:8,config:old})),c);
  }
- const current=JSON.parse(serializeProject(base()));assert.equal(current.version,13);delete current.config.demoProductWidth;
+ const current=JSON.parse(serializeProject(base()));assert.equal(current.version,14);delete current.config.demoProductWidth;
  assert.throws(()=>parseProject(JSON.stringify(current)),/ausente/);
 });

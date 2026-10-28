@@ -28,6 +28,7 @@ import { blenderDemoStation, maxDemoStation } from './demo-exporters';
 import type { ActivationConfig } from './activation';
 import { receptionDefaults, receptionGeometry, validateReception } from './reception.js';
 import type { ReceptionConfig } from './reception.js';
+import { receptionExport } from './reception-exporters';
 import { counterDefaults, validateCounter } from './counter';
 import type { CounterConfig } from './counter';
 import { blenderCounters } from './counter-exporters';
@@ -643,7 +644,7 @@ export function validate(c: Config) {
     for (const [key, initial] of Object.entries(defaults))
         if (typeof initial === 'number' && (!Number.isFinite(c[key as keyof Config] as number)))
             throw new Error('Confira os parâmetros dos elementos: todas as medidas e quantidades devem conter números.');
-    for (const k of ['counterTopMat','counterBaseMat','samplingCounterMat','samplingSupportMat','samplingSampleMat','demoBenchMat', 'demoProductMat', 'floorMat', 'wallMat', 'counterMat', 'stageMat', 'totemMat', 'roundTableMat', 'rectTableMat', 'bistroTableMat', 'stoolMat', 'pedestalMat', 'armchairMat', 'puffMat', 'coffeeTableMat', 'showcaseBaseMat', 'shelfMat', 'backdropMat', 'touchMat', 'cabinetMat', 'openCubeMat', 'rugMat'] as const)
+    for (const k of ['receptionBarrierMat','receptionBeltMat','receptionSignMat','receptionSignTextMat','counterTopMat','counterBaseMat','samplingCounterMat','samplingSupportMat','samplingSampleMat','demoBenchMat', 'demoProductMat', 'floorMat', 'wallMat', 'counterMat', 'stageMat', 'totemMat', 'roundTableMat', 'rectTableMat', 'bistroTableMat', 'stoolMat', 'pedestalMat', 'armchairMat', 'puffMat', 'coffeeTableMat', 'showcaseBaseMat', 'shelfMat', 'backdropMat', 'touchMat', 'cabinetMat', 'openCubeMat', 'rugMat'] as const)
         if (!materials.some(m => m.value === c[k]))
             throw new Error('Material inválido.');
     const check = (keys: (keyof Config)[], label: string) => {
@@ -996,9 +997,11 @@ def identificar(dado):
     return dado
 
 def aplicar_orientacao():
-    angulo = ${c.projectType === 'stand' ? c.frontRotation : 0}
+    angulo = ${c.projectType === 'stand' || c.projectType === 'reception' ? c.frontRotation : 0}
     if angulo == 0:
         return
+    # Consolida inclusive os guias recém-criados antes de preservar suas matrizes.
+    bpy.context.view_layer.update()
     objetos = list(colecao.all_objects)
     conjunto = set(objetos)
     raiz = bpy.data.objects.new(colecao.name + '_Orientacao', None)
@@ -1261,6 +1264,7 @@ def gerar_stand():
 gerar_stand()
 ${blenderStorage(c)}
 ${additions}
+${receptionExport(c)}
 aplicar_orientacao()
 finalizar_geracao()
 `;

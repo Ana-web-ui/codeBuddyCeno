@@ -23,6 +23,7 @@ import { samplingLayout } from '@/lib/sampling';
 import { activationGeometry } from '@/lib/activation-geometry';
 import { storageGeometry } from '@/lib/storage';
 import type { StorageDoorSide, StorageDoorHinge, StorageDoorOpening } from '@/lib/storage';
+import { ReceptionFinishControls } from '@/components/reception-finish-controls';
 import { CounterControls } from '@/components/counter-controls';
 import { receptionGeometry } from '@/lib/reception';
 
@@ -274,7 +275,7 @@ function planPoint(
     svgY: number,
 ) {
     const rotation =
-        c.projectType === 'stand'
+        (c.projectType === 'stand' || c.projectType === 'reception')
             ? c.frontRotation ?? 0
             : 0;
 
@@ -430,7 +431,7 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
     const seating = layoutChairs(c, g.stageY);
 
     const frontRotation =
-        c.projectType === 'stand'
+        (c.projectType === 'stand' || c.projectType === 'reception')
             ? c.frontRotation ?? 0
             : 0;
 
@@ -609,15 +610,6 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
                 strokeDasharray="5 4"
               />
 
-              <PlanText
-                x={px(zone.x)}
-                y={py(zone.y) + 3}
-                textAnchor="middle"
-                fontSize="9"
-                fill="#e5edf9"
-              >
-                {index < 2 ? zone.name : 'Acesso'}
-              </PlanText>
             </g>
           );
         })}
@@ -694,6 +686,7 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
           textAnchor="middle"
           fontSize="9"
           fill="#e5edf9"
+          stroke="#101827" strokeWidth="2.5" paintOrder="stroke"
         >
           FILA
         </PlanText>
@@ -719,10 +712,27 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
         </PlanText>
       </g>
     )}
+    {reception && <g aria-label="Organizadores e sinalização da recepção" pointerEvents="none">
+      {reception.details.belts.map((belt, i) => <line key={'belt'+i} x1={px(belt.x)} x2={px(belt.x)} y1={py(belt.from)} y2={py(belt.to)}
+        stroke={c.receptionBeltMat === 'brand' ? c.color : materials.find(m => m.value === c.receptionBeltMat)?.color} strokeWidth="3"/>)}
+      {reception.details.posts.map((post, i) => <rect key={'post'+i} x={px(post.x-.14)} y={py(post.y+.14)} width={.28*s} height={.28*s}
+        fill="#aeb9ca" stroke="#e5edf9" strokeWidth=".5"/>)}
+      {reception.details.sign && <g><title>{c.receptionSignText}</title>
+        <rect x={px(reception.details.sign.x-reception.details.sign.width/2)} y={py(reception.details.sign.y+.225)}
+          width={reception.details.sign.width*s} height={.45*s} fill={c.color} fillOpacity=".5" stroke="#e5edf9"/>
+        <PlanText x={px(reception.details.sign.x)} y={py(reception.details.sign.y)+3} textAnchor="middle" fontSize="8" fill="#e5edf9">ID</PlanText>
+      </g>}
+    </g>}
     {drawUnits(false)}
-    {c.counter && g.counterXs.map((cx, i) => <g key={i}><rect x={px(cx - (g.counterW + .08) / 2)} y={py(g.counterY + (c.counterDepth + .08) / 2)} width={(g.counterW + .08) * s} height={(c.counterDepth + .08) * s} rx="3" fill={c.counterMat === 'brand' ? c.color : materials.find(m => m.value === c.counterMat)?.color}/><PlanText x={px(cx)} y={py(g.counterY) + 5} textAnchor="middle" fill="white" fontSize="12">Balcão</PlanText></g>)}
+    {c.counter && g.counterXs.map((cx, i) => <g key={i}><title>{"Balcão " + (i + 1)}</title><rect x={px(cx - (g.counterW + .08) / 2)} y={py(g.counterY + (c.counterDepth + .08) / 2)} width={(g.counterW + .08) * s} height={(c.counterDepth + .08) * s} rx="3" fill={c.counterMat === 'brand' ? c.color : materials.find(m => m.value === c.counterMat)?.color}/><PlanText x={px(cx)} y={py(g.counterY) + 4} textAnchor="middle" fill="white" fontSize={c.projectType === 'reception' ? '10' : '12'}>{c.projectType === 'reception' ? `B${i + 1}` : 'Balcão'}</PlanText></g>)}
     {c.totem && g.totemXs.map((tx, i) => <g key={i}><rect x={px(tx - (c.totemWidth + .15) / 2)} y={py(g.totemY + (c.totemDepth + .2) / 2)} width={(c.totemWidth + .15) * s} height={(c.totemDepth + .2) * s} rx="2" fill={c.totemMat === 'brand' ? c.color : materials.find(m => m.value === c.totemMat)?.color}/><PlanText x={px(tx)} y={py(g.totemY) + 27} textAnchor="middle" fill="#cdd7ec" fontSize="12">Totem</PlanText></g>)}
     {c.spots && [-1, 1].map(sign => <g key={sign}><path d={`M ${px(sign * (c.width / 2 - .35))} ${py(c.depth / 2 - .25)} V ${py(-c.depth / 2 + .25)}`} stroke="#b49a67" strokeWidth="2"/>{g.spotYs.map((sy, i) => <circle key={i} cx={px(sign * (c.width / 2 - .35))} cy={py(sy)} r="4" fill="#f0ca85"/>)}</g>)}
+    {reception && <g pointerEvents="none" aria-label="Rótulos da recepção">
+      {reception.zones.map((zone, index) => <PlanText key={zone.name} x={px(zone.x)} y={py(zone.y)+3}
+        textAnchor="middle" fontSize="9" fill="#e5edf9" stroke="#101827" strokeWidth="2.5" paintOrder="stroke">
+        {index === 0 ? 'Atend.' : index === 1 ? zone.name : 'Acesso'}
+      </PlanText>)}
+    </g>}
     <PlanText x="300" y={y + h + 35} textAnchor="middle" fill="#8392ae" fontSize="11" letterSpacing="1">{c.projectType === 'activation' ? 'ESPERA · PARTICIPAÇÃO · CIRCULAÇÃO' : 'FRENTE'}</PlanText>
     </g>
     {drag && <g pointerEvents="none" transform={`translate(${dragLabel.x} ${dragLabel.y})`}>
@@ -844,7 +854,7 @@ export default function Home() {
                 'screenImage',
                 'screenName',
                 'frontRotation',
-                'activationExportGuides',
+                'activationExportGuides', 'receptionExportGuides', 'receptionSignText',
                 'counterDetailed', 'counterTopThickness', 'counterBaseHeight', 'counterBaseInset',
             ].includes(key) || key.endsWith('Mat') ||
             (c.projectType === 'activation' && c.activationModel === 'demo' &&
@@ -861,6 +871,7 @@ export default function Home() {
                     : {},
             };
 
+            if (key === 'receptionQueueEnabled' && value === false) next.receptionBarriersEnabled = false;
             if (prev.projectType === 'activation' && !preservesLayout) next.activationWaitingManual = false;
 
             // Escolher um modelo ou a lateral da esquina
@@ -1405,6 +1416,10 @@ export default function Home() {
     (c.projectType === 'palco' && f.key === 'stage') || (c.projectType === 'activation' && (f.key === 'touchScreens' || f.key === 'backdrops'))} onCheckedChange={v => update(f.key, v === true)} aria-label={f.title}/></label>)}</div>
       <div className="color-row"><label htmlFor="brand-color">Cor de destaque<small>Aplicada ao LED e aos elementos</small></label><div className="color-control"><input id="brand-color" type="color" value={c.color} onChange={e => update('color', e.target.value)}/><span>{c.color.toUpperCase()}</span></div></div>
       </TabsContent><TabsContent value="params">
+      {c.projectType === 'reception' && <ReceptionFinishControls c={c} updateAction={update} applyAction={next => {
+        try { validate(next); setC(next); setError(''); setNotice('Fila, sinalização e guias ativados.'); }
+        catch (error) { setError(error instanceof Error ? error.message : 'A montagem não cabe nesta área.'); }
+      }}/>}
       {c.counter && <CounterControls c={c} updateAction={update}/>}
               {c.projectType === 'reception' && (
         <div
@@ -1765,7 +1780,7 @@ export default function Home() {
         {(dragPreview?.error || assemblyError) && <p role="alert" className="error">{dragPreview?.error || assemblyError}</p>}
       </div>
       <Tabs value={tab} onValueChange={setTab}><div className="result-header"><TabsList className="view-tabs"><TabsTrigger value="plan"><Square size={16}/>Planta</TabsTrigger><TabsTrigger value="code"><Code2 size={17}/>{c.target === 'max' ? 'MaxScript' : 'Script Python'}</TabsTrigger></TabsList><span className="plan-scale">{valid ? `${num(c.width)} × ${num(c.depth)} m` : 'Confira as medidas'}</span></div>
-      <TabsContent value="plan"><div className="plan-title"><span>VISTA SUPERIOR</span><small>Planta esquemática · sem perspectiva</small></div><div className="drawing">{valid ? <Plan c={display} selectedId={selectedUnit?.id ?? null} onSelect={selectUnit} snap={snapToGrid} onDragPreview={previewDrag} onDrop={dropObject}/> : <div className="empty"><Ruler size={32}/><p>{validationMessage}</p></div>}</div><div className="legend">{(c.back || c.left || c.right) && <span><i className="legend-wall"/>Parede</span>}<span><i style={{ background: c.color }}/>Elementos</span>{c.projectType === 'activation' ? <><span><i style={{background:'#fbbf24'}}/>Espera</span><span><i style={{background:'#34d399'}}/>Participação</span><span><i style={{background:'#60a5fa'}}/>Circulação</span>{c.activationModel === 'photo' && <span><i style={{background:'#c084fc'}}/>Captura / câmera</span>}{c.activationModel === 'demo' && <span><i style={{background:'#fb923c'}}/>Demonstrador</span>}{c.activationModel === 'sampling' && <><span><i style={{background:'#fb923c'}}/>Equipe</span>{c.samplingWasteEnabled&&<span><i style={{background:'#f87171'}}/>Descarte</span>}</>}</> : <span><i className="legend-light"/>Spots</span>}</div><div className="model-info"><div><span>ÁREA TOTAL</span><strong>{valid ? num(c.width * c.depth) : '—'} <small>m²</small></strong></div><div><span>ALTURA DE MONTAGEM</span><strong>{valid ? num(c.height) : '—'} <small>m</small></strong></div><div><span>{c.target === 'max' ? 'EXPORTAÇÃO' : 'RENDER'}</span><strong>{c.target === 'max' ? '3ds Max' : 'Cycles'} <small>{c.target === 'max' ? '.ms' : '64 samples'}</small></strong></div></div></TabsContent>
+      <TabsContent value="plan"><div className="plan-title"><span>VISTA SUPERIOR</span><small>Planta esquemática · sem perspectiva</small></div><div className="drawing">{valid ? <Plan c={display} selectedId={selectedUnit?.id ?? null} onSelect={selectUnit} snap={snapToGrid} onDragPreview={previewDrag} onDrop={dropObject}/> : <div className="empty"><Ruler size={32}/><p>{validationMessage}</p></div>}</div><div className="legend">{(c.back || c.left || c.right) && <span><i className="legend-wall"/>Parede</span>}<span><i style={{ background: c.color }}/>Elementos</span>{c.projectType === 'activation' ? <><span><i style={{background:'#fbbf24'}}/>Espera</span><span><i style={{background:'#34d399'}}/>Participação</span><span><i style={{background:'#60a5fa'}}/>Circulação</span>{c.activationModel === 'photo' && <span><i style={{background:'#c084fc'}}/>Captura / câmera</span>}{c.activationModel === 'demo' && <span><i style={{background:'#fb923c'}}/>Demonstrador</span>}{c.activationModel === 'sampling' && <><span><i style={{background:'#fb923c'}}/>Equipe</span>{c.samplingWasteEnabled&&<span><i style={{background:'#f87171'}}/>Descarte</span>}</>}</> : c.projectType === 'reception' ? <><span><i style={{background:'#60a5fa'}}/>Atendimento</span><span><i style={{background:'#fb923c'}}/>Equipe</span><span><i style={{background:'#4ade80'}}/>Acessos</span>{c.receptionQueueEnabled && <span><i style={{background:'#c084fc'}}/>Fila</span>}</> : <span><i className="legend-light"/>Spots</span>}</div><div className="model-info"><div><span>ÁREA TOTAL</span><strong>{valid ? num(c.width * c.depth) : '—'} <small>m²</small></strong></div><div><span>ALTURA DE MONTAGEM</span><strong>{valid ? num(c.height) : '—'} <small>m</small></strong></div><div><span>{c.target === 'max' ? 'EXPORTAÇÃO' : 'RENDER'}</span><strong>{c.target === 'max' ? '3ds Max' : 'Cycles'} <small>{c.target === 'max' ? '.ms' : '64 samples'}</small></strong></div></div></TabsContent>
       <TabsContent value="code"><div className="code-toolbar"><span>{output ? filename(output.config) : 'Seu script aparecerá aqui'}</span><div><button onClick={copy} disabled={!output || !!dirty} aria-label="Copiar script">{copied ? <Check size={16}/> : <Copy size={16}/>} {copied ? 'Copiado' : 'Copiar'}</button><button onClick={download} disabled={!output || !!dirty}><Download size={16}/>Baixar {output?.config.target === 'max' ? '.ms' : '.py'}</button></div></div>{dirty && <div className="stale" role="status">Você alterou o projeto. Clique em “Gerar script” para atualizar o arquivo.</div>}{output ? <pre className="code"><code>{output.code.replace(/data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+/g, '[imagem incorporada — baixe ou copie o script completo]').replace(/local IMAGEM_TV = "[A-Za-z0-9+/=]+"/g, 'local IMAGEM_TV = "[imagem incorporada — baixe ou copie o script completo]"')}</code></pre> : <div className="empty"><Code2 size={38}/><h3>Seu projeto, em código.</h3><p>Escolha os elementos ao lado e clique em<br />“Gerar script”.</p></div>}</TabsContent>
     </Tabs><p className="notice" role="status" aria-live="polite">{notice}</p>
       <div className="blender-guide"><div className="guide-icon"><Box size={22}/></div><div><h3>Como abrir no {c.target === 'max' ? '3ds Max' : 'Blender'}</h3>{c.target === 'max' ? <ol><li><b>1</b>Baixe o arquivo <strong>.ms</strong>.</li><li><b>2</b>Abra o 3ds Max e entre em <strong>Scripting → Run Script</strong>.</li><li><b>3</b>Escolha o arquivo. Use <strong>CB_Camera_Frontal</strong> para visualizar.</li></ol> : <ol><li><b>1</b>Comece com uma cena vazia e entre em <strong>Scripting</strong>.</li><li><b>2</b>Em <strong>Open</strong>, abra o arquivo .py baixado.</li><li><b>3</b>Clique em <strong>Run Script</strong>. Use <strong>F12</strong> para renderizar.</li></ol>}</div></div>

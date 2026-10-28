@@ -1,3 +1,6 @@
+import { receptionFinishDefaults, receptionDetails, validateReceptionFinishFields } from './reception-finish';
+import type { ReceptionFinishConfig } from './reception-finish';
+
 export type ReceptionQueueConfig = {
     receptionQueueEnabled: boolean;
     receptionQueueWidth: number;
@@ -14,7 +17,7 @@ export const receptionQueueDefaults: ReceptionQueueConfig = {
 }
 
 
-export type ReceptionConfig = ReceptionQueueConfig & {
+export type ReceptionConfig = ReceptionQueueConfig & ReceptionFinishConfig & {
     receptionCounterGap: number;
     receptionRowY: number;
     receptionServiceDepth: number;
@@ -24,6 +27,7 @@ export type ReceptionConfig = ReceptionQueueConfig & {
 
 export const receptionDefaults: ReceptionConfig = {
     ...receptionQueueDefaults,
+    ...receptionFinishDefaults,
     receptionCounterGap: 0.4,
     receptionRowY: 0.5,
     receptionServiceDepth: 1.2,
@@ -39,6 +43,7 @@ type ReceptionInput = ReceptionConfig & {
     counterCount: number;
     counterWidth: number;
     counterDepth: number;
+    height: number;
 };
 
 export type ReceptionZone = {
@@ -234,6 +239,9 @@ export function receptionGeometry(c: ReceptionInput) {
         depth: back - front,
     }));
 
+    const flow = c.receptionQueueEnabled
+        ? receptionFlow(c, rowWidth, service, counters) : null;
+    const details = receptionDetails(c, { service, team, flow });
     return {
         counters,
         rowWidth,
@@ -241,14 +249,14 @@ export function receptionGeometry(c: ReceptionInput) {
         team,
         sideAccesses,
         zones: [service, team, ...sideAccesses],
-                flow: c.receptionQueueEnabled
-            ? receptionFlow(c, rowWidth, service, counters)
-            : null,
+        flow,
+        details,
     };
 }
 
 export function validateReception(c: ReceptionInput) {
     if (c.projectType !== 'reception') return;
+    validateReceptionFinishFields(c);
 
     if (!c.counter) {
         throw new Error('A recepção precisa incluir os balcões.');
@@ -336,6 +344,19 @@ export function validateReception(c: ReceptionInput) {
                 'Aumente a área, reduza as medidas ou ajuste a posição da fileira.',
             );
         }
+    }
+    const occupied = [...layout.counters, ...layout.zones,
+        ...(layout.flow ? [layout.flow.queue, ...layout.flow.corridors] : [])];
+    for (const [index, zone] of layout.details.footprints.entries()) {
+        if (Math.abs(zone.x) + zone.width / 2 > c.width / 2 - margin + epsilon ||
+            Math.abs(zone.y) + zone.depth / 2 > c.depth / 2 - margin + epsilon) {
+            throw new Error(`${zone.name} não cabe na recepção. Aumente a área ou ajuste as medidas.`);
+        }
+        const overlaps = (other: typeof zone) =>
+            Math.abs(zone.x - other.x) < (zone.width + other.width) / 2 - epsilon &&
+            Math.abs(zone.y - other.y) < (zone.depth + other.depth) / 2 - epsilon;
+        const obstacle = [...occupied, ...layout.details.footprints.slice(0, index)].find(overlaps);
+        if (obstacle) throw new Error(`${zone.name} invade ${obstacle.name.toLowerCase()}. Ajuste a fila, a sinalização ou a área disponível.`);
     }
     if (layout.flow) {
         const flow = layout.flow;
