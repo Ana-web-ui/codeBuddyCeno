@@ -24,6 +24,7 @@ import { activationGeometry } from '@/lib/activation-geometry';
 import { storageGeometry } from '@/lib/storage';
 import type { StorageDoorSide, StorageDoorHinge, StorageDoorOpening } from '@/lib/storage';
 import { ReceptionFinishControls } from '@/components/reception-finish-controls';
+import { ShelvingControls } from '@/components/shelving-controls';
 import { PanelControls } from '@/components/panel-controls';
 import { panelParts } from '@/lib/panel';
 import { CounterControls } from '@/components/counter-controls';
@@ -238,7 +239,7 @@ const parameterFields: Record<'led' | 'counter' | 'stage' | 'totem' | 'spots' | 
     roundRugs: [{ "key": "rugCount", "label": "Quantidade", "min": 1, "max": 100, "unit": "un" }, { "key": "rugDiameter", "label": "Diâmetro", "min": 0.4, "max": 10 }, { "key": "rugGap", "label": "Vão livre entre unidades", "min": 0, "max": 3 }],
 };
 const materialFields: {
-    key: 'backdropFrameMat' | 'backdropStructureMat' | 'backdropBaseMat' | 'counterTopMat' | 'counterBaseMat' | 'samplingCounterMat' | 'samplingSupportMat' | 'samplingSampleMat' | 'demoBenchMat' | 'demoProductMat' | 'floorMat' | 'wallMat' | 'counterMat' | 'stageMat' | 'totemMat' | 'roundTableMat' | 'rectTableMat' | 'bistroTableMat' | 'stoolMat' | 'pedestalMat' | 'armchairMat' | 'puffMat' | 'coffeeTableMat' | 'showcaseBaseMat' | 'shelfMat' | 'backdropMat' | 'touchMat' | 'cabinetMat' | 'openCubeMat' | 'rugMat';
+    key: 'shelfShelfMat' | 'shelfBackMat' | 'shelfBaseMat' | 'backdropFrameMat' | 'backdropStructureMat' | 'backdropBaseMat' | 'counterTopMat' | 'counterBaseMat' | 'samplingCounterMat' | 'samplingSupportMat' | 'samplingSampleMat' | 'demoBenchMat' | 'demoProductMat' | 'floorMat' | 'wallMat' | 'counterMat' | 'stageMat' | 'totemMat' | 'roundTableMat' | 'rectTableMat' | 'bistroTableMat' | 'stoolMat' | 'pedestalMat' | 'armchairMat' | 'puffMat' | 'coffeeTableMat' | 'showcaseBaseMat' | 'shelfMat' | 'backdropMat' | 'touchMat' | 'cabinetMat' | 'openCubeMat' | 'rugMat';
     label: string;
     enabled?: 'counter' | 'stage' | 'totem' | 'roundTables' | 'rectTables' | 'bistroTables' | 'stools' | 'pedestals' | 'armchairs' | 'puffs' | 'coffeeTables' | 'showcases' | 'shelving' | 'backdrops' | 'touchScreens' | 'cabinets' | 'openCubes' | 'roundRugs';
 }[] = [{key:'samplingCounterMat',label:'Balcão de entrega'},{key:'samplingSupportMat',label:'Apoio e armazenamento'},{key:'samplingSampleMat',label:'Amostras de referência'}, { key: 'demoBenchMat', label: 'Corpo da bancada de demonstração' }, { key: 'demoProductMat', label: 'Produto de referência' }, { key: 'floorMat', label: 'Piso' },
@@ -257,7 +258,10 @@ const materialFields: {
     { key: 'puffMat', label: 'Puffs', enabled: 'puffs' },
     { key: 'coffeeTableMat', label: 'Tampo das mesas de centro', enabled: 'coffeeTables' },
     { key: 'showcaseBaseMat', label: 'Base das vitrines expositoras', enabled: 'showcases' },
-    { key: 'shelfMat', label: 'Estantes expositoras', enabled: 'shelving' },
+    { key: 'shelfMat', label: 'Estrutura das estantes', enabled: 'shelving' },
+    { key: 'shelfShelfMat', label: 'Prateleiras das estantes', enabled: 'shelving' },
+    { key: 'shelfBackMat', label: 'Fundo das estantes', enabled: 'shelving' },
+    { key: 'shelfBaseMat', label: 'Rodapé das estantes', enabled: 'shelving' },
     { key: 'backdropMat', label: 'Painel / frente', enabled: 'backdrops' },
     { key: 'backdropStructureMat', label: 'Estrutura dos painéis', enabled: 'backdrops' },
     { key: 'backdropBaseMat', label: 'Bases dos painéis', enabled: 'backdrops' },
@@ -865,6 +869,8 @@ export default function Home() {
                 'screenName',
                 'frontRotation',
                 'activationExportGuides', 'receptionExportGuides', 'receptionSignText',
+                'shelfDetailed', 'shelfBoardThickness', 'shelfBackEnabled', 'shelfBackThickness',
+                'shelfBaseEnabled', 'shelfBaseHeight', 'shelfBaseInset', 'shelfShelfCount',
                 'backdropDetailed', 'backdropFrameEnabled', 'backdropFrameWidth', 'backdropFrameDepth',
                 'counterDetailed', 'counterTopThickness', 'counterBaseHeight', 'counterBaseInset',
             ].includes(key) || key.endsWith('Mat') ||
@@ -1431,6 +1437,7 @@ export default function Home() {
         try { validate(next); setC(next); setError(''); setNotice('Fila, sinalização e guias ativados.'); }
         catch (error) { setError(error instanceof Error ? error.message : 'A montagem não cabe nesta área.'); }
       }}/>}
+      {c.shelving && <ShelvingControls c={c} updateAction={update}/>}
       {c.backdrops && <PanelControls c={c} updateAction={update}/>}
       {c.counter && <CounterControls c={c} updateAction={update}/>}
               {c.projectType === 'reception' && (
@@ -1709,6 +1716,9 @@ export default function Home() {
       {!(c.projectType === 'activation' && ['demo','sampling'].includes(c.activationModel)) && !availableElements.some(f => c[f.key]) && <p className="tab-help">Selecione um elemento na aba Projeto para ajustar suas medidas.</p>}
       {c.led && <div className="texture-section"><h3>Textura da TV / LED</h3><p>Escolha a arte que vai aparecer na tela. A imagem inteira é ajustada às medidas do LED.</p><label className="upload-label" htmlFor="tv-image">Escolher imagem JPG ou PNG<input id="tv-image" type="file" accept="image/png,image/jpeg" onChange={handleImage}/></label><small>Até 2 MB · incorporada ao script · imagem estática</small>{c.screenImage ? <div className="texture-preview"><ImagePreview src={c.screenImage} alt="Arte selecionada para a tela de TV" width={320} height={180} unoptimized/><span>{c.screenName}</span><button onClick={() => { imageRequest.current += 1; setC(prev => ({ ...prev, screenImage: '', screenName: '' })); setNotice('Imagem removida.'); }}>Remover imagem</button></div> : <p className="tab-help">Sem imagem, a tela usa a cor de destaque.</p>}</div>}
       </TabsContent><TabsContent value="materials"><p className="tab-help">Escolha o acabamento de cada parte. Madeira e concreto usam textura procedural; metal e vidro recebem propriedades de superfície.</p><div className="material-fields">{materialFields.filter((field) => {
+            if (field.key === 'shelfShelfMat') return c.shelving && c.shelfDetailed;
+            if (field.key === 'shelfBackMat') return c.shelving && c.shelfDetailed && c.shelfBackEnabled;
+            if (field.key === 'shelfBaseMat') return c.shelving && c.shelfDetailed && c.shelfBaseEnabled;
             if (field.key === 'backdropFrameMat') return c.backdrops && c.backdropDetailed && c.backdropFrameEnabled;
             if (field.key === 'backdropStructureMat' || field.key === 'backdropBaseMat') return c.backdrops && c.backdropDetailed;
             if (field.key === 'counterTopMat' || field.key === 'counterBaseMat') return c.counter && c.counterDetailed;

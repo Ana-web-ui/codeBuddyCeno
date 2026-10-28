@@ -32,13 +32,13 @@ test('versões 1 a 14 recebem campos dos painéis sem modificar os cinco tipos d
     }
 });
 
-test('salva versão 15 e preserva todos os ajustes do painel ao reabrir', () => {
+test('salva versão 16 e preserva todos os ajustes do painel ao reabrir', () => {
     const c = { ...createProjectConfig('stand'), back: false, led: false, counter: false, spots: false,
         backdrops: true, backdropDetailed: true, backdropFrameEnabled: true,
         backdropFrameWidth: .08, backdropFrameDepth: .05, backdropFrameMat: 'wood',
         backdropStructureMat: 'metal', backdropBaseMat: 'concrete' };
     const before = JSON.stringify(c), text = serializeProject(c);
-    assert.equal(JSON.parse(text).version, 15);
+    assert.equal(JSON.parse(text).version, 16);
     assert.deepEqual(parseProject(text), c);
     assert.equal(JSON.stringify(c), before);
 });
@@ -66,6 +66,6 @@ test('versão 15 exige os novos campos; migrações não escondem dados inválid
 });
 
 test('continua rejeitando versões futuras e campos desconhecidos', () => {
-    assert.throws(() => parseProject(envelope(createProjectConfig('stand'), 16)), /versão/);
+    assert.throws(() => parseProject(envelope(createProjectConfig('stand'), 17)), /versão/);
     assert.throws(() => parseProject(envelope({ ...createProjectConfig('stand'), campoInventado: true }, 15)), /desconhecidos/);
 });

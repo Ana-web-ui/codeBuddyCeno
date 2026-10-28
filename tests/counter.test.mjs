@@ -80,7 +80,7 @@ test('JSON anterior preserva construção simples, materiais, posições, fila e
 test('JSON atual exige os novos campos e rejeita valores corrompidos', () => {
     for (const key of Object.keys(counterDefaults)) {
         const doc = JSON.parse(serializeProject(base()));
-        assert.equal(doc.version, 15);
+        assert.equal(doc.version, 16);
         delete doc.config[key];
         assert.throws(() => parseProject(JSON.stringify(doc)), /ausente/);
     }

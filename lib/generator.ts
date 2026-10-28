@@ -33,6 +33,9 @@ import { counterDefaults, validateCounter } from './counter';
 import type { CounterConfig } from './counter';
 import { blenderCounters } from './counter-exporters';
 import { panelDefaults, validatePanel } from './panel';
+import { shelvingDefaults, validateShelving } from './shelving';
+import type { ShelvingConfig } from './shelving';
+import { blenderShelving, maxShelving } from './shelving-exporters';
 import { blenderPanels, maxPanels } from './panel-exporters';
 import type { PanelConfig } from './panel';
 export type MaterialKind = 'white' | 'brand' | 'wood' | 'metal' | 'glass' | 'concrete' | 'plastic';
@@ -48,7 +51,7 @@ export const materials: {
     { value: 'glass', label: 'Vidro', color: '#81bfce' }, { value: 'concrete', label: 'Concreto', color: '#747b86' },
     { value: 'plastic', label: 'Plástico', color: '#c4d1e1' }
 ];
-export type Config = PanelConfig & CounterConfig & ReceptionConfig & ActivationConfig & StorageConfig & AssemblyConfig & ChairConfig & RoundTableConfig & RectTableConfig & BistroTableConfig & StoolConfig & TableChairConfig & PedestalConfig & LoungeConfig & CoffeeTableConfig & LoungeSetConfig & ShowcaseConfig & ExtraObjectsConfig & {
+export type Config = ShelvingConfig & PanelConfig & CounterConfig & ReceptionConfig & ActivationConfig & StorageConfig & AssemblyConfig & ChairConfig & RoundTableConfig & RectTableConfig & BistroTableConfig & StoolConfig & TableChairConfig & PedestalConfig & LoungeConfig & CoffeeTableConfig & LoungeSetConfig & ShowcaseConfig & ExtraObjectsConfig & {
     projectType: ProjectType;
     standLayout: StandLayout;
     frontRotation: FrontRotation;
@@ -97,6 +100,7 @@ export const defaults: Config = {
     cornerOpenSide: 'right',
     objectTransforms: {},
     ...panelDefaults,
+    ...shelvingDefaults,
     ...counterDefaults,
     ...receptionDefaults,
     ...activationDefaults,
@@ -592,6 +596,7 @@ export function extraObjectGeometry(c: Config) {
     });
 }
 export function validate(c: Config) {
+    validateShelving(c);
     validatePanel(c);
     validateCounter(c);
     if (![0, 90, 180, 270].includes(c.frontRotation))
@@ -649,7 +654,7 @@ export function validate(c: Config) {
     for (const [key, initial] of Object.entries(defaults))
         if (typeof initial === 'number' && (!Number.isFinite(c[key as keyof Config] as number)))
             throw new Error('Confira os parâmetros dos elementos: todas as medidas e quantidades devem conter números.');
-    for (const k of ['backdropFrameMat', 'backdropStructureMat', 'backdropBaseMat', 'receptionBarrierMat','receptionBeltMat','receptionSignMat','receptionSignTextMat','counterTopMat','counterBaseMat','samplingCounterMat','samplingSupportMat','samplingSampleMat','demoBenchMat', 'demoProductMat', 'floorMat', 'wallMat', 'counterMat', 'stageMat', 'totemMat', 'roundTableMat', 'rectTableMat', 'bistroTableMat', 'stoolMat', 'pedestalMat', 'armchairMat', 'puffMat', 'coffeeTableMat', 'showcaseBaseMat', 'shelfMat', 'backdropMat', 'touchMat', 'cabinetMat', 'openCubeMat', 'rugMat'] as const)
+    for (const k of ['shelfShelfMat', 'shelfBackMat', 'shelfBaseMat', 'backdropFrameMat', 'backdropStructureMat', 'backdropBaseMat', 'receptionBarrierMat','receptionBeltMat','receptionSignMat','receptionSignTextMat','counterTopMat','counterBaseMat','samplingCounterMat','samplingSupportMat','samplingSampleMat','demoBenchMat', 'demoProductMat', 'floorMat', 'wallMat', 'counterMat', 'stageMat', 'totemMat', 'roundTableMat', 'rectTableMat', 'bistroTableMat', 'stoolMat', 'pedestalMat', 'armchairMat', 'puffMat', 'coffeeTableMat', 'showcaseBaseMat', 'shelfMat', 'backdropMat', 'touchMat', 'cabinetMat', 'openCubeMat', 'rugMat'] as const)
         if (!materials.some(m => m.value === c[k]))
             throw new Error('Material inválido.');
     const check = (keys: (keyof Config)[], label: string) => {
@@ -846,6 +851,10 @@ function assemblyScript(c: Config): string {
                     return blender ? blenderLounge(c, lounge) : maxLounge(c, lounge);
                 }
                 default: {
+                    if (role === 'shelving' && c.shelfDetailed) {
+                        return blender ? blenderShelving(c, positions, { grouped: false })
+                            : maxShelving(c, positions, { grouped: false });
+                    }
                     if (role === 'backdrops' && c.backdropDetailed) {
                         return blender ? blenderPanels(c, positions, { grouped: false })
                             : maxPanels(c, positions, { grouped: false });
@@ -860,8 +869,10 @@ function assemblyScript(c: Config): string {
         }).join('\n');
         const t = unitTransform(c, unit);
         const detailedPanel = unit.id.startsWith('backdrops:') && c.backdropDetailed;
+        const detailedShelf = unit.id.startsWith('shelving:') && c.shelfDetailed;
         return blender ? wrapBlenderUnit(unit, t, code) : wrapMaxUnit(unit, t, code, {
-            group: detailedPanel && c.projectType !== 'activation', preserveNames: detailedPanel,
+            group: detailedShelf || (detailedPanel && c.projectType !== 'activation'),
+            preserveNames: detailedPanel || detailedShelf,
         });
     }).join('\n');
 }
