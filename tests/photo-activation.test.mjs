@@ -66,6 +66,6 @@ test('JSON versão 7 migra todos os tipos preservando zonas, cores e ajustes ant
    const old={...c};for(const key of Object.keys(photoDefaults))delete old[key];
    const restored=parseProject(JSON.stringify({format:'code-buddy-project',version:7,config:old}));assert.deepEqual(restored,c);
  }
- const current=JSON.parse(serializeProject(base()));assert.equal(current.version,10);delete current.config.activationPhotoCameraDistance;
+ const current=JSON.parse(serializeProject(base()));assert.equal(current.version,12);delete current.config.activationPhotoCameraDistance;
  assert.throws(()=>parseProject(JSON.stringify(current)),/ausente/);
 });

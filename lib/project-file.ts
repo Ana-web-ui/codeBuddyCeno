@@ -49,7 +49,7 @@ function checkedConfig(
     for (const key of Object.keys(defaults) as (keyof Config)[]) {
         const present = Object.hasOwn(value, key);
 
-                const canUseDefault =
+        const canUseDefault =
             legacy ||
             (
                 migrateReceptionQueue &&
@@ -84,6 +84,10 @@ function checkedConfig(
                 migrateActivation &&
                 Object.hasOwn(activationDefaults, key)
             );
+
+        if (!present && !canUseDefault) {
+            throw new Error(`O campo “${key}” está ausente.`);
+        }
 
         const item = present ? value[key] : initial[key];
         if (key === 'objectTransforms') {

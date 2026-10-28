@@ -70,13 +70,13 @@ test('troca entre os quatro modelos mantém os dados gerais e remove ajustes inc
    for(const key of ['name','color','target','floorMat'])assert.equal(next[key],c[key]);c=next;
  }
 });
-test('JSON versão 9 migra os tipos e modelos anteriores; versão 10 exige campos de sampling',()=>{
+test('JSON versão 9 migra os tipos e modelos anteriores; versão atual exige campos de sampling',()=>{
  const sources=['stand','palco','lounge','activation'].map(createProjectConfig);
  for(const model of ['photo','demo'])sources.push(createActivationModelConfig(createProjectConfig('activation'),model));
  for(const c of sources){
    const old={...c};for(const key of Object.keys(samplingDefaults))delete old[key];
    assert.deepEqual(parseProject(JSON.stringify({format:'code-buddy-project',version:9,config:old})),c);
  }
- const current=JSON.parse(serializeProject(base()));assert.equal(current.version,10);delete current.config.samplingStorageEnabled;
+ const current=JSON.parse(serializeProject(base()));assert.equal(current.version,12);delete current.config.samplingStorageEnabled;
  assert.throws(()=>parseProject(JSON.stringify(current)),/ausente/);
 });
