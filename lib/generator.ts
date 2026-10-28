@@ -1189,8 +1189,8 @@ def criar_elementos(branco, marca, escuro, tela):
                 caixa('LED_Base', (0.45, 0.5, 0.06), (x, y, 0.13), escuro)
     if ADICIONAR_BALCAO:
         for i in range(BALCOES):
-            x = (i - (BALCOES-1)/2)*(BALCAO_LARGURA + .4)
-            y = -PROFUNDIDADE*.28
+            x = [${geometry(c).counterXs.join(', ')}][i]
+            y = ${geometry(c).counterY}
             caixa('Balcao_Corpo', (BALCAO_LARGURA, BALCAO_PROFUNDIDADE, BALCAO_ALTURA-.06), (x, y, .1+(BALCAO_ALTURA-.06)/2), acabamento(MATERIAL_BALCAO), .02)
             caixa('Balcao_Tampo', (BALCAO_LARGURA+.08, BALCAO_PROFUNDIDADE+.08, .06), (x, y, .1+BALCAO_ALTURA-.03), branco, .02)
     if ADICIONAR_PALCO:

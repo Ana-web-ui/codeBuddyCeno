@@ -445,6 +445,7 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
     const px = (v: number) => x + w / 2 + v * s, py = (v: number) => y + h / 2 - v * s;
 
     const activation = activationGeometry(c);
+    const reception = receptionGeometry(c);
     const storage = storageGeometry(c);
     const storageWallColor = c.storageWallMat === 'brand' ? c.color
         : materials.find(material => material.value === c.storageWallMat)?.color ?? '#c8cedb';
@@ -578,6 +579,47 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
     {c.chairs && (<g aria-label={`${seating.positions.length} cadeiras`}>
     {seating.positions.map(([cx, cy], index) => (<rect key={index} x={px(cx - c.chairWidth / 2)} y={py(cy + c.chairDepth / 2)} width={c.chairWidth * s} height={c.chairDepth * s} fill={c.color} stroke="#dce6ff" strokeWidth="0.5"/>))}
   </g>)}
+      {reception && (
+      <g
+        aria-label="Atendimento, equipe e acessos da recepção"
+        pointerEvents="none"
+      >
+        {reception.zones.map((zone, index) => {
+          const color =
+            index === 0
+              ? '#60a5fa'
+              : index === 1
+                ? '#fb923c'
+                : '#4ade80';
+
+          return (
+            <g key={zone.name}>
+              <rect
+                x={px(zone.x - zone.width / 2)}
+                y={py(zone.y + zone.depth / 2)}
+                width={zone.width * s}
+                height={zone.depth * s}
+                fill={color}
+                fillOpacity="0.12"
+                stroke={color}
+                strokeWidth="1"
+                strokeDasharray="5 4"
+              />
+
+              <PlanText
+                x={px(zone.x)}
+                y={py(zone.y) + 3}
+                textAnchor="middle"
+                fontSize="9"
+                fill="#e5edf9"
+              >
+                {index < 2 ? zone.name : 'Acesso'}
+              </PlanText>
+            </g>
+          );
+        })}
+      </g>
+    )}
     {drawUnits(false)}
     {c.counter && g.counterXs.map((cx, i) => <g key={i}><rect x={px(cx - (g.counterW + .08) / 2)} y={py(g.counterY + (c.counterDepth + .08) / 2)} width={(g.counterW + .08) * s} height={(c.counterDepth + .08) * s} rx="3" fill={c.counterMat === 'brand' ? c.color : materials.find(m => m.value === c.counterMat)?.color}/><PlanText x={px(cx)} y={py(g.counterY) + 5} textAnchor="middle" fill="white" fontSize="12">Balcão</PlanText></g>)}
     {c.totem && g.totemXs.map((tx, i) => <g key={i}><rect x={px(tx - (c.totemWidth + .15) / 2)} y={py(g.totemY + (c.totemDepth + .2) / 2)} width={(c.totemWidth + .15) * s} height={(c.totemDepth + .2) * s} rx="2" fill={c.totemMat === 'brand' ? c.color : materials.find(m => m.value === c.totemMat)?.color}/><PlanText x={px(tx)} y={py(g.totemY) + 27} textAnchor="middle" fill="#cdd7ec" fontSize="12">Totem</PlanText></g>)}
@@ -1259,7 +1301,8 @@ export default function Home() {
       {c.projectType === 'activation' && c.activationModel === 'sampling' && <p className="tab-help">Balcão de entrega, apoio, armazenamento e áreas da equipe e dos visitantes incluídos. Ajuste a estação na aba Parâmetros.</p>}
       {c.projectType === 'activation' && c.activationModel === 'demo' && <p className="tab-help">Bancada, produto e áreas do demonstrador e do público incluídos. Ajuste as medidas na aba Parâmetros.</p>}
       <div className="subheading elements-heading"><h3>{c.projectType === 'activation' && c.activationModel === 'demo' ? 'Estação de demonstração' : c.projectType === 'activation' && c.activationModel === 'sampling' ? 'Experimentação e amostras' : 'Elementos'}</h3><span>{c.projectType === 'activation' && c.activationModel === 'demo' ? 'Uma bancada e um produto' : c.projectType === 'activation' && c.activationModel === 'sampling' ? 'Uma estação de atendimento' : 'Selecione o que entra'}</span></div>
-      <div className="element-list">{availableElements.map(f => <label className={'element ' + (c[f.key] ? 'selected' : '')} key={f.key}><span className="element-icon"><f.icon size={19}/></span><span className="element-text"><strong>{f.title}</strong><small>{f.text}</small></span><Checkbox checked={c[f.key]} disabled={(c.projectType === 'palco' && f.key === 'stage') || (c.projectType === 'activation' && (f.key === 'touchScreens' || f.key === 'backdrops'))} onCheckedChange={v => update(f.key, v === true)} aria-label={f.title}/></label>)}</div>
+      <div className="element-list">{availableElements.map(f => <label className={'element ' + (c[f.key] ? 'selected' : '')} key={f.key}><span className="element-icon"><f.icon size={19}/></span><span className="element-text"><strong>{f.title}</strong><small>{f.text}</small></span><Checkbox checked={c[f.key]} disabled={(c.projectType === 'reception' && f.key === 'counter') ||
+    (c.projectType === 'palco' && f.key === 'stage') || (c.projectType === 'activation' && (f.key === 'touchScreens' || f.key === 'backdrops'))} onCheckedChange={v => update(f.key, v === true)} aria-label={f.title}/></label>)}</div>
       <div className="color-row"><label htmlFor="brand-color">Cor de destaque<small>Aplicada ao LED e aos elementos</small></label><div className="color-control"><input id="brand-color" type="color" value={c.color} onChange={e => update('color', e.target.value)}/><span>{c.color.toUpperCase()}</span></div></div>
       </TabsContent><TabsContent value="params">
               {c.projectType === 'reception' && (
