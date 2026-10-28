@@ -20,12 +20,13 @@ export const panelDefaults: PanelConfig = {
     backdropBaseMat: 'metal',
 };
 
-type PanelInput = PanelConfig & {
+export type PanelInput = PanelConfig & {
     backdrops: boolean;
     backdropWidth: number;
     backdropHeight: number;
     backdropThickness: number;
     backdropBaseDepth: number;
+    backdropMat: MaterialKind;
 };
 
 export function validatePanel(c: PanelInput) {
@@ -73,7 +74,7 @@ export function validatePanel(c: PanelInput) {
         c.backdropWidth - 2 * c.backdropFrameWidth;
 
     const innerHeight =
-        c.backdropHeight - 2 * c.backdropFrameWidth;
+        c.backdropHeight - 0.04 - 2 * c.backdropFrameWidth;
 
     if (innerWidth < 0.2 || innerHeight < 0.2) {
         throw new Error(
@@ -84,7 +85,7 @@ export function validatePanel(c: PanelInput) {
 
     if (
         c.backdropThickness + 2 * c.backdropFrameDepth >
-        c.backdropBaseDepth
+        c.backdropBaseDepth + 1e-7
     ) {
         throw new Error(
             'O ressalto da moldura ultrapassa a profundidade ' +
@@ -92,4 +93,41 @@ export function validatePanel(c: PanelInput) {
             'aumente a profundidade das bases.',
         );
     }
+}
+
+export type PanelPart = {
+    name: string;
+    role: string;
+    size: [number, number, number];
+    center: [number, number, number];
+    material: MaterialKind;
+};
+
+/** A frente aponta para -Y; a altura total inclui os 4 cm das bases. */
+export function panelParts(c: PanelInput): PanelPart[] {
+    const w = c.backdropWidth, h = c.backdropHeight, t = c.backdropThickness;
+    const parts: PanelPart[] = [];
+    const box = (name: string, role: string, size: PanelPart['size'],
+        center: PanelPart['center'], material: MaterialKind) => parts.push({ name, role, size, center, material });
+    if (!c.backdropDetailed) {
+        box('Painel', 'panel_body', [w, t, h], [0, 0, .1 + h / 2], c.backdropMat);
+    } else {
+        const face = .005, panelHeight = h - .04;
+        const z = .14 + panelHeight / 2;
+        box('Estrutura', 'panel_structure', [w, t - face, panelHeight], [0, face / 2, z], c.backdropStructureMat);
+        box('Frente', 'panel_front', [w, face, panelHeight], [0, -t / 2 + face / 2, z], c.backdropMat);
+        if (c.backdropFrameEnabled) {
+            const b = c.backdropFrameWidth, depth = c.backdropFrameDepth;
+            const y = -t / 2 - depth / 2;
+            box('Moldura_Esquerda', 'panel_frame_left', [b, depth, panelHeight], [-w / 2 + b / 2, y, z], c.backdropFrameMat);
+            box('Moldura_Direita', 'panel_frame_right', [b, depth, panelHeight], [w / 2 - b / 2, y, z], c.backdropFrameMat);
+            box('Moldura_Superior', 'panel_frame_top', [w - 2 * b, depth, b], [0, y, .1 + h - b / 2], c.backdropFrameMat);
+            box('Moldura_Inferior', 'panel_frame_bottom', [w - 2 * b, depth, b], [0, y, .14 + b / 2], c.backdropFrameMat);
+        }
+    }
+    for (const sign of [-1, 1]) {
+        box(sign < 0 ? 'Base_Esquerda' : 'Base_Direita', 'panel_base', [.4, c.backdropBaseDepth, .04],
+            [sign * (w / 2 - .22), 0, .12], c.backdropDetailed ? c.backdropBaseMat : 'metal');
+    }
+    return parts;
 }

@@ -33,6 +33,7 @@ import { counterDefaults, validateCounter } from './counter';
 import type { CounterConfig } from './counter';
 import { blenderCounters } from './counter-exporters';
 import { panelDefaults, validatePanel } from './panel';
+import { blenderPanels, maxPanels } from './panel-exporters';
 import type { PanelConfig } from './panel';
 export type MaterialKind = 'white' | 'brand' | 'wood' | 'metal' | 'glass' | 'concrete' | 'plastic';
 export type ProjectType = 'stand' | 'palco' | 'lounge'| 'activation' | 'reception';
@@ -845,6 +846,10 @@ function assemblyScript(c: Config): string {
                     return blender ? blenderLounge(c, lounge) : maxLounge(c, lounge);
                 }
                 default: {
+                    if (role === 'backdrops' && c.backdropDetailed) {
+                        return blender ? blenderPanels(c, positions, { grouped: false })
+                            : maxPanels(c, positions, { grouped: false });
+                    }
                     const extras = { ...extraBase };
                     for (const id of Object.keys(extras) as (keyof typeof extras)[]) {
                         extras[id] = { ...extras[id], positions: id === role ? positions.positions : [], generatedCount: id === role ? indices.length : 0 };
@@ -854,7 +859,10 @@ function assemblyScript(c: Config): string {
             }
         }).join('\n');
         const t = unitTransform(c, unit);
-        return blender ? wrapBlenderUnit(unit, t, code) : wrapMaxUnit(unit, t, code);
+        const detailedPanel = unit.id.startsWith('backdrops:') && c.backdropDetailed;
+        return blender ? wrapBlenderUnit(unit, t, code) : wrapMaxUnit(unit, t, code, {
+            group: detailedPanel && c.projectType !== 'activation', preserveNames: detailedPanel,
+        });
     }).join('\n');
 }
 export function filename(c: Config) { return (c.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'stand') + (c.target === 'max' ? '.ms' : '.py'); }

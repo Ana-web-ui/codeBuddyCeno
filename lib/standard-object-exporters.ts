@@ -1,5 +1,8 @@
 import type { ExtraSceneConfig, ExtraObjectId, ExtraObjectLayouts } from './library';
 import type { MaterialKind } from './generator';
+import type { PanelConfig } from './panel';
+import { blenderPanels, maxPanels } from './panel-exporters';
+type StandardSceneConfig = ExtraSceneConfig & PanelConfig;
 // Shape (0=box,1=cylinder), width, depth, height, offset X/Y, center Z, material.
 type Part = [
     number,
@@ -69,7 +72,7 @@ function objectParts(c: ExtraSceneConfig, id: ExtraObjectId): {
             return { name: 'Tapete_Circular', parts };
     }
 }
-function sceneData(c: ExtraSceneConfig, layouts: ExtraObjectLayouts) {
+function sceneData(c: StandardSceneConfig, layouts: ExtraObjectLayouts) {
     const materials: MaterialKind[] = [];
     const groups: [
         string,
@@ -82,6 +85,7 @@ function sceneData(c: ExtraSceneConfig, layouts: ExtraObjectLayouts) {
     for (const id of ['shelving', 'backdrops', 'touchScreens', 'cabinets', 'openCubes', 'roundRugs'] as const) {
         if (!c[id] || !layouts[id].positions.length)
             continue;
+        if (id === 'backdrops' && c.backdropDetailed) continue;
         const { name, parts } = objectParts(c, id);
         const numeric = parts.map(p => { let index = materials.indexOf(p[7]); if (index < 0) {
             index = materials.length;
@@ -91,10 +95,11 @@ function sceneData(c: ExtraSceneConfig, layouts: ExtraObjectLayouts) {
     }
     return { groups, materials };
 }
-export function blenderStandardObjects(c: ExtraSceneConfig, layouts: ExtraObjectLayouts): string {
+export function blenderStandardObjects(c: StandardSceneConfig, layouts: ExtraObjectLayouts): string {
     const { groups, materials } = sceneData(c, layouts);
+    const panels = blenderPanels(c, layouts.backdrops);
     if (!groups.length)
-        return '';
+        return panels;
     return `
 # BIBLIOTECA: OBJETOS PADRAO
 def criar_objetos_padrao():
@@ -113,12 +118,14 @@ def criar_objetos_padrao():
                     obj.data.materials.append(materiais[int(material_id)])
 
 criar_objetos_padrao()
+${panels}
 `;
 }
-export function maxStandardObjects(c: ExtraSceneConfig, layouts: ExtraObjectLayouts): string {
+export function maxStandardObjects(c: StandardSceneConfig, layouts: ExtraObjectLayouts): string {
     const { groups, materials } = sceneData(c, layouts);
+    const panels = maxPanels(c, layouts.backdrops);
     if (!groups.length)
-        return '';
+        return panels;
     const array = (rows: number[][]) => '#(' + rows.map(row => '#(' + row.join(',') + ')').join(',') + ')';
     const data = '#(' + groups.map(([name, positions, parts]) => '#("' + name + '",' + array(positions) + ',' + array(parts) + ')').join(',') + ')';
     return `
@@ -151,5 +158,6 @@ undo "Adicionar objetos padrao Code Buddy" on
         )
     )
 )
+${panels}
 `;
 }

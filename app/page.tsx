@@ -24,6 +24,8 @@ import { activationGeometry } from '@/lib/activation-geometry';
 import { storageGeometry } from '@/lib/storage';
 import type { StorageDoorSide, StorageDoorHinge, StorageDoorOpening } from '@/lib/storage';
 import { ReceptionFinishControls } from '@/components/reception-finish-controls';
+import { PanelControls } from '@/components/panel-controls';
+import { panelParts } from '@/lib/panel';
 import { CounterControls } from '@/components/counter-controls';
 import { receptionGeometry } from '@/lib/reception';
 
@@ -236,7 +238,7 @@ const parameterFields: Record<'led' | 'counter' | 'stage' | 'totem' | 'spots' | 
     roundRugs: [{ "key": "rugCount", "label": "Quantidade", "min": 1, "max": 100, "unit": "un" }, { "key": "rugDiameter", "label": "Diâmetro", "min": 0.4, "max": 10 }, { "key": "rugGap", "label": "Vão livre entre unidades", "min": 0, "max": 3 }],
 };
 const materialFields: {
-    key: 'counterTopMat' | 'counterBaseMat' | 'samplingCounterMat' | 'samplingSupportMat' | 'samplingSampleMat' | 'demoBenchMat' | 'demoProductMat' | 'floorMat' | 'wallMat' | 'counterMat' | 'stageMat' | 'totemMat' | 'roundTableMat' | 'rectTableMat' | 'bistroTableMat' | 'stoolMat' | 'pedestalMat' | 'armchairMat' | 'puffMat' | 'coffeeTableMat' | 'showcaseBaseMat' | 'shelfMat' | 'backdropMat' | 'touchMat' | 'cabinetMat' | 'openCubeMat' | 'rugMat';
+    key: 'backdropFrameMat' | 'backdropStructureMat' | 'backdropBaseMat' | 'counterTopMat' | 'counterBaseMat' | 'samplingCounterMat' | 'samplingSupportMat' | 'samplingSampleMat' | 'demoBenchMat' | 'demoProductMat' | 'floorMat' | 'wallMat' | 'counterMat' | 'stageMat' | 'totemMat' | 'roundTableMat' | 'rectTableMat' | 'bistroTableMat' | 'stoolMat' | 'pedestalMat' | 'armchairMat' | 'puffMat' | 'coffeeTableMat' | 'showcaseBaseMat' | 'shelfMat' | 'backdropMat' | 'touchMat' | 'cabinetMat' | 'openCubeMat' | 'rugMat';
     label: string;
     enabled?: 'counter' | 'stage' | 'totem' | 'roundTables' | 'rectTables' | 'bistroTables' | 'stools' | 'pedestals' | 'armchairs' | 'puffs' | 'coffeeTables' | 'showcases' | 'shelving' | 'backdrops' | 'touchScreens' | 'cabinets' | 'openCubes' | 'roundRugs';
 }[] = [{key:'samplingCounterMat',label:'Balcão de entrega'},{key:'samplingSupportMat',label:'Apoio e armazenamento'},{key:'samplingSampleMat',label:'Amostras de referência'}, { key: 'demoBenchMat', label: 'Corpo da bancada de demonstração' }, { key: 'demoProductMat', label: 'Produto de referência' }, { key: 'floorMat', label: 'Piso' },
@@ -256,7 +258,10 @@ const materialFields: {
     { key: 'coffeeTableMat', label: 'Tampo das mesas de centro', enabled: 'coffeeTables' },
     { key: 'showcaseBaseMat', label: 'Base das vitrines expositoras', enabled: 'showcases' },
     { key: 'shelfMat', label: 'Estantes expositoras', enabled: 'shelving' },
-    { key: 'backdropMat', label: 'Backdrops', enabled: 'backdrops' },
+    { key: 'backdropMat', label: 'Painel / frente', enabled: 'backdrops' },
+    { key: 'backdropStructureMat', label: 'Estrutura dos painéis', enabled: 'backdrops' },
+    { key: 'backdropBaseMat', label: 'Bases dos painéis', enabled: 'backdrops' },
+    { key: 'backdropFrameMat', label: 'Moldura dos painéis', enabled: 'backdrops' },
     { key: 'touchMat', label: 'Telas touch', enabled: 'touchScreens' },
     { key: 'cabinetMat', label: 'Armários', enabled: 'cabinets' },
     { key: 'openCubeMat', label: 'Cubos vazados', enabled: 'openCubes' },
@@ -412,7 +417,12 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
               const fill = m.material === 'brand' ? c.color : materials.find(mat => mat.value === m.material)?.color ?? '#c8cedb';
               return <g key={`${m.role}:${m.index}`} transform={`translate(${mx} ${my}) rotate(${-m.rotation})`}>
                 {m.circle ? <circle r={m.width * s / 2} fill={fill} fillOpacity={floor ? .45 : 1} stroke={stroke} strokeWidth={selected ? 2.5 : 1} />
-                  : <rect x={-m.width * s / 2} y={-m.depth * s / 2} width={m.width * s} height={m.depth * s} rx="1" fill={fill} fillOpacity={m.role === 'showcases' ? .4 : m.role === 'openCubes' ? .25 : 1} stroke={stroke} strokeWidth={selected ? 2.5 : 1} />}
+                  : <rect x={-m.width * s / 2} y={-m.depth * s / 2} width={m.width * s} height={m.depth * s} rx="1" fill={fill} fillOpacity={m.role === 'backdrops' && c.backdropDetailed ? .08 : m.role === 'showcases' ? .4 : m.role === 'openCubes' ? .25 : 1} stroke={stroke} strokeWidth={selected ? 2.5 : 1} />}
+                {m.role === 'backdrops' && c.backdropDetailed && panelParts(c).map(part => <rect key={part.name}
+                  x={(part.center[0]-part.size[0]/2)*s} y={-(part.center[1]+part.size[1]/2)*s}
+                  width={part.size[0]*s} height={part.size[1]*s}
+                  fill={part.material === 'brand' ? c.color : materials.find(material=>material.value===part.material)?.color}
+                  stroke={stroke} strokeWidth=".5"/>)}
                 {m.role === 'samplingStations' && sampling && <g>
                   <rect x={(sampling.support.x-sampling.support.width/2)*s} y={-(sampling.support.y+sampling.support.depth/2)*s} width={sampling.support.width*s} height={sampling.support.depth*s} fill={c.samplingSupportMat==='brand'?c.color:materials.find(mat=>mat.value===c.samplingSupportMat)?.color} stroke={stroke}/>
                   <PlanText counterRotation={t.rotation} x={sampling.support.x*s} y={-sampling.support.y*s+3} textAnchor="middle" fontSize="8" fill="#e5edf9" stroke="#101827" strokeWidth=".3">{c.samplingStorageEnabled?'ESTOQUE':'APOIO'}</PlanText>
@@ -424,7 +434,7 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
                 {!m.circle && <path d={`M ${-m.width * s / 3} ${-m.depth * s / 2} H ${m.width * s / 3}`} stroke="#fff" strokeWidth="2" />}
               </g>;
           })}
-          <PlanText counterRotation={t.rotation} x="0" y={unit.id.startsWith('samplingStations:') ? -(c.samplingCounterDepth+.08)*s/2-5 : unit.id.startsWith('demoStations:') ? -(c.demoBenchDepth+.08)*s/2-5 : 3} textAnchor="middle" fontSize="9" fill={selected ? '#ffce57' : (unit.id.startsWith('demoStations:')||unit.id.startsWith('samplingStations:')) ? '#e5edf9' : '#101827'} stroke={selected ? '#101827' : 'none'} strokeWidth=".4">{c.projectType === 'activation' && c.activationModel === 'sampling' ? 'ENTREGA' : c.projectType === 'activation' && c.activationModel === 'demo' ? 'DEMO' : c.projectType === 'activation' && c.activationModel === 'photo' ? 'FOTO' : unit.label.replace(/ [0-9]+$/, '').slice(0, 2).toUpperCase() + (Number(unit.id.split(':')[1]) + 1)}</PlanText>
+          <PlanText counterRotation={t.rotation} x="0" y={unit.id.startsWith('samplingStations:') ? -(c.samplingCounterDepth+.08)*s/2-5 : unit.id.startsWith('demoStations:') ? -(c.demoBenchDepth+.08)*s/2-5 : 3} textAnchor="middle" fontSize="9" fill={selected ? '#ffce57' : (unit.id.startsWith('demoStations:')||unit.id.startsWith('samplingStations:')||(unit.id.startsWith('backdrops:')&&c.backdropDetailed)) ? '#e5edf9' : '#101827'} stroke={selected || (unit.id.startsWith('backdrops:')&&c.backdropDetailed) ? '#101827' : 'none'} strokeWidth="1.5" paintOrder="stroke">{c.projectType === 'activation' && c.activationModel === 'sampling' ? 'ENTREGA' : c.projectType === 'activation' && c.activationModel === 'demo' ? 'DEMO' : c.projectType === 'activation' && c.activationModel === 'photo' ? 'FOTO' : unit.label.replace(/ [0-9]+$/, '').slice(0, 2).toUpperCase() + (Number(unit.id.split(':')[1]) + 1)}</PlanText>
         </g>;
     });
     const g = geometry(c);
@@ -855,6 +865,7 @@ export default function Home() {
                 'screenName',
                 'frontRotation',
                 'activationExportGuides', 'receptionExportGuides', 'receptionSignText',
+                'backdropDetailed', 'backdropFrameEnabled', 'backdropFrameWidth', 'backdropFrameDepth',
                 'counterDetailed', 'counterTopThickness', 'counterBaseHeight', 'counterBaseInset',
             ].includes(key) || key.endsWith('Mat') ||
             (c.projectType === 'activation' && c.activationModel === 'demo' &&
@@ -1420,6 +1431,7 @@ export default function Home() {
         try { validate(next); setC(next); setError(''); setNotice('Fila, sinalização e guias ativados.'); }
         catch (error) { setError(error instanceof Error ? error.message : 'A montagem não cabe nesta área.'); }
       }}/>}
+      {c.backdrops && <PanelControls c={c} updateAction={update}/>}
       {c.counter && <CounterControls c={c} updateAction={update}/>}
               {c.projectType === 'reception' && (
         <div
@@ -1697,6 +1709,8 @@ export default function Home() {
       {!(c.projectType === 'activation' && ['demo','sampling'].includes(c.activationModel)) && !availableElements.some(f => c[f.key]) && <p className="tab-help">Selecione um elemento na aba Projeto para ajustar suas medidas.</p>}
       {c.led && <div className="texture-section"><h3>Textura da TV / LED</h3><p>Escolha a arte que vai aparecer na tela. A imagem inteira é ajustada às medidas do LED.</p><label className="upload-label" htmlFor="tv-image">Escolher imagem JPG ou PNG<input id="tv-image" type="file" accept="image/png,image/jpeg" onChange={handleImage}/></label><small>Até 2 MB · incorporada ao script · imagem estática</small>{c.screenImage ? <div className="texture-preview"><ImagePreview src={c.screenImage} alt="Arte selecionada para a tela de TV" width={320} height={180} unoptimized/><span>{c.screenName}</span><button onClick={() => { imageRequest.current += 1; setC(prev => ({ ...prev, screenImage: '', screenName: '' })); setNotice('Imagem removida.'); }}>Remover imagem</button></div> : <p className="tab-help">Sem imagem, a tela usa a cor de destaque.</p>}</div>}
       </TabsContent><TabsContent value="materials"><p className="tab-help">Escolha o acabamento de cada parte. Madeira e concreto usam textura procedural; metal e vidro recebem propriedades de superfície.</p><div className="material-fields">{materialFields.filter((field) => {
+            if (field.key === 'backdropFrameMat') return c.backdrops && c.backdropDetailed && c.backdropFrameEnabled;
+            if (field.key === 'backdropStructureMat' || field.key === 'backdropBaseMat') return c.backdrops && c.backdropDetailed;
             if (field.key === 'counterTopMat' || field.key === 'counterBaseMat') return c.counter && c.counterDetailed;
             if (['samplingCounterMat','samplingSupportMat','samplingSampleMat'].includes(field.key)) return c.projectType === 'activation' && c.activationModel === 'sampling';
             if (field.key === 'demoBenchMat' || field.key === 'demoProductMat') return c.projectType === 'activation' && c.activationModel === 'demo';

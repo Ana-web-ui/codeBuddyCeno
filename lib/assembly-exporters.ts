@@ -30,7 +30,8 @@ cb_montar_unidade()
 `;
 }
 
-export function wrapMaxUnit(unit: AssemblyUnit, t: ObjectTransform, code: string): string {
+export function wrapMaxUnit(unit: AssemblyUnit, t: ObjectTransform, code: string,
+    options: { group?: boolean; preserveNames?: boolean } = {}): string {
     const name = 'CB_Unidade_' + unit.id.replace(':', '_');
     return `
 -- MONTAGEM INDIVIDUAL: ${unit.id}
@@ -43,11 +44,11 @@ ${code}
     (
         local obj = cbNovos[i]
         obj.transform = obj.transform * cbMovimento
-        obj.name = "${name}_" + (i as string)
+        obj.name = "${name}_" + ${options.preserveNames ? 'obj.name' : '(i as string)'}
         setUserProp obj "code_buddy_id" "${unit.id}"
         if (findItem criados obj) == 0 do cbRegistrar obj
     )
-${(unit.id.startsWith('demoStations:')||unit.id.startsWith('samplingStations:'))?`    local raizDemo = cbRegistrar (Dummy name:"${name}_Grupo" pos:[(${t.x}*METRO),(${t.y}*METRO),(0.1*METRO)])
+${(options.group || unit.id.startsWith('demoStations:')||unit.id.startsWith('samplingStations:'))?`    local raizDemo = cbRegistrar (Dummy name:"${name}_Grupo" pos:[(${t.x}*METRO),(${t.y}*METRO),(0.1*METRO)])
     raizDemo.rotation = angleaxis ${t.rotation} [0,0,1]
     setUserProp raizDemo "code_buddy_role" "assembly_unit"
     setUserProp raizDemo "code_buddy_id" "${unit.id}"
