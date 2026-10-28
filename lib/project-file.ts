@@ -9,10 +9,11 @@ import { samplingDefaults } from './sampling';
 import { receptionFinishDefaults } from './reception-finish';
 import { counterDefaults } from './counter';
 import { receptionDefaults, receptionQueueDefaults } from './reception';
+import { panelDefaults } from './panel';
 
 export const MAX_PROJECT_BYTES = 4 * 1024 * 1024;
 const FORMAT = 'code-buddy-project';
-const VERSION = 14;
+const VERSION = 15;
 
 function object(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -32,6 +33,7 @@ function checkedConfig(
     migrateReceptionQueue = false,
     migrateCounter = false,
     migrateReceptionFinish = false,
+    migratePanel = false,
 ): Config  {
     if (!object(value)) {
         throw new Error('O projeto é inválido.');
@@ -55,6 +57,7 @@ function checkedConfig(
 
         const canUseDefault =
             legacy ||
+            (migratePanel && Object.hasOwn(panelDefaults, key)) ||
             (migrateReceptionFinish && Object.hasOwn(receptionFinishDefaults, key)) ||
             (migrateCounter && Object.hasOwn(counterDefaults, key)) ||
             (
@@ -96,6 +99,8 @@ function checkedConfig(
         }
 
         const item = present ? value[key]
+            : Object.hasOwn(panelDefaults, key)
+                ? panelDefaults[key as keyof typeof panelDefaults]
             : Object.hasOwn(receptionFinishDefaults, key)
                 ? receptionFinishDefaults[key as keyof typeof receptionFinishDefaults]
             : Object.hasOwn(counterDefaults, key)
@@ -172,6 +177,7 @@ export function parseProject(text: string): Config {
             document.version !== 11 &&
             document.version !== 12 &&
             document.version !== 13 &&
+            document.version !== 14 &&
             document.version !== VERSION
         ) {
             throw new Error(
@@ -193,6 +199,7 @@ export function parseProject(text: string): Config {
             typeof document.version === 'number' && document.version <= 11,
             typeof document.version === 'number' && document.version <= 12,
             typeof document.version === 'number' && document.version <= 13,
+            typeof document.version === 'number' && document.version <= 14,
         );
     }
     // Formatos antigos da interface: { config } e configuração direta.

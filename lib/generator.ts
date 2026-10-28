@@ -32,6 +32,8 @@ import { receptionExport } from './reception-exporters';
 import { counterDefaults, validateCounter } from './counter';
 import type { CounterConfig } from './counter';
 import { blenderCounters } from './counter-exporters';
+import { panelDefaults, validatePanel } from './panel';
+import type { PanelConfig } from './panel';
 export type MaterialKind = 'white' | 'brand' | 'wood' | 'metal' | 'glass' | 'concrete' | 'plastic';
 export type ProjectType = 'stand' | 'palco' | 'lounge'| 'activation' | 'reception';
 export type Target = 'blender' | 'max';
@@ -45,7 +47,7 @@ export const materials: {
     { value: 'glass', label: 'Vidro', color: '#81bfce' }, { value: 'concrete', label: 'Concreto', color: '#747b86' },
     { value: 'plastic', label: 'Plástico', color: '#c4d1e1' }
 ];
-export type Config = CounterConfig & ReceptionConfig & ActivationConfig & StorageConfig & AssemblyConfig & ChairConfig & RoundTableConfig & RectTableConfig & BistroTableConfig & StoolConfig & TableChairConfig & PedestalConfig & LoungeConfig & CoffeeTableConfig & LoungeSetConfig & ShowcaseConfig & ExtraObjectsConfig & {
+export type Config = PanelConfig & CounterConfig & ReceptionConfig & ActivationConfig & StorageConfig & AssemblyConfig & ChairConfig & RoundTableConfig & RectTableConfig & BistroTableConfig & StoolConfig & TableChairConfig & PedestalConfig & LoungeConfig & CoffeeTableConfig & LoungeSetConfig & ShowcaseConfig & ExtraObjectsConfig & {
     projectType: ProjectType;
     standLayout: StandLayout;
     frontRotation: FrontRotation;
@@ -93,6 +95,7 @@ export const defaults: Config = {
     frontRotation: 0,
     cornerOpenSide: 'right',
     objectTransforms: {},
+    ...panelDefaults,
     ...counterDefaults,
     ...receptionDefaults,
     ...activationDefaults,
@@ -588,6 +591,7 @@ export function extraObjectGeometry(c: Config) {
     });
 }
 export function validate(c: Config) {
+    validatePanel(c);
     validateCounter(c);
     if (![0, 90, 180, 270].includes(c.frontRotation))
         throw new Error('A orientação da frente deve ser 0°, 90°, 180° ou 270°.');
@@ -644,7 +648,7 @@ export function validate(c: Config) {
     for (const [key, initial] of Object.entries(defaults))
         if (typeof initial === 'number' && (!Number.isFinite(c[key as keyof Config] as number)))
             throw new Error('Confira os parâmetros dos elementos: todas as medidas e quantidades devem conter números.');
-    for (const k of ['receptionBarrierMat','receptionBeltMat','receptionSignMat','receptionSignTextMat','counterTopMat','counterBaseMat','samplingCounterMat','samplingSupportMat','samplingSampleMat','demoBenchMat', 'demoProductMat', 'floorMat', 'wallMat', 'counterMat', 'stageMat', 'totemMat', 'roundTableMat', 'rectTableMat', 'bistroTableMat', 'stoolMat', 'pedestalMat', 'armchairMat', 'puffMat', 'coffeeTableMat', 'showcaseBaseMat', 'shelfMat', 'backdropMat', 'touchMat', 'cabinetMat', 'openCubeMat', 'rugMat'] as const)
+    for (const k of ['backdropFrameMat', 'backdropStructureMat', 'backdropBaseMat', 'receptionBarrierMat','receptionBeltMat','receptionSignMat','receptionSignTextMat','counterTopMat','counterBaseMat','samplingCounterMat','samplingSupportMat','samplingSampleMat','demoBenchMat', 'demoProductMat', 'floorMat', 'wallMat', 'counterMat', 'stageMat', 'totemMat', 'roundTableMat', 'rectTableMat', 'bistroTableMat', 'stoolMat', 'pedestalMat', 'armchairMat', 'puffMat', 'coffeeTableMat', 'showcaseBaseMat', 'shelfMat', 'backdropMat', 'touchMat', 'cabinetMat', 'openCubeMat', 'rugMat'] as const)
         if (!materials.some(m => m.value === c[k]))
             throw new Error('Material inválido.');
     const check = (keys: (keyof Config)[], label: string) => {
