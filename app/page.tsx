@@ -620,6 +620,102 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
         })}
       </g>
     )}
+        {reception?.flow && (
+      <g
+        aria-label="Fila, entrada e saída da recepção"
+        pointerEvents="none"
+      >
+        <defs>
+          <marker
+            id="reception-flow-arrow"
+            viewBox="0 0 10 10"
+            refX="9"
+            refY="5"
+            markerWidth="5"
+            markerHeight="5"
+            orient="auto"
+          >
+            <path
+              d="M 0 0 L 10 5 L 0 10 Z"
+              fill="#facc15"
+            />
+          </marker>
+        </defs>
+
+        {reception.flow.corridors.map((zone, index) => (
+          <rect
+            key={`reception-corridor-${index}`}
+            x={px(zone.x - zone.width / 2)}
+            y={py(zone.y + zone.depth / 2)}
+            width={zone.width * s}
+            height={zone.depth * s}
+            fill="#facc15"
+            fillOpacity="0.08"
+          />
+        ))}
+
+        <rect
+          x={px(
+            reception.flow.queue.x -
+            reception.flow.queue.width / 2
+          )}
+          y={py(
+            reception.flow.queue.y +
+            reception.flow.queue.depth / 2
+          )}
+          width={reception.flow.queue.width * s}
+          height={reception.flow.queue.depth * s}
+          fill="#c084fc"
+          fillOpacity="0.18"
+          stroke="#c084fc"
+          strokeDasharray="4 3"
+        />
+
+        {reception.flow.routes.map(route => (
+          <polyline
+            key={route.name}
+            points={route.points
+              .map(point => `${px(point.x)},${py(point.y)}`)
+              .join(' ')}
+            fill="none"
+            stroke="#facc15"
+            strokeWidth="1.5"
+            strokeDasharray="5 3"
+            markerEnd="url(#reception-flow-arrow)"
+          />
+        ))}
+
+        <PlanText
+          x={px(reception.flow.queue.x)}
+          y={py(reception.flow.queue.y)}
+          textAnchor="middle"
+          fontSize="9"
+          fill="#e5edf9"
+        >
+          FILA
+        </PlanText>
+
+        <PlanText
+          x={px(reception.flow.entrance.x)}
+          y={py(reception.flow.entrance.y) + 14}
+          textAnchor="middle"
+          fontSize="9"
+          fill="#facc15"
+        >
+          ENTRADA
+        </PlanText>
+
+        <PlanText
+          x={px(reception.flow.exit.x)}
+          y={py(reception.flow.exit.y) + 14}
+          textAnchor="middle"
+          fontSize="9"
+          fill="#facc15"
+        >
+          SAÍDA
+        </PlanText>
+      </g>
+    )}
     {drawUnits(false)}
     {c.counter && g.counterXs.map((cx, i) => <g key={i}><rect x={px(cx - (g.counterW + .08) / 2)} y={py(g.counterY + (c.counterDepth + .08) / 2)} width={(g.counterW + .08) * s} height={(c.counterDepth + .08) * s} rx="3" fill={c.counterMat === 'brand' ? c.color : materials.find(m => m.value === c.counterMat)?.color}/><PlanText x={px(cx)} y={py(g.counterY) + 5} textAnchor="middle" fill="white" fontSize="12">Balcão</PlanText></g>)}
     {c.totem && g.totemXs.map((tx, i) => <g key={i}><rect x={px(tx - (c.totemWidth + .15) / 2)} y={py(g.totemY + (c.totemDepth + .2) / 2)} width={(c.totemWidth + .15) * s} height={(c.totemDepth + .2) * s} rx="2" fill={c.totemMat === 'brand' ? c.color : materials.find(m => m.value === c.totemMat)?.color}/><PlanText x={px(tx)} y={py(g.totemY) + 27} textAnchor="middle" fill="#cdd7ec" fontSize="12">Totem</PlanText></g>)}
@@ -1369,6 +1465,82 @@ export default function Home() {
             laranja indica equipe e verde indica acessos laterais.
             As faixas são referências de espaço livre.
           </p>
+                    <h3>Fila e fluxo do público</h3>
+
+          <label className="field">
+            <span>Ativar fila compartilhada</span>
+            <Checkbox
+              checked={c.receptionQueueEnabled}
+              onCheckedChange={value =>
+                update('receptionQueueEnabled', value === true)
+              }
+              aria-label="Ativar fila compartilhada"
+            />
+          </label>
+
+          {c.receptionQueueEnabled && (
+            <>
+              {([
+                {
+                  key: 'receptionQueueWidth',
+                  label: 'Largura da fila e dos percursos',
+                  min: 0.8,
+                  max: 2,
+                },
+                {
+                  key: 'receptionQueueDepth',
+                  label: 'Comprimento da fila',
+                  min: 0.8,
+                  max: 6,
+                },
+              ] as const).map(field => (
+                <label className="field" key={field.key}>
+                  <span>{field.label} (m)</span>
+                  <input
+                    type="number"
+                    min={field.min}
+                    max={field.max}
+                    step="0.1"
+                    value={
+                      Number.isFinite(c[field.key])
+                        ? c[field.key]
+                        : ''
+                    }
+                    onChange={event =>
+                      update(field.key, event.target.valueAsNumber)
+                    }
+                  />
+                </label>
+              ))}
+
+              <label className="field">
+                <span>Lado da saída, visto pela frente</span>
+                <Select
+                  value={c.receptionExitSide}
+                  onValueChange={value => {
+                    if (value === 'left' || value === 'right') {
+                      update('receptionExitSide', value);
+                    }
+                  }}
+                >
+                  <SelectTrigger aria-label="Lado da saída">
+                    <SelectValue />
+                  </SelectTrigger>
+
+                  <SelectContent>
+                    <SelectItem value="left">Esquerda</SelectItem>
+                    <SelectItem value="right">Direita</SelectItem>
+                  </SelectContent>
+                </Select>
+              </label>
+
+              <p className="tab-help">
+                A fila fica no lado oposto à saída.
+                O público é distribuído pela frente dos balcões.
+                Os acessos laterais permanecem reservados à equipe.
+              </p>
+            </>
+          )}
         </div>
       )}
       {c.projectType === 'activation' && <ActivationControls c={c} update={update} apply={next=>{

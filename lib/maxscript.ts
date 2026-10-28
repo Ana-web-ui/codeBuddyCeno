@@ -177,8 +177,8 @@ undo "Gerar stand Code Buddy" on
     )
     if ADICIONAR_BALCAO do for i = 1 to BALCOES do
     (
-        local x = (#(${geometry(c).counterXs.join(', ')}))[i]
-        local y = ${geometry(c).counterY}
+        local x = (i-1-(BALCOES-1)/2.0)*(BALCAO_LARGURA+.4)
+        local y = -PROFUNDIDADE*.28
         cbCaixa "Balcao_Corpo" BALCAO_LARGURA BALCAO_PROFUNDIDADE (BALCAO_ALTURA-.06) x y (.1+(BALCAO_ALTURA-.06)/2.0) balcao
         cbCaixa "Balcao_Tampo" (BALCAO_LARGURA+.08) (BALCAO_PROFUNDIDADE+.08) .06 x y (.1+BALCAO_ALTURA-.03) branco
     )

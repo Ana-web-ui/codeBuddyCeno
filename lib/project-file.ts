@@ -6,11 +6,11 @@ import { storageDefaults } from './storage';
 import { activationDefaults, photoDefaults, demoDefaults } from './activation';
 import { materials } from './generator';
 import { samplingDefaults } from './sampling';
-import { receptionDefaults } from './reception';
+import { receptionDefaults, receptionQueueDefaults } from './reception';
 
 export const MAX_PROJECT_BYTES = 4 * 1024 * 1024;
 const FORMAT = 'code-buddy-project';
-const VERSION = 11;
+const VERSION = 12;
 
 function object(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -27,6 +27,7 @@ function checkedConfig(
     migrateDemo = false,
     migrateSampling = false,
     migrateReception = false,
+    migrateReceptionQueue = false,
 ): Config  {
     if (!object(value)) {
         throw new Error('O projeto é inválido.');
@@ -48,11 +49,33 @@ function checkedConfig(
     for (const key of Object.keys(defaults) as (keyof Config)[]) {
         const present = Object.hasOwn(value, key);
 
-        const canUseDefault =
-            legacy || (migrateSampling && Object.hasOwn(samplingDefaults,key)) ||
-            (migrateDemo && Object.hasOwn(demoDefaults, key)) ||
-            (migratePhoto && Object.hasOwn(photoDefaults, key)) ||
-            (migrateZones && key !== 'activationModel' && Object.hasOwn(activationDefaults, key)) ||
+                const canUseDefault =
+            legacy ||
+            (
+                migrateReceptionQueue &&
+                Object.hasOwn(receptionQueueDefaults, key)
+            ) ||
+            (
+                migrateReception &&
+                Object.hasOwn(receptionDefaults, key)
+            ) ||
+            (
+                migrateSampling &&
+                Object.hasOwn(samplingDefaults, key)
+            ) ||
+            (
+                migrateDemo &&
+                Object.hasOwn(demoDefaults, key)
+            ) ||
+            (
+                migratePhoto &&
+                Object.hasOwn(photoDefaults, key)
+            ) ||
+            (
+                migrateZones &&
+                key !== 'activationModel' &&
+                Object.hasOwn(activationDefaults, key)
+            ) ||
             (
                 migrateStorage &&
                 Object.hasOwn(storageDefaults, key)
@@ -61,10 +84,6 @@ function checkedConfig(
                 migrateActivation &&
                 Object.hasOwn(activationDefaults, key)
             );
-
-        if (!present && !canUseDefault) {
-            throw new Error(`O campo “${key}” está ausente.`);
-        }
 
         const item = present ? value[key] : initial[key];
         if (key === 'objectTransforms') {
@@ -88,6 +107,7 @@ function checkedConfig(
         storageDoorSide: ['front', 'back', 'left', 'right'],
         storageDoorHinge: ['left', 'right'],
         storageDoorOpening: ['inward', 'outward'],
+        receptionExitSide: ['left', 'right'],
     };
     for (const [key, options] of Object.entries(enums)) {
         if (!options.includes(clean[key] as string)) throw new Error(`Opção inválida no campo “${key}”.`);
@@ -134,6 +154,7 @@ export function parseProject(text: string): Config {
             document.version !== 8 &&
             document.version !== 9 &&
             document.version !== 10 &&
+            document.version !== 11 &&
             document.version !== VERSION
         ) {
             throw new Error(
@@ -152,6 +173,7 @@ export function parseProject(text: string): Config {
             typeof document.version === 'number' && document.version <= 8,
             typeof document.version === 'number' && document.version <= 9,
             typeof document.version === 'number' && document.version <= 10,
+            typeof document.version === 'number' && document.version <= 11,
         );
     }
     // Formatos antigos da interface: { config } e configuração direta.

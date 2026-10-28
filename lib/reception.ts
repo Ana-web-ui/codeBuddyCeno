@@ -1,4 +1,20 @@
-export type ReceptionConfig = {
+export type ReceptionQueueConfig = {
+    receptionQueueEnabled: boolean;
+    receptionQueueWidth: number;
+    receptionQueueDepth: number;
+    receptionExitSide: 'left' | 'right';
+}
+
+
+export const receptionQueueDefaults: ReceptionQueueConfig = {
+    receptionQueueEnabled: false,
+    receptionQueueWidth: 1,
+    receptionQueueDepth: 1.5,
+    receptionExitSide: 'right'
+}
+
+
+export type ReceptionConfig = ReceptionQueueConfig & {
     receptionCounterGap: number;
     receptionRowY: number;
     receptionServiceDepth: number;
@@ -7,6 +23,7 @@ export type ReceptionConfig = {
 };
 
 export const receptionDefaults: ReceptionConfig = {
+    ...receptionQueueDefaults,
     receptionCounterGap: 0.4,
     receptionRowY: 0.5,
     receptionServiceDepth: 1.2,
@@ -31,6 +48,135 @@ export type ReceptionZone = {
     width: number;
     depth: number;
 };
+
+type ReceptionPoint = {
+    x: number;
+    y: number;
+};
+
+type ReceptionRoute = {
+    name: string;
+    points: ReceptionPoint[];
+};
+
+function receptionFlow(
+    c: ReceptionInput,
+    rowWidth: number,
+    service: ReceptionZone,
+    counters: {
+        name: string;
+        x: number;
+        y: number;
+        depth: number;
+    }[],
+) {
+    const width = c.receptionQueueWidth;
+    const sign = c.receptionExitSide === 'left' ? -1 : 1;
+
+    // Fila e saída ocupam lados opostos da faixa pública.
+    const queueX = -sign * (rowWidth - width) / 2;
+    const exitX = sign * (rowWidth - width) / 2;
+
+    const serviceFront = service.y - service.depth / 2;
+    const distributionY = serviceFront + width / 2;
+
+    const queueFront =
+        serviceFront - c.receptionQueueDepth;
+
+    // Mantém o fluxo dentro da margem de 50 cm do projeto.
+    const frontY = -c.depth / 2 + 0.5 + width / 2;
+
+    const entrance: ReceptionPoint = {
+        x: queueX,
+        y: frontY,
+    };
+
+    const exit: ReceptionPoint = {
+        x: exitX,
+        y: frontY,
+    };
+
+    const queue: ReceptionZone = {
+        name: 'Fila',
+        x: queueX,
+        y: serviceFront - c.receptionQueueDepth / 2,
+        width,
+        depth: c.receptionQueueDepth,
+    };
+
+    const queueStart: ReceptionPoint = {
+        x: queueX,
+        y: queueFront + width / 2,
+    };
+
+    const distributionStart: ReceptionPoint = {
+        x: queueX,
+        y: distributionY,
+    };
+
+    const distributionEnd: ReceptionPoint = {
+        x: exitX,
+        y: distributionY,
+    };
+
+    const routes: ReceptionRoute[] = [
+        {
+            name: 'Entrada',
+            points: [entrance, queueStart],
+        },
+        {
+            name: 'Fila',
+            points: [queueStart, distributionStart],
+        },
+        {
+            name: 'Distribuição',
+            points: [distributionStart, distributionEnd],
+        },
+        ...counters.map(counter => ({
+            name: `Acesso ao ${counter.name.toLowerCase()}`,
+            points: [
+                {
+                    x: counter.x,
+                    y: distributionY,
+                },
+                {
+                    x: counter.x,
+                    y:
+                        counter.y -
+                        counter.depth / 2 -
+                        width / 2,
+                },
+            ],
+        })),
+        {
+            name: 'Saída',
+            points: [distributionEnd, exit],
+        },
+    ];
+
+    // Retângulos com a largura real de cada trecho.
+    const corridors: ReceptionZone[] = routes.flatMap(route =>
+        route.points.slice(1).map((end, index) => {
+            const start = route.points[index];
+
+            return {
+                name: route.name,
+                x: (start.x + end.x) / 2,
+                y: (start.y + end.y) / 2,
+                width: Math.abs(end.x - start.x) + width,
+                depth: Math.abs(end.y - start.y) + width,
+            };
+        }),
+    );
+
+    return {
+        queue,
+        entrance,
+        exit,
+        routes,
+        corridors,
+    };
+}
 
 export function receptionGeometry(c: ReceptionInput) {
     if (c.projectType !== 'reception') return null;
@@ -95,6 +241,9 @@ export function receptionGeometry(c: ReceptionInput) {
         team,
         sideAccesses,
         zones: [service, team, ...sideAccesses],
+                flow: c.receptionQueueEnabled
+            ? receptionFlow(c, rowWidth, service, counters)
+            : null,
     };
 }
 
@@ -136,7 +285,41 @@ export function validateReception(c: ReceptionInput) {
             );
         }
     }
+    if (typeof c.receptionQueueEnabled !== 'boolean') {
+        throw new Error('Informe se a fila está ativada.');
+    }
 
+    if (c.receptionQueueEnabled) {
+        if (!['left', 'right'].includes(c.receptionExitSide)) {
+            throw new Error('Selecione um lado válido para a saída.');
+        }
+
+        if (
+            !Number.isFinite(c.receptionQueueWidth) ||
+            c.receptionQueueWidth < 0.8 ||
+            c.receptionQueueWidth > 2
+        ) {
+            throw new Error('Use uma largura de fila entre 0,8 e 2 m.');
+        }
+
+        if (
+            !Number.isFinite(c.receptionQueueDepth) ||
+            c.receptionQueueDepth < c.receptionQueueWidth ||
+            c.receptionQueueDepth > 6
+        ) {
+            throw new Error(
+                'O comprimento da fila deve ser igual ou maior ' +
+                'que sua largura, com máximo de 6 m.',
+            );
+        }
+
+        if (c.receptionServiceDepth < c.receptionQueueWidth) {
+            throw new Error(
+                'A profundidade do atendimento deve comportar ' +
+                'a largura do percurso.',
+            );
+        }
+    }
     const layout = receptionGeometry(c)!;
     const margin = 0.5;
     const epsilon = 1e-7;
@@ -152,6 +335,70 @@ export function validateReception(c: ReceptionInput) {
                 `${zone.name} não cabe na área da recepção. ` +
                 'Aumente a área, reduza as medidas ou ajuste a posição da fileira.',
             );
+        }
+    }
+    if (layout.flow) {
+        const flow = layout.flow;
+        const width = c.receptionQueueWidth;
+
+        // Mantém fila e saída separadas por pelo menos 20 cm.
+        if (layout.rowWidth < 2 * width + 0.2 - epsilon) {
+            throw new Error(
+                'A fileira precisa ser mais larga para separar fila e saída. ' +
+                'Aumente a largura ou a quantidade de balcões.',
+            );
+        }
+
+        const queueFront =
+            flow.queue.y - flow.queue.depth / 2;
+
+        const frontLimit = -c.depth / 2 + margin;
+
+        if (queueFront < frontLimit + 0.2 - epsilon) {
+            throw new Error(
+                'Falta espaço para conectar a entrada à fila. ' +
+                'Reduza seu comprimento, aumente a profundidade do projeto ' +
+                'ou mova os balcões para o fundo.',
+            );
+        }
+
+        const overlaps = (
+            a: ReceptionZone,
+            b: ReceptionZone,
+        ) =>
+            Math.abs(a.x - b.x) <
+                (a.width + b.width) / 2 - epsilon &&
+            Math.abs(a.y - b.y) <
+                (a.depth + b.depth) / 2 - epsilon;
+
+        const obstacles = [
+            ...layout.counters,
+            layout.team,
+            ...layout.sideAccesses,
+        ];
+
+        for (const zone of [flow.queue, ...flow.corridors]) {
+            if (
+                Math.abs(zone.x) + zone.width / 2 >
+                    c.width / 2 - margin + epsilon ||
+                Math.abs(zone.y) + zone.depth / 2 >
+                    c.depth / 2 - margin + epsilon
+            ) {
+                throw new Error(
+                    `${zone.name} ultrapassa a área disponível da recepção.`,
+                );
+            }
+
+            const obstacle = obstacles.find(item =>
+                overlaps(zone, item),
+            );
+
+            if (obstacle) {
+                throw new Error(
+                    `${zone.name} invade ${obstacle.name.toLowerCase()}. ` +
+                    'Ajuste as medidas da recepção.',
+                );
+            }
         }
     }
 }
