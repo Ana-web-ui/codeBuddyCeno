@@ -1,6 +1,7 @@
 import type {Config} from './generator';
 import { geometry } from './generator';
 import { exportProjectKey } from './export-project';
+import { maxCounters } from './counter-exporters';
 import { maxStorage } from './storage-exporters';
 const msString=(value:string)=>'"'+value.replace(/\\/g,'\\\\').replace(/"/g,'\\"').replace(/[\r\n]/g,' ')+'"';
 export function generateMax(c:Config){
@@ -175,13 +176,14 @@ undo "Gerar stand Code Buddy" on
             cbCaixa "LED_Base" .45 .5 .06 x y .13 escuro
         )
     )
-    if ADICIONAR_BALCAO do for i = 1 to BALCOES do
+${c.counterDetailed ? maxCounters(c, geometry(c).counterXs, geometry(c).counterY) : `    if ADICIONAR_BALCAO do for i = 1 to BALCOES do
     (
         local x = (#(${geometry(c).counterXs.join(', ')}))[i]
         local y = ${geometry(c).counterY}
         cbCaixa "Balcao_Corpo" BALCAO_LARGURA BALCAO_PROFUNDIDADE (BALCAO_ALTURA-.06) x y (.1+(BALCAO_ALTURA-.06)/2.0) balcao
         cbCaixa "Balcao_Tampo" (BALCAO_LARGURA+.08) (BALCAO_PROFUNDIDADE+.08) .06 x y (.1+BALCAO_ALTURA-.03) branco
     )
+`}
     if ADICIONAR_PALCO do cbCaixa "Palco" PALCO_LARGURA PALCO_PROFUNDIDADE PALCO_ALTURA 0 ${geometry(c).stageY} (.1+PALCO_ALTURA/2.0) palco
     if ADICIONAR_TOTEM do for i = 1 to TOTENS do
     (

@@ -6,11 +6,12 @@ import { storageDefaults } from './storage';
 import { activationDefaults, photoDefaults, demoDefaults } from './activation';
 import { materials } from './generator';
 import { samplingDefaults } from './sampling';
+import { counterDefaults } from './counter';
 import { receptionDefaults, receptionQueueDefaults } from './reception';
 
 export const MAX_PROJECT_BYTES = 4 * 1024 * 1024;
 const FORMAT = 'code-buddy-project';
-const VERSION = 12;
+const VERSION = 13;
 
 function object(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -28,6 +29,7 @@ function checkedConfig(
     migrateSampling = false,
     migrateReception = false,
     migrateReceptionQueue = false,
+    migrateCounter = false,
 ): Config  {
     if (!object(value)) {
         throw new Error('O projeto é inválido.');
@@ -51,6 +53,7 @@ function checkedConfig(
 
         const canUseDefault =
             legacy ||
+            (migrateCounter && Object.hasOwn(counterDefaults, key)) ||
             (
                 migrateReceptionQueue &&
                 Object.hasOwn(receptionQueueDefaults, key)
@@ -89,7 +92,10 @@ function checkedConfig(
             throw new Error(`O campo “${key}” está ausente.`);
         }
 
-        const item = present ? value[key] : initial[key];
+        const item = present ? value[key]
+            : Object.hasOwn(counterDefaults, key)
+                ? counterDefaults[key as keyof typeof counterDefaults]
+                : initial[key];
         if (key === 'objectTransforms') {
             checkTransforms(item);
             clean[key] = Object.fromEntries(Object.entries(item).map(([id, t]) => [id, { x: t.x, y: t.y, rotation: t.rotation }]));
@@ -159,6 +165,7 @@ export function parseProject(text: string): Config {
             document.version !== 9 &&
             document.version !== 10 &&
             document.version !== 11 &&
+            document.version !== 12 &&
             document.version !== VERSION
         ) {
             throw new Error(
@@ -178,6 +185,7 @@ export function parseProject(text: string): Config {
             typeof document.version === 'number' && document.version <= 9,
             typeof document.version === 'number' && document.version <= 10,
             typeof document.version === 'number' && document.version <= 11,
+            typeof document.version === 'number' && document.version <= 12,
         );
     }
     // Formatos antigos da interface: { config } e configuração direta.

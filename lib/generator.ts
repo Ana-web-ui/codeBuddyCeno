@@ -28,6 +28,9 @@ import { blenderDemoStation, maxDemoStation } from './demo-exporters';
 import type { ActivationConfig } from './activation';
 import { receptionDefaults, receptionGeometry, validateReception } from './reception.js';
 import type { ReceptionConfig } from './reception.js';
+import { counterDefaults, validateCounter } from './counter';
+import type { CounterConfig } from './counter';
+import { blenderCounters } from './counter-exporters';
 export type MaterialKind = 'white' | 'brand' | 'wood' | 'metal' | 'glass' | 'concrete' | 'plastic';
 export type ProjectType = 'stand' | 'palco' | 'lounge'| 'activation' | 'reception';
 export type Target = 'blender' | 'max';
@@ -41,7 +44,7 @@ export const materials: {
     { value: 'glass', label: 'Vidro', color: '#81bfce' }, { value: 'concrete', label: 'Concreto', color: '#747b86' },
     { value: 'plastic', label: 'Plástico', color: '#c4d1e1' }
 ];
-export type Config = ReceptionConfig & ActivationConfig & StorageConfig & AssemblyConfig & ChairConfig & RoundTableConfig & RectTableConfig & BistroTableConfig & StoolConfig & TableChairConfig & PedestalConfig & LoungeConfig & CoffeeTableConfig & LoungeSetConfig & ShowcaseConfig & ExtraObjectsConfig & {
+export type Config = CounterConfig & ReceptionConfig & ActivationConfig & StorageConfig & AssemblyConfig & ChairConfig & RoundTableConfig & RectTableConfig & BistroTableConfig & StoolConfig & TableChairConfig & PedestalConfig & LoungeConfig & CoffeeTableConfig & LoungeSetConfig & ShowcaseConfig & ExtraObjectsConfig & {
     projectType: ProjectType;
     standLayout: StandLayout;
     frontRotation: FrontRotation;
@@ -89,6 +92,7 @@ export const defaults: Config = {
     frontRotation: 0,
     cornerOpenSide: 'right',
     objectTransforms: {},
+    ...counterDefaults,
     ...receptionDefaults,
     ...activationDefaults,
     ...storageDefaults,
@@ -583,6 +587,7 @@ export function extraObjectGeometry(c: Config) {
     });
 }
 export function validate(c: Config) {
+    validateCounter(c);
     if (![0, 90, 180, 270].includes(c.frontRotation))
         throw new Error('A orientação da frente deve ser 0°, 90°, 180° ou 270°.');
     if (!['front', 'corner', 'peninsula', 'island', 'custom'].includes(c.standLayout))
@@ -638,7 +643,7 @@ export function validate(c: Config) {
     for (const [key, initial] of Object.entries(defaults))
         if (typeof initial === 'number' && (!Number.isFinite(c[key as keyof Config] as number)))
             throw new Error('Confira os parâmetros dos elementos: todas as medidas e quantidades devem conter números.');
-    for (const k of ['samplingCounterMat','samplingSupportMat','samplingSampleMat','demoBenchMat', 'demoProductMat', 'floorMat', 'wallMat', 'counterMat', 'stageMat', 'totemMat', 'roundTableMat', 'rectTableMat', 'bistroTableMat', 'stoolMat', 'pedestalMat', 'armchairMat', 'puffMat', 'coffeeTableMat', 'showcaseBaseMat', 'shelfMat', 'backdropMat', 'touchMat', 'cabinetMat', 'openCubeMat', 'rugMat'] as const)
+    for (const k of ['counterTopMat','counterBaseMat','samplingCounterMat','samplingSupportMat','samplingSampleMat','demoBenchMat', 'demoProductMat', 'floorMat', 'wallMat', 'counterMat', 'stageMat', 'totemMat', 'roundTableMat', 'rectTableMat', 'bistroTableMat', 'stoolMat', 'pedestalMat', 'armchairMat', 'puffMat', 'coffeeTableMat', 'showcaseBaseMat', 'shelfMat', 'backdropMat', 'touchMat', 'cabinetMat', 'openCubeMat', 'rugMat'] as const)
         if (!materials.some(m => m.value === c[k]))
             throw new Error('Material inválido.');
     const check = (keys: (keyof Config)[], label: string) => {
@@ -1187,12 +1192,13 @@ def criar_elementos(branco, marca, escuro, tela):
                 suporte_h = z - altura_led/2 - 0.1
                 caixa('LED_Suporte', (0.09, 0.09, suporte_h), (x, y, 0.1 + suporte_h/2), escuro)
                 caixa('LED_Base', (0.45, 0.5, 0.06), (x, y, 0.13), escuro)
-    if ADICIONAR_BALCAO:
+${c.counterDetailed ? blenderCounters(c, geometry(c).counterXs, geometry(c).counterY).split("\n").map(line => "    " + line).join("\n") : `    if ADICIONAR_BALCAO:
         for i in range(BALCOES):
             x = [${geometry(c).counterXs.join(', ')}][i]
             y = ${geometry(c).counterY}
             caixa('Balcao_Corpo', (BALCAO_LARGURA, BALCAO_PROFUNDIDADE, BALCAO_ALTURA-.06), (x, y, .1+(BALCAO_ALTURA-.06)/2), acabamento(MATERIAL_BALCAO), .02)
             caixa('Balcao_Tampo', (BALCAO_LARGURA+.08, BALCAO_PROFUNDIDADE+.08, .06), (x, y, .1+BALCAO_ALTURA-.03), branco, .02)
+`}
     if ADICIONAR_PALCO:
         caixa('Palco', (PALCO_LARGURA, PALCO_PROFUNDIDADE, PALCO_ALTURA), (0, ${geometry(c).stageY}, .1+PALCO_ALTURA/2), acabamento(MATERIAL_PALCO), .02)
     if ADICIONAR_TOTEM:

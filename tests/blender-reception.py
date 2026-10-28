@@ -14,12 +14,17 @@ for item in items:
     bpy.context.view_layer.update()
     col = next(c for c in bpy.data.collections if c.get('code_buddy_generation'))
     c = item['config']
-    for suffix, size, height in [
-        ('Balcao_Corpo', (c['counterWidth'], c['counterDepth'], c['counterHeight'] - .06),
-         .1 + (c['counterHeight'] - .06) / 2),
-        ('Balcao_Tampo', (c['counterWidth'] + .08, c['counterDepth'] + .08, .06),
-         .1 + c['counterHeight'] - .03),
-    ]:
+    top = c['counterTopThickness'] if c['counterDetailed'] else .06
+    base = c['counterBaseHeight'] if c['counterDetailed'] else 0
+    body = c['counterHeight'] - top - base
+    parts = [
+        ('Balcao_Corpo', (c['counterWidth'], c['counterDepth'], body), .1 + base + body / 2),
+        ('Balcao_Tampo', (c['counterWidth'] + .08, c['counterDepth'] + .08, top), .1 + c['counterHeight'] - top / 2),
+    ]
+    if c['counterDetailed']:
+        parts.append(('Balcao_Rodape', (c['counterWidth'] - 2 * c['counterBaseInset'],
+                     c['counterDepth'] - 2 * c['counterBaseInset'], base), .1 + base / 2))
+    for suffix, size, height in parts:
         objects = [o for o in col.all_objects if suffix in o.name and o.type == 'MESH']
         assert len(objects) == len(item['counters']), (item['id'], suffix, len(objects))
         for expected in item['counters']:

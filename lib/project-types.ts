@@ -46,6 +46,7 @@ export function createProjectConfig(type: ProjectType): Config {
             ...defaults,
 
             projectType: 'reception',
+            counterDetailed: true,
             name: 'Minha primeira recepção',
 
             width: 10,
@@ -121,6 +122,7 @@ export function createProjectConfig(type: ProjectType): Config {
         return {
             ...defaults,
             projectType: 'stand',
+            counterDetailed: true,
             chairs: false,
         };
     }

@@ -75,9 +75,18 @@ for (const [id, c] of cases) test('recepção: ' + id, () => {
     for (const target of ['blender', 'max']) {
         const script = generate({ ...c, target });
         assert.equal(script, generate({ ...restored, target }));
-        const array = positions.counterXs.join(', ');
-        assert.ok(script.includes(target === 'blender' ? `x = [${array}][i]` : `local x = (#(${array}))[i]`));
-        assert.ok(script.includes(`y = ${c.receptionRowY}`));
+        if (c.counterDetailed) {
+            for (const [index, x] of positions.counterXs.entries()) {
+                assert.ok(script.includes(`counter:${index}`));
+                assert.ok(script.includes(target === 'blender'
+                    ? `location = (${x}, ${c.receptionRowY}, .1)`
+                    : `pos:[${x}*METRO,${c.receptionRowY}*METRO,.1*METRO]`));
+            }
+        } else {
+            const array = positions.counterXs.join(', ');
+            assert.ok(script.includes(target === 'blender' ? `x = [${array}][i]` : `local x = (#(${array}))[i]`));
+            assert.ok(script.includes(`y = ${c.receptionRowY}`));
+        }
         writeFileSync(join(fixture, id + (target === 'blender' ? '.py' : '.ms')), script);
     }
     assert.equal(JSON.stringify(c), before);
