@@ -1,9 +1,19 @@
-import { buildAssembly, validateAssembly, unitTransform, checkTransforms } from './assembly.js';
+import { blenderBrandingSupport } from './branding-exporters';
+import { presentationDefaults, validatePresentation, assertFloorOccupancy, lightColor } from './presentation';
+import type { PresentationConfig, FloorFootprint } from './presentation';
+import { blenderFloor, blenderPresentationCameras } from './presentation-exporters';
+import { importedModelsDefaults, validateImportedModels, modelGeometry } from './imported-models';
+import type { ImportedModelsConfig } from './imported-models';
+import { blenderImportedModels } from './imported-model-exporters';
+import { showcaseDetailDefaults, validateShowcaseDetail } from './showcase';
+import type { ShowcaseDetailConfig } from './showcase';
+import { buildAssembly, validateAssembly, unitTransform, checkTransforms, placedMembers } from './assembly.js';
 import type { AssemblyConfig, AssemblyScene, AssemblyUnit } from './assembly.js';
 import { wrapBlenderUnit, wrapMaxUnit } from './assembly-exporters.js';
 import { blenderStandardObjects, maxStandardObjects } from './standard-object-exporters';
 import { blenderShowcases, maxShowcases } from './showcase-exporters';
 import { blenderLounge, maxLounge } from './lounge-exporters';
+import { blenderCoffeeTables, maxCoffeeTables } from './coffee-table-exporters';
 import { blenderPedestals, maxPedestals } from './pedestal-exporters';
 import { generateMax } from './maxscript';
 import { exportProjectKey } from './export-project';
@@ -14,8 +24,33 @@ import { blenderRoundTables, maxRoundTables } from './round-table-exporters';
 import { blenderRectTables, maxRectTables, } from './react-table-exporters';
 import { blenderBistroTables, maxBistroTables } from './bistro-table-exporters';
 import { blenderStools, maxStools } from './stool-exporters';
+import { storageDefaults, storageReservedAreas, validateStorage } from './storage';
+import { blenderStorage } from './storage-exporters';
+import type { StorageConfig } from './storage';
+import type { StandLayout, FrontRotation, CornerOpenSide } from './stand-config.js';
+import { getStandWalls } from './stand-config.js';
+import { activationDefaults } from './activation';
+import { activationGeometry } from './activation-geometry';
+import { activationGuides, activationPhotoCamera } from './activation-exporters';
+import { blenderSampling, maxSampling } from './sampling-exporters';
+import { blenderDemoStation, maxDemoStation } from './demo-exporters';
+import type { ActivationConfig } from './activation';
+import { receptionDefaults, receptionGeometry, validateReception } from './reception.js';
+import type { ReceptionConfig } from './reception.js';
+import { receptionExport } from './reception-exporters';
+import { counterDefaults, validateCounter } from './counter';
+import type { CounterConfig } from './counter';
+import { blenderCounters } from './counter-exporters';
+import { panelDefaults, validatePanel } from './panel';
+import { shelvingDefaults, validateShelving } from './shelving';
+import type { ShelvingConfig } from './shelving';
+import { blenderShelving, maxShelving } from './shelving-exporters';
+import { blenderPanels, maxPanels } from './panel-exporters';
+import type { PanelConfig } from './panel';
+import { brandingDefaults, validateBranding } from './branding';
+import type { BrandingConfig } from './branding';
 export type MaterialKind = 'white' | 'brand' | 'wood' | 'metal' | 'glass' | 'concrete' | 'plastic';
-export type ProjectType = 'stand' | 'palco';
+export type ProjectType = 'stand' | 'palco' | 'lounge'| 'activation' | 'reception';
 export type Target = 'blender' | 'max';
 export const materials: {
     value: MaterialKind;
@@ -27,8 +62,11 @@ export const materials: {
     { value: 'glass', label: 'Vidro', color: '#81bfce' }, { value: 'concrete', label: 'Concreto', color: '#747b86' },
     { value: 'plastic', label: 'Plástico', color: '#c4d1e1' }
 ];
-export type Config = AssemblyConfig & ChairConfig & RoundTableConfig & RectTableConfig & BistroTableConfig & StoolConfig & TableChairConfig & PedestalConfig & LoungeConfig & CoffeeTableConfig & LoungeSetConfig & ShowcaseConfig & ExtraObjectsConfig & {
+export type Config = PresentationConfig & ImportedModelsConfig & BrandingConfig &  ShowcaseDetailConfig & ShelvingConfig & PanelConfig & CounterConfig & ReceptionConfig & ActivationConfig & StorageConfig & AssemblyConfig & ChairConfig & RoundTableConfig & RectTableConfig & BistroTableConfig & StoolConfig & TableChairConfig & PedestalConfig & LoungeConfig & CoffeeTableConfig & LoungeSetConfig & ShowcaseConfig & ExtraObjectsConfig & {
     projectType: ProjectType;
+    standLayout: StandLayout;
+    frontRotation: FrontRotation;
+    cornerOpenSide: CornerOpenSide;
     name: string;
     width: number;
     depth: number;
@@ -67,19 +105,21 @@ export type Config = AssemblyConfig & ChairConfig & RoundTableConfig & RectTable
     screenImage: string;
     screenName: string;
 };
-function blenderCoffeeTables(c: Config, layout: {
-    positions: [
-        number,
-        number
-    ][];
-}): string {
-    return layout.positions.map(([x, y], index) => `caixa('Mesa_Centro_${index + 1}', (${c.coffeeTableWidth}, ${c.coffeeTableDepth}, ${c.coffeeTableHeight}), (${x}, ${y}, ${0.1 + c.coffeeTableHeight / 2}), acabamento('${c.coffeeTableMat}'))`).join('\n');
-}
-function maxCoffeeTables(c: Config, layout: { positions: [number, number][] }): string {
-    return layout.positions.map(([x, y], index) => `cbCaixa "Mesa_Centro_${index + 1}" ${c.coffeeTableWidth} ${c.coffeeTableDepth} ${c.coffeeTableHeight} ${x} ${y} ${0.1 + c.coffeeTableHeight / 2} (cbMaterial "${c.coffeeTableMat}")`).join('\n');
-}
 export const defaults: Config = {
+    ...presentationDefaults,
+    ...importedModelsDefaults,
+    standLayout: 'custom',
+    frontRotation: 0,
+    cornerOpenSide: 'right',
     objectTransforms: {},
+    ...brandingDefaults,
+    ...panelDefaults,
+    ...showcaseDetailDefaults,
+    ...shelvingDefaults,
+    ...counterDefaults,
+    ...receptionDefaults,
+    ...activationDefaults,
+    ...storageDefaults,
     ...chairDefaults,
     ...roundTableDefaults,
     ...rectTableDefaults,
@@ -99,6 +139,7 @@ export const defaults: Config = {
     projectType: 'stand'
 };
 export function geometry(c: Config) {
+    const reception = receptionGeometry(c);
     return {
         ledW: c.ledWidth,
         ledH: c.ledHeight,
@@ -109,9 +150,23 @@ export function geometry(c: Config) {
         stageY: c.projectType === "palco"
             ? c.depth / 2 - 0.7 - c.stageDepth / 2
             : c.depth * 0.18,
-        counterY: -c.depth * 0.28,
-        counterXs: Array.from({ length: Math.min(6, Math.max(0, c.counterCount || 0)) }, (_, i) => (i - (c.counterCount - 1) / 2) *
-            (c.counterWidth + 0.4)),
+               counterY: reception
+            ? c.receptionRowY
+            : -c.depth * 0.28,
+
+        counterXs: reception
+            ? reception.counters.map(counter => counter.x)
+            : Array.from(
+                {
+                    length: Math.min(
+                        6,
+                        Math.max(0, c.counterCount || 0),
+                    ),
+                },
+                (_, i) =>
+                    (i - (c.counterCount - 1) / 2) *
+                    (c.counterWidth + 0.4),
+            ),
         totemXs: Array.from({ length: Math.min(6, Math.max(0, c.totemCount || 0)) }, (_, i) => (i - (c.totemCount - 1) / 2) *
             (c.totemWidth + 0.5)),
         totemY: -c.depth * 0.07,
@@ -125,8 +180,10 @@ export function geometry(c: Config) {
  * Calcula as posições das mesas usando as áreas
  * ocupadas pelos elementos existentes.
  */
-function tableReservedAreas(c: Config): ReservedArea[] {
-    const g = geometry(c);
+function tableReservedAreas(
+    c: Config,
+    includeStorage = true,
+): ReservedArea[] {    const g = geometry(c);
     const reserved: ReservedArea[] = [];
     function reserve(centerX: number, centerY: number, width: number, depth: number, clearance = 0.1) {
         reserved.push({
@@ -182,8 +239,101 @@ function tableReservedAreas(c: Config): ReservedArea[] {
             reserve(0, (entranceY + stageFront) / 2, c.width, stageFront - entranceY, 0);
         }
     }
+
+    if (includeStorage) {
+    reserved.push(...storageReservedAreas(c));
+
+    }
     return reserved;
 }
+
+export function findStoragePosition(
+    c: Config,
+): { storageX: number; storageY: number } {
+    if (c.projectType !== 'stand') {
+        throw new Error(
+            'O depósito está disponível somente para estandes.',
+        );
+    }
+
+    const margin = 0.2;
+
+    const minX =
+        -c.width / 2 + margin + c.storageWidth / 2;
+    const maxX =
+        c.width / 2 - margin - c.storageWidth / 2;
+
+    const minY =
+        -c.depth / 2 + margin + c.storageDepth / 2;
+    const maxY =
+        c.depth / 2 - margin - c.storageDepth / 2;
+
+    if (minX > maxX || minY > maxY) {
+        throw new Error(
+            'O depósito não cabe na área do estande.',
+        );
+    }
+
+    const occupied = tableReservedAreas(c, false);
+
+    function candidate(
+        x: number,
+        y: number,
+    ): { storageX: number; storageY: number } | null {
+        const next: Config = {
+            ...c,
+            projectType: 'stand',
+            storageEnabled: true,
+            storageX: Number(x.toFixed(6)),
+            storageY: Number(y.toFixed(6)),
+        };
+
+        try {
+            validateStorage(next, occupied);
+
+            return {
+                storageX: next.storageX,
+                storageY: next.storageY,
+            };
+        } catch {
+            return null;
+        }
+    }
+
+    // Prefere a lateral fechada quando apenas uma está fechada.
+    const preferLeft = c.left && !c.right;
+
+    const firstX = preferLeft ? minX : maxX;
+    const secondX = preferLeft ? maxX : minX;
+
+    // Primeiro verifica os dois cantos do fundo.
+    for (const x of [firstX, secondX]) {
+        const position = candidate(x, maxY);
+        if (position) return position;
+    }
+
+    // Depois procura em uma grade de 10 cm, do fundo para a frente.
+    const columns = Math.ceil((maxX - minX) / 0.1);
+    const rows = Math.ceil((maxY - minY) / 0.1);
+
+    for (let row = 0; row <= rows; row++) {
+        const y = Math.max(minY, maxY - row * 0.1);
+
+        for (let column = 0; column <= columns; column++) {
+            const x = preferLeft
+                ? Math.min(maxX, minX + column * 0.1)
+                : Math.max(minX, maxX - column * 0.1);
+
+            const position = candidate(x, y);
+            if (position) return position;
+        }
+    }
+
+    throw new Error(
+        'Não encontrei espaço para o depósito e o acesso da porta. Reduza suas medidas ou ajuste os elementos fixos.',
+    );
+}
+
 /** Distribui redondas, retangulares e bistrôs, nesta ordem. */
 export function tableGeometry(c: Config) {
     validateStoolAssociation(c);
@@ -442,6 +592,14 @@ export function showcaseGeometry(c: Config) { if (!c.showcases)
             number
         ][], generatedCount: 0 }; return layoutShowcases(c, showcaseReservedAreas(c, c.showcaseGap)); }
 export function extraObjectGeometry(c: Config) {
+    if (c.projectType === 'activation') {
+        const g = activationGeometry(c)!;
+        // Reutiliza as verificações construtivas, sem a distribuição genérica.
+        const result = layoutExtraObjects({ ...c, touchCount: 1 }, () => []);
+        const role = c.activationModel === 'photo' ? 'backdrops' : 'touchScreens';
+        if(c.activationModel !== 'demo' && c.activationModel !== 'sampling') result[role] = { positions: g.baseStations.map(s => [s.x, s.y]), generatedCount: g.stations.length };
+        return result;
+    }
     return layoutExtraObjects(c, (gap) => {
         const reserved = showcaseReservedAreas(c, gap);
         if (c.showcases) {
@@ -453,19 +611,51 @@ export function extraObjectGeometry(c: Config) {
     });
 }
 export function validate(c: Config) {
+    validatePresentation(c);
+    validateImportedModels(c);
+    validateBranding(c);
+    validateShowcaseDetail(c);
+    validateShelving(c);
+    validatePanel(c);
+    validateCounter(c);
+    if (![0, 90, 180, 270].includes(c.frontRotation))
+        throw new Error('A orientação da frente deve ser 0°, 90°, 180° ou 270°.');
+    if (!['front', 'corner', 'peninsula', 'island', 'custom'].includes(c.standLayout))
+        throw new Error('Selecione uma configuração válida para o estande.');
+    if (!['left', 'right'].includes(c.cornerOpenSide))
+        throw new Error('Selecione uma lateral aberta válida para a esquina.');
+    if (c.projectType === 'stand' && c.standLayout !== 'custom') {
+        const walls = getStandWalls(c.standLayout, c.cornerOpenSide, c);
+        if (walls.back !== c.back || walls.left !== c.left || walls.right !== c.right)
+            throw new Error('As paredes não correspondem ao modelo do estande. Selecione o modelo novamente ou use Personalizado.');
+    }
     checkTransforms(c.objectTransforms);
     if (c.loungeMode !== 'free' && c.loungeMode !== 'set')
         throw new Error('Selecione um modo válido para o lounge.');
     if (!c.name.trim() || c.name.length > 80)
         throw new Error('Dê um nome ao projeto, com até 80 caracteres.');
-    if (!['stand', 'palco'].includes(c.projectType))
+    if (
+        !['stand', 'palco', 'lounge', 'activation', 'reception'].includes(
+            c.projectType,
+        )
+    ) {
         throw new Error('Tipo de projeto inválido.');
+    }
+
+    if (!['touch','photo','demo','sampling'].includes(c.activationModel)) {
+        throw new Error('Modelo de ativação inválido.');
+    }
     if (c.projectType === 'palco') {
         if (!c.stage)
             throw new Error('Palco / plenária precisa incluir um palco.');
-        if (c.back || c.left || c.right || c.counter || c.totem) {
-            throw new Error("Nesta versão, paredes, balcões e totens ainda não estão disponíveis em Palco / plenária.");
-        }
+        if (c.back || c.left || c.right || c.counter || c.totem)
+            throw new Error('Nesta versão, paredes, balcões e totens ainda não estão disponíveis em Palco / plenária.');
+    }
+    if (c.projectType === 'lounge' && [c.back, c.left, c.right, c.stage, c.chairs,
+        c.led, c.counter, c.totem, c.spots, c.storageEnabled, c.roundTables,
+        c.rectTables, c.shelving, c.backdrops, c.touchScreens, c.cabinets,
+        c.openCubes, c.showcases, c.pedestals].some(Boolean)) {
+        throw new Error('O projeto Lounge contém elementos que não estão disponíveis neste tipo de projeto.');
     }
     for (const k of ['width', 'depth', 'height'] as const) {
         const min = k === 'height' ? 2 : 3;
@@ -483,7 +673,7 @@ export function validate(c: Config) {
     for (const [key, initial] of Object.entries(defaults))
         if (typeof initial === 'number' && (!Number.isFinite(c[key as keyof Config] as number)))
             throw new Error('Confira os parâmetros dos elementos: todas as medidas e quantidades devem conter números.');
-    for (const k of ['floorMat', 'wallMat', 'counterMat', 'stageMat', 'totemMat', 'roundTableMat', 'rectTableMat', 'bistroTableMat', 'stoolMat', 'pedestalMat', 'armchairMat', 'puffMat', 'coffeeTableMat', 'showcaseBaseMat', 'shelfMat', 'backdropMat', 'touchMat', 'cabinetMat', 'openCubeMat', 'rugMat'] as const)
+    for (const k of ['showcaseDeckMat', 'showcasePlinthMat', 'showcaseProfileMat', 'shelfShelfMat', 'shelfBackMat', 'shelfBaseMat', 'backdropFrameMat', 'backdropStructureMat', 'backdropBaseMat', 'receptionBarrierMat','receptionBeltMat','receptionSignMat','receptionSignTextMat','counterTopMat','counterBaseMat','samplingCounterMat','samplingSupportMat','samplingSampleMat','demoBenchMat', 'demoProductMat', 'floorMat', 'wallMat', 'counterMat', 'stageMat', 'totemMat', 'roundTableMat', 'rectTableMat', 'bistroTableMat', 'stoolMat', 'pedestalMat', 'armchairMat', 'puffMat', 'coffeeTableMat', 'showcaseBaseMat', 'shelfMat', 'backdropMat', 'touchMat', 'cabinetMat', 'openCubeMat', 'rugMat'] as const)
         if (!materials.some(m => m.value === c[k]))
             throw new Error('Material inválido.');
     const check = (keys: (keyof Config)[], label: string) => {
@@ -565,6 +755,34 @@ export function validate(c: Config) {
     }
     if (c.spots)
         count(c.spotsCount, 'Spots por lado', 10);
+
+        validateReception(c);
+
+    if (c.projectType === 'reception') {
+        const unsupported = [
+            c.back, c.left, c.right,
+            c.led, c.stage, c.totem, c.spots,
+            c.chairs, c.storageEnabled,
+            c.roundTables, c.rectTables, c.bistroTables, c.stools,
+            c.coffeeTables, c.armchairs, c.puffs,
+            c.pedestals, c.showcases, c.shelving, c.backdrops,
+            c.touchScreens, c.cabinets, c.openCubes, c.roundRugs,
+        ].some(Boolean);
+
+        if (unsupported) {
+            throw new Error(
+                'Nesta etapa, a recepção permite somente os balcões ' +
+                'e suas áreas de atendimento e equipe.',
+            );
+        }
+
+        if (Object.keys(c.objectTransforms).length > 0) {
+            throw new Error(
+                'Os balcões da recepção ainda usam o ajuste da fileira. ' +
+                'Ajustes individuais não estão disponíveis nesta etapa.',
+            );
+        }
+    }
     const g = geometry(c);
     const rects: {
         label: string;
@@ -590,6 +808,10 @@ export function validate(c: Config) {
         }
     if (c.screenImage && (!/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/]+={0,2}$/.test(c.screenImage) || c.screenImage.length > 2800000))
         throw new Error('Use uma imagem JPG ou PNG de até 2 MB.');
+        validateStorage(c, tableReservedAreas(c, false));
+
+    layoutChairs(c, geometry(c).stageY);
+    tableGeometry(c);
     layoutChairs(c, geometry(c).stageY);
     tableGeometry(c);
     stoolGeometry(c);
@@ -598,19 +820,46 @@ export function validate(c: Config) {
     coffeeTableGeometry(c);
     showcaseGeometry(c);
     extraObjectGeometry(c);
-    if (Object.keys(c.objectTransforms).length) validateAssembly(c, assemblyGeometry(c), tableReservedAreas(c));
+    if (c.projectType !== 'activation' && Object.keys(c.objectTransforms).length) validateAssembly(c, assemblyGeometry(c), tableReservedAreas(c));
+    validateFloorOccupancy(c);
     return c;
 }
 /** Posições automáticas são a base dos ajustes; não chama validate para evitar recursão. */
 export function assemblyScene(c: Config): AssemblyScene {
     const tables = tableGeometry(c), lounge = loungeGeometry(c);
+    const demo = c.projectType === 'activation' && (c.activationModel === 'demo' || c.activationModel === 'sampling') ? activationGeometry(c) : null;
     return { roundTables: tables.roundTables, rectTables: tables.rectTables, bistroTables: tables.bistroTables,
+        demoStations: { positions: demo?.demo ? demo.baseStations.map(s=>[s.x,s.y]) : [] },
+        samplingStations: { positions: demo?.sampling ? demo.baseStations.map(s=>[s.x,s.y]) : [] },
         tableChairs: tables.tableChairs, stools: stoolGeometry(c), pedestals: pedestalGeometry(c),
         armchairs: lounge.armchairs, puffs: lounge.puffs, coffeeTables: coffeeTableGeometry(c),
         showcases: showcaseGeometry(c), ...extraObjectGeometry(c) };
 }
 export function assemblyGeometry(c: Config): AssemblyUnit[] {
     return buildAssembly(c, assemblyScene(c));
+}
+function validateFloorOccupancy(c: Config): void {
+    if (c.floorShape === 'rectangle' || (c.floorShape === 'rounded' && c.floorCornerRadius === 0)) return;
+    if (c.back || c.left || c.right) throw new Error('Piso curvo: as paredes retas chegam aos cantos. Desative as paredes ou escolha o piso retangular.');
+    const boxes: FloorFootprint[] = tableReservedAreas({ ...c, chairs: false }).slice(4).map(a => ({
+        name: 'Estrutura ou depósito', x: a.centerX, y: a.centerY, width: a.width, depth: a.depth,
+    }));
+    for (const unit of assemblyGeometry(c)) for (const m of placedMembers(c, unit))
+        boxes.push({ name: unit.label, ...m });
+    if (c.chairs) for (const [x, y] of layoutChairs(c, geometry(c).stageY).positions)
+        boxes.push({ name: 'Cadeira da plateia', x, y, width: c.chairWidth, depth: c.chairDepth });
+    for (const model of c.importedModels) {
+        const { size: [width, depth] } = modelGeometry(model);
+        boxes.push({ name: model.name, x: model.x, y: model.y, width, depth, rotation: model.rotation });
+    }
+    const activation = activationGeometry(c);
+    if (activation) boxes.push(...activation.equipment, ...activation.participation,
+        ...(activation.waiting ? [activation.waiting] : []),
+        ...activation.circulation.filter(z => Math.abs(z.x)+z.width/2 < c.width/2-1e-7 && Math.abs(z.y)+z.depth/2 < c.depth/2-1e-7));
+    const reception = receptionGeometry(c);
+    if (reception) boxes.push(...reception.zones, ...reception.details.footprints,
+        ...(reception.flow ? [reception.flow.queue, ...reception.flow.corridors] : []));
+    assertFloorOccupancy(c, boxes);
 }
 function assemblyScript(c: Config): string {
     const scene = assemblyScene(c), units = buildAssembly(c, scene), blender = c.target === 'blender';
@@ -629,6 +878,8 @@ function assemblyScript(c: Config): string {
             // Os exportadores existentes precisam apenas das posições, rotação e contagem.
             const positions = { ...layout, generatedCount: indices.length, rows: 0 };
             switch (role) {
+                case 'samplingStations': return blender ? blenderSampling(c,positions) : maxSampling(c,positions);
+                case 'demoStations': return blender ? blenderDemoStation(c,positions) : maxDemoStation(c,positions);
                 case 'roundTables': return blender ? blenderRoundTables(c, positions) : maxRoundTables(c, positions);
                 case 'rectTables': return blender ? blenderRectTables(c, positions) : maxRectTables(c, positions);
                 case 'bistroTables': return blender ? blenderBistroTables(c, positions) : maxBistroTables(c, positions);
@@ -636,13 +887,21 @@ function assemblyScript(c: Config): string {
                 case 'stools': return blender ? blenderStools(c, positions) : maxStools(c, positions);
                 case 'pedestals': return blender ? blenderPedestals(c, positions) : maxPedestals(c, positions);
                 case 'coffeeTables': return blender ? blenderCoffeeTables(c, positions) : maxCoffeeTables(c, positions);
-                case 'showcases': return blender ? blenderShowcases(c, positions) : maxShowcases(c, positions);
+                case 'showcases': return blender ? blenderShowcases(c, positions, { grouped: false }) : maxShowcases(c, positions, { grouped: false });
                 case 'armchairs': case 'puffs': {
                     const empty = { positions: [] as [number, number][], rotations: [] as number[], generatedCount: 0 };
                     const lounge = { armchairs: empty, puffs: empty, [role]: positions };
                     return blender ? blenderLounge(c, lounge) : maxLounge(c, lounge);
                 }
                 default: {
+                    if (role === 'shelving' && c.shelfDetailed) {
+                        return blender ? blenderShelving(c, positions, { grouped: false })
+                            : maxShelving(c, positions, { grouped: false });
+                    }
+                    if (role === 'backdrops' && (c.backdropDetailed || c.panelArtEnabled)) {
+                        return blender ? blenderPanels(c, positions, { grouped: false })
+                            : maxPanels(c, positions, { grouped: false });
+                    }
                     const extras = { ...extraBase };
                     for (const id of Object.keys(extras) as (keyof typeof extras)[]) {
                         extras[id] = { ...extras[id], positions: id === role ? positions.positions : [], generatedCount: id === role ? indices.length : 0 };
@@ -652,7 +911,13 @@ function assemblyScript(c: Config): string {
             }
         }).join('\n');
         const t = unitTransform(c, unit);
-        return blender ? wrapBlenderUnit(unit, t, code) : wrapMaxUnit(unit, t, code);
+        const detailedPanel = unit.id.startsWith('backdrops:') && (c.backdropDetailed || c.panelArtEnabled);
+        const detailedShowcase = unit.id.startsWith('showcases:') && c.showcaseDetailed;
+        const detailedShelf = unit.id.startsWith('shelving:') && c.shelfDetailed;
+        return blender ? wrapBlenderUnit(unit, t, code) : wrapMaxUnit(unit, t, code, {
+            group: detailedShowcase || detailedShelf || (detailedPanel && c.projectType !== 'activation'),
+            preserveNames: detailedShowcase || detailedPanel || detailedShelf,
+        });
     }).join('\n');
 }
 export function filename(c: Config) { return (c.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'stand') + (c.target === 'max' ? '.ms' : '.py'); }
@@ -680,8 +945,8 @@ export function generate(c: Config, options: {
             `mas cabem ${chairLayout.generatedCount}. ` +
             "Confirme a geração parcial antes de continuar.");
     }
-    if (Object.keys(c.objectTransforms).length) {
-        const units = assemblyScript(c);
+    if (c.projectType === 'activation' || Object.keys(c.objectTransforms).length || (c.projectType === 'lounge' && c.target === 'blender')) {
+        const units = assemblyScript(c) + activationPhotoCamera(c) + activationGuides(c);
         if (c.target === 'blender') return generateBlender(c, blenderChairs(c, chairLayout, { group: 'audience' }) + units);
         const script = generateMax(c), marker = 'select criados';
         if (!script.includes(marker)) throw new Error('Não encontrei o ponto de inserção dos objetos no MaxScript.');
@@ -797,6 +1062,27 @@ def identificar(dado):
                   'code_buddy_version', 'code_buddy_generation'):
         dado[chave] = colecao[chave]
     return dado
+
+def aplicar_orientacao():
+    angulo = ${c.projectType === 'stand' || c.projectType === 'reception' ? c.frontRotation : 0}
+    if angulo == 0:
+        return
+    # Consolida inclusive os guias recém-criados antes de preservar suas matrizes.
+    bpy.context.view_layer.update()
+    objetos = list(colecao.all_objects)
+    conjunto = set(objetos)
+    raiz = bpy.data.objects.new(colecao.name + '_Orientacao', None)
+    colecao.objects.link(raiz)
+    identificar(raiz)
+    raiz.empty_display_type = 'PLAIN_AXES'
+    raiz.empty_display_size = 1.0
+    for objeto in objetos:
+        if objeto.parent not in conjunto:
+            matriz = objeto.matrix_world.copy()
+            objeto.parent = raiz
+            objeto.matrix_world = matriz
+    raiz.rotation_euler.z = math.radians(angulo)
+    bpy.context.view_layer.update()
 
 def finalizar_geracao():
     # Inclui as peças criadas diretamente pelos exportadores da biblioteca V3.
@@ -939,11 +1225,13 @@ def apontar(objeto, alvo):
 
 def luz(nome, tipo, posicao, alvo, energia, cor=(1, 1, 1), tamanho=4):
     dados = bpy.data.lights.new(nome, tipo)
-    dados.energy = energia
-    dados.color = cor
+    identificar(dados)
+    dados.energy = energia * ${c.lightingIntensity}
+    dados.color = ${lightColor(c) ? `(${lightColor(c, true)!.join(', ')}) if nome == 'Luz_Preenchimento' else (${lightColor(c)!.join(', ')})` : 'cor'}
     obj = bpy.data.objects.new(nome, dados)
     colecao.objects.link(obj)
     obj.location = posicao
+    obj['code_buddy_role'] = 'presentation_light'
     apontar(obj, alvo)
     if tipo == 'AREA':
         dados.shape = 'DISK'
@@ -954,8 +1242,9 @@ def luz(nome, tipo, posicao, alvo, energia, cor=(1, 1, 1), tamanho=4):
         dados.shadow_soft_size = 0.15
     return obj
 
+${blenderBrandingSupport(c)}
 def criar_estrutura(branco, marca):
-    caixa('Piso', (LARGURA, PROFUNDIDADE, 0.1), (0, 0, 0.05), acabamento(MATERIAL_PISO), 0.02)
+${blenderFloor(c).split('\n').map(line => '    ' + line).join('\n')}
     if PAREDE_FUNDO:
         caixa('Parede_Fundo', (LARGURA, 0.15, ALTURA), (0, PROFUNDIDADE/2 - 0.075, ALTURA/2 + 0.1), acabamento(MATERIAL_PAREDES))
         caixa('Faixa_Marca', (LARGURA - 0.3, 0.025, 0.22), (0, PROFUNDIDADE/2 - 0.165, ALTURA - 0.15), marca)
@@ -976,12 +1265,13 @@ def criar_elementos(branco, marca, escuro, tela):
                 suporte_h = z - altura_led/2 - 0.1
                 caixa('LED_Suporte', (0.09, 0.09, suporte_h), (x, y, 0.1 + suporte_h/2), escuro)
                 caixa('LED_Base', (0.45, 0.5, 0.06), (x, y, 0.13), escuro)
-    if ADICIONAR_BALCAO:
+${c.counterDetailed || c.counterArtEnabled ? blenderCounters(c, geometry(c).counterXs, geometry(c).counterY).split("\n").map(line => "    " + line).join("\n") : `    if ADICIONAR_BALCAO:
         for i in range(BALCOES):
-            x = (i - (BALCOES-1)/2)*(BALCAO_LARGURA + .4)
-            y = -PROFUNDIDADE*.28
+            x = [${geometry(c).counterXs.join(', ')}][i]
+            y = ${geometry(c).counterY}
             caixa('Balcao_Corpo', (BALCAO_LARGURA, BALCAO_PROFUNDIDADE, BALCAO_ALTURA-.06), (x, y, .1+(BALCAO_ALTURA-.06)/2), acabamento(MATERIAL_BALCAO), .02)
             caixa('Balcao_Tampo', (BALCAO_LARGURA+.08, BALCAO_PROFUNDIDADE+.08, .06), (x, y, .1+BALCAO_ALTURA-.03), branco, .02)
+`}
     if ADICIONAR_PALCO:
         caixa('Palco', (PALCO_LARGURA, PALCO_PROFUNDIDADE, PALCO_ALTURA), (0, ${geometry(c).stageY}, .1+PALCO_ALTURA/2), acabamento(MATERIAL_PALCO), .02)
     if ADICIONAR_TOTEM:
@@ -995,7 +1285,7 @@ def criar_iluminacao(escuro):
     # Luz ampla para o render e spots laterais opcionais.
     luz('Luz_Principal', 'AREA', (0, -PROFUNDIDADE*0.6, ALTURA + 3), (0, 0, 1), max(1000, LARGURA*PROFUNDIDADE*60), tamanho=max(LARGURA, PROFUNDIDADE))
     luz('Luz_Preenchimento', 'AREA', (LARGURA/2, 0, ALTURA + 1), (0, 0, 1), max(600, LARGURA*PROFUNDIDADE*25), tamanho=max(3, PROFUNDIDADE))
-    if ADICIONAR_SPOTS:
+${c.lightingPreset === 'studio' ? "    luz('Luz_Recorte', 'AREA', (-LARGURA*.4, PROFUNDIDADE*.5, ALTURA+2), (0, 0, 1), max(600, LARGURA*PROFUNDIDADE*30), tamanho=max(3, LARGURA*.5))\n" : ''}    if ADICIONAR_SPOTS:
         # Trilhos independentes, mesmo sem paredes laterais.
         for sinal in [-1, 1]:
             x = sinal*(LARGURA/2 - 0.35)
@@ -1042,7 +1332,12 @@ def gerar_stand():
     print('Code Buddy: stand pronto. Use NumPad 0 para a câmera e F12 para renderizar.')
 
 gerar_stand()
+${blenderStorage(c)}
 ${additions}
+${receptionExport(c)}
+${blenderImportedModels(c)}
+${blenderPresentationCameras(c)}
+aplicar_orientacao()
 finalizar_geracao()
 `;
 }

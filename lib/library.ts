@@ -1,27 +1,27 @@
 /** Catálogo dos componentes que já possuem geração no Code Buddy. */
-import type { MaterialKind } from "./generator";
+import type { MaterialKind, ProjectType } from "./generator";
 export const libraryCatalog = [
     { id: 'shelving', label: 'Estantes expositoras', projectTypes: ['stand', 'palco'] },
-    { id: 'backdrops', label: 'Backdrops', projectTypes: ['stand', 'palco'] },
-    { id: 'touchScreens', label: 'Telas touch', projectTypes: ['stand', 'palco'] },
+    { id: 'backdrops', label: 'Backdrops', projectTypes: ['stand', 'palco', 'activation'] },
+    { id: 'touchScreens', label: 'Telas touch', projectTypes: ['stand', 'palco', 'activation'] },
     { id: 'cabinets', label: 'Armários', projectTypes: ['stand', 'palco'] },
     { id: 'openCubes', label: 'Cubos vazados', projectTypes: ['stand', 'palco'] },
-    { id: 'roundRugs', label: 'Tapetes circulares', projectTypes: ['stand', 'palco'] },
+    { id: 'roundRugs', label: 'Tapetes circulares', projectTypes: ['stand', 'palco', 'lounge'] },
     { id: 'showcases', label: 'Vitrines expositoras', projectTypes: ['stand', 'palco'] },
-    { id: 'coffeeTables', label: 'Mesas de centro', projectTypes: ['stand', 'palco'] },
-    { id: 'armchairs', label: 'Poltronas', projectTypes: ['stand', 'palco'] },
-    { id: 'puffs', label: 'Puffs', projectTypes: ['stand', 'palco'] },
+    { id: 'coffeeTables', label: 'Mesas de centro', projectTypes: ['stand', 'palco', 'lounge'] },
+    { id: 'armchairs', label: 'Poltronas', projectTypes: ['stand', 'palco', 'lounge'] },
+    { id: 'puffs', label: 'Puffs', projectTypes: ['stand', 'palco', 'lounge'] },
     { id: 'pedestals', label: 'Pedestais expositores', projectTypes: ['stand', 'palco'] },
     { id: "led", label: "Painel de LED", projectTypes: ["stand", "palco"] },
-    { id: "counter", label: "Balcão", projectTypes: ["stand"] },
+    { id: "counter", label: "Balcão", projectTypes: ["stand", "reception"] },
     { id: "stage", label: "Palco", projectTypes: ["stand", "palco"] },
     { id: "totem", label: "Totem", projectTypes: ["stand"] },
     { id: "spots", label: "Spots laterais", projectTypes: ["stand", "palco"], },
     { id: "chairs", label: "Cadeiras", projectTypes: ["palco"] },
     { id: "roundTables", label: "Mesas Redondas", projectTypes: ["stand", "palco"], },
     { id: "rectTables", label: "Mesas Retangulares", projectTypes: ["stand", "palco"], },
-    { id: "bistroTables", label: "Mesas Bistrô", projectTypes: ["stand", "palco"] },
-    { id: "stools", label: "Banquetas", projectTypes: ["stand", "palco"] },
+    { id: "bistroTables", label: "Mesas Bistrô", projectTypes: ["stand", "palco", "lounge"] },
+    { id: "stools", label: "Banquetas", projectTypes: ["stand", "palco", "lounge"] },
 ] as const;
 export type ChairDistribution = "central" | "lateral";
 export type ChairGenerationMode = "quantity" | "fill";
@@ -62,7 +62,7 @@ export const chairDefaults: ChairConfig = {
     chairGenerationMode: "quantity",
 };
 type LayoutContext = ChairConfig & {
-    projectType: "stand" | "palco";
+    projectType: ProjectType;
     width: number;
     depth: number;
     height: number;

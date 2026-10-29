@@ -1,3 +1,5 @@
+import type { ShowcaseDetailConfig } from './showcase';
+import { blenderDetailedShowcases, maxDetailedShowcases } from './showcase-detail-exporters';
 import type { ShowcaseConfig, ShowcaseLayout } from './library';
 // Width, depth, height, local X/Y, center Z, material (base=0, glass=1).
 type Part = [
@@ -24,7 +26,8 @@ function parts(c: ShowcaseConfig): Part[] {
         result.push([w - 2 * t, d - 2 * t, t, 0, 0, .1 + b + glassHeight * i / (c.showcaseShelfCount + 1), 1]);
     return result;
 }
-export function blenderShowcases(c: ShowcaseConfig, layout: ShowcaseLayout): string {
+export function blenderShowcases(c: ShowcaseConfig & ShowcaseDetailConfig, layout: ShowcaseLayout, options: { grouped?: boolean } = {}): string {
+    if (c.showcaseDetailed) return blenderDetailedShowcases(c, layout, options);
     if (!c.showcases || !layout.positions.length)
         return '';
     return `
@@ -41,7 +44,8 @@ def criar_vitrines():
 criar_vitrines()
 `;
 }
-export function maxShowcases(c: ShowcaseConfig, layout: ShowcaseLayout): string {
+export function maxShowcases(c: ShowcaseConfig & ShowcaseDetailConfig, layout: ShowcaseLayout, options: { grouped?: boolean } = {}): string {
+    if (c.showcaseDetailed) return maxDetailedShowcases(c, layout, options);
     if (!c.showcases || !layout.positions.length)
         return '';
     const pos = '#(' + layout.positions.map(([x, y]) => `[${x},${y},0]`).join(',') + ')';

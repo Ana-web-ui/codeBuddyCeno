@@ -1,52 +1,42 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
-import type { ChangeEvent, PointerEvent as ReactPointerEvent } from 'react';
+import { floorOutline, floorArea } from '@/lib/presentation';
+import { BrandingControls } from '@/components/branding-controls';
+import { PresentationControls } from '@/components/presentation-controls';
+import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
+import Link from 'next/link';
+import ImagePreview from 'next/image';
+import type { ChangeEvent, PointerEvent as ReactPointerEvent, SVGProps } from 'react';
 import { Box, Layers, Download, Copy, Check, Code2, Ruler, Monitor, LampDesk, PanelTop, RectangleVertical, Square, Sparkles, Armchair, Circle } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
-import { materials, generate, geometry, filename, validate, tableGeometry, stoolGeometry, pedestalGeometry, loungeGeometry, coffeeTableGeometry, showcaseGeometry, extraObjectGeometry, assemblyGeometry, } from '@/lib/generator';
+import { materials, generate, geometry, filename, validate, assemblyGeometry, findStoragePosition, } from '@/lib/generator';
 import type { MaterialKind, Target, Config, ProjectType } from '@/lib/generator';
 import { unitTransform } from '@/lib/assembly';
 import type { ObjectTransform } from '@/lib/assembly';
-import { projectTypes, createProjectConfig } from '@/lib/project-types';
-import { libraryCatalog, layoutChairs, extraObjectDefinitions, extraObjectSpec } from '@/lib/library';
-const MAX_PROJECT_BYTES = 4 * 1024 * 1024;
-function serializeProject(config: Config): string {
-    const text = JSON.stringify({ config }, null, 2);
-    if (new TextEncoder().encode(text).length > MAX_PROJECT_BYTES) {
-        throw new Error('O projeto excede o limite de 4 MB.');
-    }
-    return text;
-}
-function parseProject(text: string): Config {
-    if (new TextEncoder().encode(text).length > MAX_PROJECT_BYTES) {
-        throw new Error('O arquivo de projeto excede o limite de 4 MB.');
-    }
-    let parsed: unknown;
-    try {
-        parsed = JSON.parse(text);
-    } catch {
-        throw new Error('O arquivo de projeto não contém um JSON válido.');
-    }
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        throw new Error('O arquivo de projeto é inválido.');
-    }
-    const root = parsed as Record<string, unknown>;
-    const data = root.config && typeof root.config === 'object' && !Array.isArray(root.config)
-        ? root.config as Record<string, unknown>
-        : root;
-    if (data.projectType !== 'stand' && data.projectType !== 'palco') {
-        throw new Error('Tipo de projeto inválido.');
-    }
-    const config = { ...createProjectConfig(data.projectType), ...data } as Config;
-    validate(config);
-    return config;
-}
-function projectFilename(config: Config): string {
-    const name = config.name.trim().replace(/[<>:"/\\|?*\x00-\x1f]/g, '-').replace(/[. ]+$/g, '');
-    return `${name || 'projeto'}.json`;
-}
+import { activationModels } from '@/lib/activation';
+import type { ActivationModel } from '@/lib/activation';
+import { projectTypes, createProjectConfig, createActivationModelConfig } from '@/lib/project-types';
+import { libraryCatalog, layoutChairs } from '@/lib/library';
+import { getStandWalls } from '@/lib/stand-config';
+import { MAX_PROJECT_BYTES, serializeProject, parseProject, projectFilename } from '@/lib/project-file';
+import type { StandLayout, CornerOpenSide, FrontRotation } from '@/lib/stand-config';
+import { ActivationControls } from '@/components/activation-controls';
+import { samplingLayout } from '@/lib/sampling';
+import { activationGeometry } from '@/lib/activation-geometry';
+import { storageGeometry } from '@/lib/storage';
+import type { StorageDoorSide, StorageDoorHinge, StorageDoorOpening } from '@/lib/storage';
+import { ReceptionFinishControls } from '@/components/reception-finish-controls';
+import { ShowcaseControls } from '@/components/showcase-controls';
+import { ShelvingControls } from '@/components/shelving-controls';
+import { PanelControls } from '@/components/panel-controls';
+import { panelParts } from '@/lib/panel';
+import { ImportedModelControls } from '@/components/imported-model-controls';
+import { modelGeometry } from '@/lib/imported-models';
+import { CounterControls } from '@/components/counter-controls';
+import { receptionGeometry } from '@/lib/reception';
+
+
 const elements = [
     { key: 'shelving', title: 'Estantes expositoras', text: 'Estantes abertas com prateleiras', icon: Layers },
     { key: 'backdrops', title: 'Backdrops', text: 'Painéis de fundo com bases de apoio', icon: PanelTop },
@@ -81,6 +71,63 @@ type ParameterField = {
     min?: number;
     max?: number;
 };
+const storageFields: ParameterField[] = [
+    {
+        key: 'storageWidth',
+        label: 'Largura externa',
+        min: 1,
+        max: 10,
+    },
+    {
+        key: 'storageDepth',
+        label: 'Profundidade externa',
+        min: 1,
+        max: 10,
+    },
+    {
+        key: 'storageHeight',
+        label: 'Altura',
+        min: 2,
+        max: 8,
+    },
+    {
+        key: 'storageWallThickness',
+        label: 'Espessura das paredes',
+        min: 0.05,
+        max: 0.3,
+        step: 0.01,
+    },
+    {
+        key: 'storageX',
+        label: 'Centro X',
+        min: -30,
+        max: 30,
+    },
+    {
+        key: 'storageY',
+        label: 'Centro Y',
+        min: -30,
+        max: 30,
+    },
+    {
+        key: 'storageDoorWidth',
+        label: 'Largura livre da porta',
+        min: 0.6,
+        max: 1.5,
+    },
+    {
+        key: 'storageDoorHeight',
+        label: 'Altura livre da porta',
+        min: 1.8,
+        max: 3,
+    },
+    {
+        key: 'storageAccessDepth',
+        label: 'Profundidade do acesso',
+        min: 0.6,
+        max: 3,
+    },
+];
 const parameterFields: Record<'led' | 'counter' | 'stage' | 'totem' | 'spots' | 'chairs' | 'roundTables' | 'rectTables' | 'bistroTables' | 'stools' | 'pedestals' | 'armchairs' | 'puffs' | 'coffeeTables' | 'showcases' | 'shelving' | 'backdrops' | 'touchScreens' | 'cabinets' | 'openCubes' | 'roundRugs', ParameterField[]> = {
     led: [{ key: 'ledWidth', label: 'Largura' }, { key: 'ledHeight', label: 'Altura' }, { key: 'ledBottom', label: 'Base sobre o piso', max: 8 }],
     counter: [{ key: 'counterWidth', label: 'Largura' }, { key: 'counterDepth', label: 'Profundidade' }, { key: 'counterHeight', label: 'Altura' }, { key: 'counterCount', label: 'Quantidade', unit: 'un', min: 1, max: 6 }],
@@ -198,12 +245,14 @@ const parameterFields: Record<'led' | 'counter' | 'stage' | 'totem' | 'spots' | 
     roundRugs: [{ "key": "rugCount", "label": "Quantidade", "min": 1, "max": 100, "unit": "un" }, { "key": "rugDiameter", "label": "Diâmetro", "min": 0.4, "max": 10 }, { "key": "rugGap", "label": "Vão livre entre unidades", "min": 0, "max": 3 }],
 };
 const materialFields: {
-    key: 'floorMat' | 'wallMat' | 'counterMat' | 'stageMat' | 'totemMat' | 'roundTableMat' | 'rectTableMat' | 'bistroTableMat' | 'stoolMat' | 'pedestalMat' | 'armchairMat' | 'puffMat' | 'coffeeTableMat' | 'showcaseBaseMat' | 'shelfMat' | 'backdropMat' | 'touchMat' | 'cabinetMat' | 'openCubeMat' | 'rugMat';
+    key: 'showcaseDeckMat' | 'showcasePlinthMat' | 'showcaseProfileMat' | 'shelfShelfMat' | 'shelfBackMat' | 'shelfBaseMat' | 'backdropFrameMat' | 'backdropStructureMat' | 'backdropBaseMat' | 'counterTopMat' | 'counterBaseMat' | 'samplingCounterMat' | 'samplingSupportMat' | 'samplingSampleMat' | 'demoBenchMat' | 'demoProductMat' | 'floorMat' | 'wallMat' | 'counterMat' | 'stageMat' | 'totemMat' | 'roundTableMat' | 'rectTableMat' | 'bistroTableMat' | 'stoolMat' | 'pedestalMat' | 'armchairMat' | 'puffMat' | 'coffeeTableMat' | 'showcaseBaseMat' | 'shelfMat' | 'backdropMat' | 'touchMat' | 'cabinetMat' | 'openCubeMat' | 'rugMat';
     label: string;
     enabled?: 'counter' | 'stage' | 'totem' | 'roundTables' | 'rectTables' | 'bistroTables' | 'stools' | 'pedestals' | 'armchairs' | 'puffs' | 'coffeeTables' | 'showcases' | 'shelving' | 'backdrops' | 'touchScreens' | 'cabinets' | 'openCubes' | 'roundRugs';
-}[] = [{ key: 'floorMat', label: 'Piso' },
+}[] = [{key:'samplingCounterMat',label:'Balcão de entrega'},{key:'samplingSupportMat',label:'Apoio e armazenamento'},{key:'samplingSampleMat',label:'Amostras de referência'}, { key: 'demoBenchMat', label: 'Corpo da bancada de demonstração' }, { key: 'demoProductMat', label: 'Produto de referência' }, { key: 'floorMat', label: 'Piso' },
     { key: 'wallMat', label: 'Paredes' },
     { key: 'counterMat', label: 'Corpo do balcão', enabled: 'counter' },
+    { key: 'counterTopMat', label: 'Tampo do balcão', enabled: 'counter' },
+    { key: 'counterBaseMat', label: 'Rodapé do balcão', enabled: 'counter' },
     { key: 'stageMat', label: 'Palco', enabled: 'stage' },
     { key: 'totemMat', label: 'Totem', enabled: 'totem' },
     { key: 'roundTableMat', label: 'Tampo das mesas redondas', enabled: 'roundTables' },
@@ -214,9 +263,18 @@ const materialFields: {
     { key: 'armchairMat', label: 'Poltronas — assento, encosto e braços', enabled: 'armchairs' },
     { key: 'puffMat', label: 'Puffs', enabled: 'puffs' },
     { key: 'coffeeTableMat', label: 'Tampo das mesas de centro', enabled: 'coffeeTables' },
-    { key: 'showcaseBaseMat', label: 'Base das vitrines expositoras', enabled: 'showcases' },
-    { key: 'shelfMat', label: 'Estantes expositoras', enabled: 'shelving' },
-    { key: 'backdropMat', label: 'Backdrops', enabled: 'backdrops' },
+    { key: 'showcaseDeckMat', label: 'Tampo da base das vitrines', enabled: 'showcases' },
+    { key: 'showcasePlinthMat', label: 'Rodapé das vitrines', enabled: 'showcases' },
+    { key: 'showcaseProfileMat', label: 'Perfis das vitrines', enabled: 'showcases' },
+    { key: 'showcaseBaseMat', label: 'Corpo da base das vitrines', enabled: 'showcases' },
+    { key: 'shelfMat', label: 'Estrutura das estantes', enabled: 'shelving' },
+    { key: 'shelfShelfMat', label: 'Prateleiras das estantes', enabled: 'shelving' },
+    { key: 'shelfBackMat', label: 'Fundo das estantes', enabled: 'shelving' },
+    { key: 'shelfBaseMat', label: 'Rodapé das estantes', enabled: 'shelving' },
+    { key: 'backdropMat', label: 'Painel / frente', enabled: 'backdrops' },
+    { key: 'backdropStructureMat', label: 'Estrutura dos painéis', enabled: 'backdrops' },
+    { key: 'backdropBaseMat', label: 'Bases dos painéis', enabled: 'backdrops' },
+    { key: 'backdropFrameMat', label: 'Moldura dos painéis', enabled: 'backdrops' },
     { key: 'touchMat', label: 'Telas touch', enabled: 'touchScreens' },
     { key: 'cabinetMat', label: 'Armários', enabled: 'cabinets' },
     { key: 'openCubeMat', label: 'Cubos vazados', enabled: 'openCubes' },
@@ -229,13 +287,51 @@ type PlanDragSession = {
     original: ObjectTransform; latest: ObjectTransform; moved: boolean;
 };
 /** SVG coordinates use +Y down; the project uses +Y toward the back. */
-function planPoint(width: number, depth: number, svgX: number, svgY: number) {
-    const scale = Math.min(440 / width, 280 / depth);
-    return { x: (svgX - 300) / scale, y: (195 - svgY) / scale };
+function planPoint(
+    c: Config,
+    svgX: number,
+    svgY: number,
+) {
+    const rotation =
+        (c.projectType === 'stand' || c.projectType === 'reception')
+            ? c.frontRotation ?? 0
+            : 0;
+
+    const sideways = rotation === 90 || rotation === 270;
+
+    const displayWidth = sideways ? c.depth : c.width;
+    const displayDepth = sideways ? c.width : c.depth;
+
+    const scale = Math.min(
+        440 / displayWidth,
+        280 / displayDepth,
+    );
+
+    // Coordenadas globais da planta, com Y para cima.
+    const worldX = (svgX - 300) / scale;
+    const worldY = (195 - svgY) / scale;
+
+    // Inverte o giro para manter o arraste em coordenadas locais.
+    switch (rotation) {
+        case 90:
+            return { x: worldY, y: -worldX };
+
+        case 180:
+            return { x: -worldX, y: -worldY };
+
+        case 270:
+            return { x: -worldY, y: worldX };
+
+        default:
+            return { x: worldX, y: worldY };
+    }
 }
 function dragPosition(x: number, y: number, rotation: number, snap: boolean): ObjectTransform {
     const round = (v: number) => Number((snap ? Math.round(v / .1) * .1 : v).toFixed(6));
     return { x: round(x), y: round(y), rotation };
+}
+function release(session: PlanDragSession) {
+    if (session.svg.hasPointerCapture(session.pointerId)) session.svg.releasePointerCapture(session.pointerId);
 }
 function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
     c: Config; selectedId?: string | null; onSelect?: (id: string) => void; snap?: boolean;
@@ -246,21 +342,18 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
     const dragSession = useRef<PlanDragSession | null>(null);
     // Use current callbacks when a session ends during effect cleanup.
     const dragCallback = useRef(onDragPreview);
-    dragCallback.current = onDragPreview;
-    function release(session: PlanDragSession) {
-        if (session.svg.hasPointerCapture(session.pointerId)) session.svg.releasePointerCapture(session.pointerId);
-    }
-    function cancelDrag() {
+    useLayoutEffect(() => { dragCallback.current = onDragPreview; }, [onDragPreview]);
+    const cancelDrag = useCallback(() => {
         const session = dragSession.current;
         dragSession.current = null;
         if (session) release(session);
         setDrag(null);
         dragCallback.current?.(null);
-    }
+    }, []);
     useEffect(() => {
         const session = dragSession.current;
         if (session && (session.config !== c || (selectedId != null && selectedId !== session.id))) cancelDrag();
-    }, [c, selectedId]);
+    }, [c, selectedId, cancelDrag]);
     useEffect(() => () => {
         const session = dragSession.current;
         dragSession.current = null;
@@ -272,7 +365,7 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
         if (!matrix) return null;
         const point = svg.createSVGPoint(); point.x = clientX; point.y = clientY;
         const local = point.matrixTransform(matrix.inverse());
-        return planPoint(c.width, c.depth, local.x, local.y);
+        return planPoint(c, local.x, local.y);
     }
     function startDrag(event: ReactPointerEvent<SVGGElement>, id: string, original: ObjectTransform) {
         if (!onDrop || event.button !== 0 || !event.isPrimary || dragSession.current) return;
@@ -323,6 +416,7 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
         }
     }
     const units = assemblyGeometry(c);
+    const sampling = c.projectType === 'activation' && c.activationModel === 'sampling' ? samplingLayout(c) : null;
     const drawUnits = (floor: boolean) => units.filter(unit => unit.floor === floor).map(unit => {
         const t = drag?.id === unit.id ? drag.transform : unitTransform(c, unit), selected = selectedId === unit.id;
         const stroke = drag?.id === unit.id && drag.error ? '#ff6575' : selected ? '#ffce57' : '#dce6ff';
@@ -336,19 +430,117 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
               const fill = m.material === 'brand' ? c.color : materials.find(mat => mat.value === m.material)?.color ?? '#c8cedb';
               return <g key={`${m.role}:${m.index}`} transform={`translate(${mx} ${my}) rotate(${-m.rotation})`}>
                 {m.circle ? <circle r={m.width * s / 2} fill={fill} fillOpacity={floor ? .45 : 1} stroke={stroke} strokeWidth={selected ? 2.5 : 1} />
-                  : <rect x={-m.width * s / 2} y={-m.depth * s / 2} width={m.width * s} height={m.depth * s} rx="1" fill={fill} fillOpacity={m.role === 'showcases' ? .4 : m.role === 'openCubes' ? .25 : 1} stroke={stroke} strokeWidth={selected ? 2.5 : 1} />}
+                  : <rect x={-m.width * s / 2} y={-m.depth * s / 2} width={m.width * s} height={m.depth * s} rx="1" fill={fill} fillOpacity={m.role === 'backdrops' && c.backdropDetailed ? .08 : m.role === 'showcases' ? .4 : m.role === 'openCubes' ? .25 : 1} stroke={stroke} strokeWidth={selected ? 2.5 : 1} />}
+                {m.role === 'backdrops' && c.backdropDetailed && panelParts(c).map(part => <rect key={part.name}
+                  x={(part.center[0]-part.size[0]/2)*s} y={-(part.center[1]+part.size[1]/2)*s}
+                  width={part.size[0]*s} height={part.size[1]*s}
+                  fill={part.material === 'brand' ? c.color : materials.find(material=>material.value===part.material)?.color}
+                  stroke={stroke} strokeWidth=".5"/>)}
+                {m.role === 'samplingStations' && sampling && <g>
+                  <rect x={(sampling.support.x-sampling.support.width/2)*s} y={-(sampling.support.y+sampling.support.depth/2)*s} width={sampling.support.width*s} height={sampling.support.depth*s} fill={c.samplingSupportMat==='brand'?c.color:materials.find(mat=>mat.value===c.samplingSupportMat)?.color} stroke={stroke}/>
+                  <PlanText counterRotation={t.rotation} x={sampling.support.x*s} y={-sampling.support.y*s+3} textAnchor="middle" fontSize="8" fill="#e5edf9" stroke="#101827" strokeWidth=".3">{c.samplingStorageEnabled?'ESTOQUE':'APOIO'}</PlanText>
+                  {sampling.waste&&<rect x={(sampling.waste.x-sampling.waste.width/2)*s} y={-(sampling.waste.y+sampling.waste.depth/2)*s} width={sampling.waste.width*s} height={sampling.waste.depth*s} fill="#f87171" stroke={stroke}><title>Descarte</title></rect>}
+                  {sampling.samples.map((sample,i)=><rect key={i} x={(sample.x-sample.width/2)*s} y={-(sample.y+sample.depth/2)*s} width={sample.width*s} height={sample.depth*s} fill={c.samplingSampleMat==='brand'?c.color:materials.find(mat=>mat.value===c.samplingSampleMat)?.color} stroke="#101827" strokeWidth=".4"/>)}
+                </g>}
+                {m.role === 'demoStations' && <rect x={(c.demoProductX-c.demoProductWidth/2)*s} y={-(c.demoProductY+c.demoProductDepth/2)*s} width={c.demoProductWidth*s} height={c.demoProductDepth*s} fill={c.demoProductMat === 'brand' ? c.color : materials.find(mat=>mat.value===c.demoProductMat)?.color ?? '#c8cedb'} stroke="#101827" strokeWidth="1"/>}
                 {m.role === 'openCubes' && <rect x={(-m.width / 2 + c.openCubeWallThickness) * s} y={-m.depth * s / 2} width={(m.width - 2 * c.openCubeWallThickness) * s} height={m.depth * s} fill="none" stroke="#8795ad" strokeDasharray="2 2" />}
                 {!m.circle && <path d={`M ${-m.width * s / 3} ${-m.depth * s / 2} H ${m.width * s / 3}`} stroke="#fff" strokeWidth="2" />}
               </g>;
           })}
-          <text x="0" y="3" textAnchor="middle" fontSize="9" fill={selected ? '#ffce57' : '#101827'} stroke={selected ? '#101827' : 'none'} strokeWidth=".4">{unit.label.replace(/ [0-9]+$/, '').slice(0, 2).toUpperCase()}{Number(unit.id.split(':')[1]) + 1}</text>
+          <PlanText counterRotation={t.rotation} x="0" y={unit.id.startsWith('samplingStations:') ? -(c.samplingCounterDepth+.08)*s/2-5 : unit.id.startsWith('demoStations:') ? -(c.demoBenchDepth+.08)*s/2-5 : 3} textAnchor="middle" fontSize="9" fill={selected ? '#ffce57' : (unit.id.startsWith('demoStations:')||unit.id.startsWith('samplingStations:')||(unit.id.startsWith('backdrops:')&&c.backdropDetailed)) ? '#e5edf9' : '#101827'} stroke={selected || (unit.id.startsWith('backdrops:')&&c.backdropDetailed) ? '#101827' : 'none'} strokeWidth="1.5" paintOrder="stroke">{c.projectType === 'activation' && c.activationModel === 'sampling' ? 'ENTREGA' : c.projectType === 'activation' && c.activationModel === 'demo' ? 'DEMO' : c.projectType === 'activation' && c.activationModel === 'photo' ? 'FOTO' : unit.label.replace(/ [0-9]+$/, '').slice(0, 2).toUpperCase() + (Number(unit.id.split(':')[1]) + 1)}</PlanText>
         </g>;
     });
     const g = geometry(c);
     const seating = layoutChairs(c, g.stageY);
-    const s = Math.min(440 / c.width, 280 / c.depth);
+
+    const frontRotation =
+        (c.projectType === 'stand' || c.projectType === 'reception')
+            ? c.frontRotation ?? 0
+            : 0;
+
+    const sideways =
+        frontRotation === 90 || frontRotation === 270;
+
+    const displayWidth = sideways ? c.depth : c.width;
+    const displayDepth = sideways ? c.width : c.depth;
+
+    const s = Math.min(
+        440 / displayWidth,
+        280 / displayDepth,
+    );
     const w = c.width * s, h = c.depth * s, x = (600 - w) / 2, y = (390 - h) / 2;
     const px = (v: number) => x + w / 2 + v * s, py = (v: number) => y + h / 2 - v * s;
+
+    const activation = activationGeometry(c);
+    const reception = receptionGeometry(c);
+    const storage = storageGeometry(c);
+    const storageWallColor = c.storageWallMat === 'brand' ? c.color
+        : materials.find(material => material.value === c.storageWallMat)?.color ?? '#c8cedb';
+    const storageDoorColor = c.storageDoorMat === 'brand' ? c.color
+        : materials.find(material => material.value === c.storageDoorMat)?.color ?? '#c8cedb';
+    const storageWalls: { x1: number; y1: number; x2: number; y2: number }[] = [];
+    if (storage) {
+        const t = c.storageWallThickness;
+        const faces = [
+            { side: 'front', nx: 0, ny: -1 },
+            { side: 'back', nx: 0, ny: 1 },
+            { side: 'left', nx: -1, ny: 0 },
+            { side: 'right', nx: 1, ny: 0 },
+        ] as const;
+        for (const face of faces) {
+            const horizontal = face.ny !== 0;
+            const tx = -face.ny, ty = face.nx;
+            const distance = horizontal ? c.storageDepth / 2 - t / 2 : c.storageWidth / 2 - t / 2;
+            const length = horizontal ? c.storageWidth : c.storageDepth - 2 * t;
+            const centerX = c.storageX + face.nx * distance;
+            const centerY = c.storageY + face.ny * distance;
+            function addSegment(from: number, to: number) {
+                storageWalls.push({ x1: centerX + tx * from, y1: centerY + ty * from,
+                    x2: centerX + tx * to, y2: centerY + ty * to });
+            }
+            if (face.side === c.storageDoorSide) {
+                addSegment(-length / 2, -c.storageDoorWidth / 2);
+                addSegment(c.storageDoorWidth / 2, length / 2);
+            } else addSegment(-length / 2, length / 2);
+        }
+    }
+    const storageDoorArc = storage ? Array.from({ length: 17 }, (_, index) => {
+        const angle = index / 16 * Math.PI / 2;
+        const { hinge, closedEnd, openEnd } = storage.door;
+        const x = hinge.x + (closedEnd.x - hinge.x) * Math.cos(angle) + (openEnd.x - hinge.x) * Math.sin(angle);
+        const y = hinge.y + (closedEnd.y - hinge.y) * Math.cos(angle) + (openEnd.y - hinge.y) * Math.sin(angle);
+        return `${px(x)},${py(y)}`;
+    }).join(' ') : '';
+
+    function PlanText({
+        x = 0,
+        y = 0,
+        transform = '',
+        counterRotation = 0,
+        ...props
+    }: SVGProps<SVGTextElement> & {
+        counterRotation?: number;
+    }) {
+        return (
+            <text
+                {...props}
+                x={x}
+                y={y}
+                transform={
+                    `${transform} rotate(` +
+                    `${frontRotation + counterRotation} ${x} ${y})`
+                }
+            />
+        );
+    }
+    // Tooltip stays in screen coordinates, outside the rotated drawing.
+    const angle = frontRotation * Math.PI / 180;
+    const labelX = drag ? px(drag.transform.x) - 300 : 0;
+    const labelY = drag ? py(drag.transform.y) - 195 : 0;
+    const dragLabel = {
+        x: Math.max(5, Math.min(390, 300 + labelX * Math.cos(angle) + labelY * Math.sin(angle) + 12)),
+        y: Math.max(20, Math.min(398, 195 - labelX * Math.sin(angle) + labelY * Math.cos(angle) - 16)),
+    };
     return <svg viewBox="0 0 600 430" role="group" tabIndex={0}
       onPointerMove={moveDrag} onPointerUp={endDrag}
       onPointerCancel={event => { if (dragSession.current?.pointerId === event.pointerId) cancelDrag(); }}
@@ -357,41 +549,243 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
       style={{ userSelect: 'none' }} aria-label={`Planta esquemática da área de montagem de ${num(c.width)} por ${num(c.depth)} metros`}>
       <defs><pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M 20 0 L 0 0 0 20" fill="none" stroke="#252d40" strokeWidth=".5"/></pattern></defs>
     <rect width="600" height="430" fill="url(#grid)"/>
+    <g transform={`rotate(${-frontRotation} 300 195)`}>
     <path d={`M ${x} ${y - 22} H ${x + w} M ${x} ${y - 29} v 14 M ${x + w} ${y - 29} v 14`} stroke="#67758e" fill="none"/>
-    <text x="300" y={y - 33} textAnchor="middle" fill="#b6c3d7" fontSize="14">{num(c.width)} m</text>
+    <PlanText x="300" y={y - 33} textAnchor="middle" fill="#b6c3d7" fontSize="14">{num(c.width)} m</PlanText>
     <path d={`M ${x + w + 24} ${y} V ${y + h} M ${x + w + 17} ${y} h 14 M ${x + w + 17} ${y + h} h 14`} stroke="#67758e" fill="none"/>
-    <text x={x + w + 40} y={y + h / 2} transform={`rotate(90 ${x + w + 40} ${y + h / 2})`} textAnchor="middle" fill="#b6c3d7" fontSize="14">{num(c.depth)} m</text>
-    <rect x={x} y={y} width={w} height={h} fill={(c.floorMat === 'brand' ? c.color : materials.find(m => m.value === c.floorMat)?.color) + '25'} stroke="#687695" strokeDasharray="5 5"/>
+    <PlanText x={x + w + 40} y={y + h / 2} transform={`rotate(90 ${x + w + 40} ${y + h / 2})`} textAnchor="middle" fill="#b6c3d7" fontSize="14">{num(c.depth)} m</PlanText>
+    <polygon points={floorOutline(c).map(([fx, fy]) => `${px(fx)},${py(fy)}`).join(' ')} fill={(c.floorMat === 'brand' ? c.color : materials.find(m => m.value === c.floorMat)?.color) + '25'} stroke="#687695" strokeDasharray="5 5"/>
     {drawUnits(true)}
+    {activation && <g aria-label="Espera, participação e circulação" pointerEvents="none">
+      {activation.sampling && <g>
+        <rect x={px(activation.sampling.reserved.x-activation.sampling.reserved.width/2)} y={py(activation.sampling.reserved.y+activation.sampling.reserved.depth/2)} width={activation.sampling.reserved.width*s} height={activation.sampling.reserved.depth*s} fill="#c084fc" fillOpacity="0.04" stroke="#c084fc" strokeDasharray="6 4"/>
+        <rect x={px(activation.sampling.team.x-activation.sampling.team.width/2)} y={py(activation.sampling.team.y+activation.sampling.team.depth/2)} width={activation.sampling.team.width*s} height={activation.sampling.team.depth*s} fill="#fb923c" fillOpacity="0.18" stroke="#fb923c" strokeDasharray="4 3"/>
+        <PlanText x={px(activation.sampling.team.x)} y={py(activation.sampling.team.y)+3} textAnchor="middle" fill="#e5edf9" fontSize="9">Equipe</PlanText>
+      </g>}
+      {activation.demo && <g>
+        <rect x={px(activation.demo.reserved.x-activation.demo.reserved.width/2)} y={py(activation.demo.reserved.y+activation.demo.reserved.depth/2)} width={activation.demo.reserved.width*s} height={activation.demo.reserved.depth*s} fill="#c084fc" fillOpacity="0.04" stroke="#c084fc" strokeDasharray="6 4"/>
+        <rect x={px(activation.demo.presenter.x-activation.demo.presenter.width/2)} y={py(activation.demo.presenter.y+activation.demo.presenter.depth/2)} width={activation.demo.presenter.width*s} height={activation.demo.presenter.depth*s} fill="#fb923c" fillOpacity="0.18" stroke="#fb923c" strokeDasharray="4 3"/>
+        <PlanText x={px(activation.demo.presenter.x)} y={py(activation.demo.presenter.y)+3} textAnchor="middle" fill="#e5edf9" fontSize="9">Demonstrador</PlanText>
+      </g>}
+      {activation.photo && <g>
+        <rect x={px(activation.photo.capture.x-activation.photo.capture.width/2)} y={py(activation.photo.capture.y+activation.photo.capture.depth/2)} width={activation.photo.capture.width*s} height={activation.photo.capture.depth*s} fill="#c084fc" fillOpacity="0.06" stroke="#c084fc" strokeDasharray="6 4"/>
+        <line x1={px(activation.photo.person.x)} y1={py(activation.photo.person.y)} x2={px(activation.photo.camera.x)} y2={py(activation.photo.camera.y)} stroke="#c084fc" strokeDasharray="3 3"/>
+        <rect x={px(activation.photo.camera.x-activation.photo.camera.width/2)} y={py(activation.photo.camera.y+activation.photo.camera.depth/2)} width={activation.photo.camera.width*s} height={activation.photo.camera.depth*s} fill="#c084fc" fillOpacity="0.18" stroke="#c084fc"/>
+        <PlanText x={px(activation.photo.camera.x)} y={py(activation.photo.camera.y)+3} textAnchor="middle" fill="#e5edf9" fontSize="9">CÂMERA</PlanText>
+      </g>}
+      {activation.circulation.map((z,i)=><rect key={'c'+i} x={px(z.x-z.width/2)} y={py(z.y+z.depth/2)} width={z.width*s} height={z.depth*s} fill="#60a5fa" fillOpacity="0.12"/>)}
+      {[...(activation.waiting?[activation.waiting]:[]),...activation.participation].map(z=><g key={z.name}>
+        <rect x={px(z.x-z.width/2)} y={py(z.y+z.depth/2)} width={z.width*s} height={z.depth*s} fill={z.name==='Espera'?'#fbbf24':'#34d399'} fillOpacity="0.18" stroke={z.name==='Espera'?'#fbbf24':'#34d399'} strokeDasharray="4 3"/>
+        <PlanText x={px(z.x)} y={py(z.y)+3} textAnchor="middle" fill="#e5edf9" fontSize="9">{z.name==='Experimentação / retirada'?<><tspan x={px(z.x)} dy={-3}>Experimentação</tspan><tspan x={px(z.x)} dy={10}>Retirada</tspan></>:z.name}</PlanText>
+      </g>)}
+      {[activation.entrance,activation.exit].map(z=><PlanText key={z.name} x={px(z.x)} y={py(z.y)+3} textAnchor="middle" fill="#93c5fd" fontSize="10">{z.name.toUpperCase()}</PlanText>)}
+    </g>}
+    {storage && (
+      <g aria-label="Depósito com porta e área de acesso" pointerEvents="none">
+        <rect x={px(storage.access.centerX - storage.access.width / 2)}
+          y={py(storage.access.centerY + storage.access.depth / 2)}
+          width={storage.access.width * s} height={storage.access.depth * s}
+          fill="#f0ca85" fillOpacity="0.08" stroke="#f0ca85" strokeWidth="1" strokeDasharray="5 4" />
+        <rect x={px(c.storageX - c.storageWidth / 2)} y={py(c.storageY + c.storageDepth / 2)}
+          width={c.storageWidth * s} height={c.storageDepth * s} fill={storageWallColor} fillOpacity="0.12" />
+        {storageWalls.map((wall, index) => <line key={index}
+          x1={px(wall.x1)} y1={py(wall.y1)} x2={px(wall.x2)} y2={py(wall.y2)}
+          stroke={storageWallColor} strokeWidth={c.storageWallThickness * s} strokeLinecap="butt" />)}
+        <polyline points={storageDoorArc} fill="none" stroke={storageDoorColor} strokeWidth="1" strokeDasharray="3 2" />
+        <line x1={px(storage.door.hinge.x)} y1={py(storage.door.hinge.y)}
+          x2={px(storage.door.openEnd.x)} y2={py(storage.door.openEnd.y)} stroke={storageDoorColor} strokeWidth="2" />
+        <circle cx={px(storage.door.hinge.x)} cy={py(storage.door.hinge.y)} r="2" fill={storageDoorColor} />
+        <PlanText x={px(c.storageX)} y={py(c.storageY)} textAnchor="middle" fill="#e4ebf7" fontSize="10">DEPÓSITO</PlanText>
+      </g>
+    )}
     {c.back && <rect x={x} y={y} width={w} height={Math.max(5, .15 * s)} fill={c.wallMat === 'brand' ? c.color : materials.find(m => m.value === c.wallMat)?.color}/>}
     {c.left && <rect x={x} y={y} width={Math.max(5, .15 * s)} height={h} fill={c.wallMat === 'brand' ? c.color : materials.find(m => m.value === c.wallMat)?.color}/>}
     {c.right && <rect x={x + w - Math.max(5, .15 * s)} y={y} width={Math.max(5, .15 * s)} height={h} fill={c.wallMat === 'brand' ? c.color : materials.find(m => m.value === c.wallMat)?.color}/>}
-    {c.led && <g><rect x={px(-g.ledW / 2)} y={py(c.depth / 2 - .35) - 4} width={g.ledW * s} height="8" rx="2" fill={c.color}/><text x="300" y={y + 32} textAnchor="middle" fill="#cdd7ec" fontSize="13">LED</text></g>}
-    {c.stage && <g><rect x={px(-g.stageW / 2)} y={py(g.stageY + g.stageD / 2)} width={g.stageW * s} height={g.stageD * s} rx="2" fill={c.stageMat === 'brand' ? c.color : materials.find(m => m.value === c.stageMat)?.color} stroke="#78859d"/><text x="300" y={py(g.stageY) + 5} textAnchor="middle" fill="#d0daee" fontSize="13">Palco</text></g>}
+    {c.led && <g><rect x={px(-g.ledW / 2)} y={py(c.depth / 2 - .35) - 4} width={g.ledW * s} height="8" rx="2" fill={c.color}/><PlanText x="300" y={y + 32} textAnchor="middle" fill="#cdd7ec" fontSize="13">LED</PlanText></g>}
+    {c.stage && <g><rect x={px(-g.stageW / 2)} y={py(g.stageY + g.stageD / 2)} width={g.stageW * s} height={g.stageD * s} rx="2" fill={c.stageMat === 'brand' ? c.color : materials.find(m => m.value === c.stageMat)?.color} stroke="#78859d"/><PlanText x="300" y={py(g.stageY) + 5} textAnchor="middle" fill="#d0daee" fontSize="13">Palco</PlanText></g>}
     {c.chairs && (<g aria-label={`${seating.positions.length} cadeiras`}>
     {seating.positions.map(([cx, cy], index) => (<rect key={index} x={px(cx - c.chairWidth / 2)} y={py(cy + c.chairDepth / 2)} width={c.chairWidth * s} height={c.chairDepth * s} fill={c.color} stroke="#dce6ff" strokeWidth="0.5"/>))}
   </g>)}
+      {reception && (
+      <g
+        aria-label="Atendimento, equipe e acessos da recepção"
+        pointerEvents="none"
+      >
+        {reception.zones.map((zone, index) => {
+          const color =
+            index === 0
+              ? '#60a5fa'
+              : index === 1
+                ? '#fb923c'
+                : '#4ade80';
+
+          return (
+            <g key={zone.name}>
+              <rect
+                x={px(zone.x - zone.width / 2)}
+                y={py(zone.y + zone.depth / 2)}
+                width={zone.width * s}
+                height={zone.depth * s}
+                fill={color}
+                fillOpacity="0.12"
+                stroke={color}
+                strokeWidth="1"
+                strokeDasharray="5 4"
+              />
+
+            </g>
+          );
+        })}
+      </g>
+    )}
+        {reception?.flow && (
+      <g
+        aria-label="Fila, entrada e saída da recepção"
+        pointerEvents="none"
+      >
+        <defs>
+          <marker
+            id="reception-flow-arrow"
+            viewBox="0 0 10 10"
+            refX="9"
+            refY="5"
+            markerWidth="5"
+            markerHeight="5"
+            orient="auto"
+          >
+            <path
+              d="M 0 0 L 10 5 L 0 10 Z"
+              fill="#facc15"
+            />
+          </marker>
+        </defs>
+
+        {reception.flow.corridors.map((zone, index) => (
+          <rect
+            key={`reception-corridor-${index}`}
+            x={px(zone.x - zone.width / 2)}
+            y={py(zone.y + zone.depth / 2)}
+            width={zone.width * s}
+            height={zone.depth * s}
+            fill="#facc15"
+            fillOpacity="0.08"
+          />
+        ))}
+
+        <rect
+          x={px(
+            reception.flow.queue.x -
+            reception.flow.queue.width / 2
+          )}
+          y={py(
+            reception.flow.queue.y +
+            reception.flow.queue.depth / 2
+          )}
+          width={reception.flow.queue.width * s}
+          height={reception.flow.queue.depth * s}
+          fill="#c084fc"
+          fillOpacity="0.18"
+          stroke="#c084fc"
+          strokeDasharray="4 3"
+        />
+
+        {reception.flow.routes.map(route => (
+          <polyline
+            key={route.name}
+            points={route.points
+              .map(point => `${px(point.x)},${py(point.y)}`)
+              .join(' ')}
+            fill="none"
+            stroke="#facc15"
+            strokeWidth="1.5"
+            strokeDasharray="5 3"
+            markerEnd="url(#reception-flow-arrow)"
+          />
+        ))}
+
+        <PlanText
+          x={px(reception.flow.queue.x)}
+          y={py(reception.flow.queue.y)}
+          textAnchor="middle"
+          fontSize="9"
+          fill="#e5edf9"
+          stroke="#101827" strokeWidth="2.5" paintOrder="stroke"
+        >
+          FILA
+        </PlanText>
+
+        <PlanText
+          x={px(reception.flow.entrance.x)}
+          y={py(reception.flow.entrance.y) + 14}
+          textAnchor="middle"
+          fontSize="9"
+          fill="#facc15"
+        >
+          ENTRADA
+        </PlanText>
+
+        <PlanText
+          x={px(reception.flow.exit.x)}
+          y={py(reception.flow.exit.y) + 14}
+          textAnchor="middle"
+          fontSize="9"
+          fill="#facc15"
+        >
+          SAÍDA
+        </PlanText>
+      </g>
+    )}
+    {reception && <g aria-label="Organizadores e sinalização da recepção" pointerEvents="none">
+      {reception.details.belts.map((belt, i) => <line key={'belt'+i} x1={px(belt.x)} x2={px(belt.x)} y1={py(belt.from)} y2={py(belt.to)}
+        stroke={c.receptionBeltMat === 'brand' ? c.color : materials.find(m => m.value === c.receptionBeltMat)?.color} strokeWidth="3"/>)}
+      {reception.details.posts.map((post, i) => <rect key={'post'+i} x={px(post.x-.14)} y={py(post.y+.14)} width={.28*s} height={.28*s}
+        fill="#aeb9ca" stroke="#e5edf9" strokeWidth=".5"/>)}
+      {reception.details.sign && <g><title>{c.receptionSignText}</title>
+        <rect x={px(reception.details.sign.x-reception.details.sign.width/2)} y={py(reception.details.sign.y+.225)}
+          width={reception.details.sign.width*s} height={.45*s} fill={c.color} fillOpacity=".5" stroke="#e5edf9"/>
+        <PlanText x={px(reception.details.sign.x)} y={py(reception.details.sign.y)+3} textAnchor="middle" fontSize="8" fill="#e5edf9">ID</PlanText>
+      </g>}
+    </g>}
     {drawUnits(false)}
-    {c.counter && g.counterXs.map((cx, i) => <g key={i}><rect x={px(cx - (g.counterW + .08) / 2)} y={py(g.counterY + (c.counterDepth + .08) / 2)} width={(g.counterW + .08) * s} height={(c.counterDepth + .08) * s} rx="3" fill={c.counterMat === 'brand' ? c.color : materials.find(m => m.value === c.counterMat)?.color}/><text x={px(cx)} y={py(g.counterY) + 5} textAnchor="middle" fill="white" fontSize="12">Balcão</text></g>)}
-    {c.totem && g.totemXs.map((tx, i) => <g key={i}><rect x={px(tx - (c.totemWidth + .15) / 2)} y={py(g.totemY + (c.totemDepth + .2) / 2)} width={(c.totemWidth + .15) * s} height={(c.totemDepth + .2) * s} rx="2" fill={c.totemMat === 'brand' ? c.color : materials.find(m => m.value === c.totemMat)?.color}/><text x={px(tx)} y={py(g.totemY) + 27} textAnchor="middle" fill="#cdd7ec" fontSize="12">Totem</text></g>)}
+    {c.importedModels.map(model => {
+        const { size: [w, d] } = modelGeometry(model);
+        return <g key={model.id} transform={`translate(${px(model.x)} ${py(model.y)}) rotate(${-model.rotation})`}>
+            <title>{`${model.name} — objeto OBJ ${model.id}, elevação ${model.z} m`}</title>
+            <rect x={-w*s/2} y={-d*s/2} width={Math.max(w*s, 1)} height={Math.max(d*s, 1)}
+                fill={model.material === 'brand' ? c.color : materials.find(m => m.value === model.material)?.color}
+                fillOpacity=".5" stroke="#8de5dc" strokeWidth="1.5" strokeDasharray="4 2"/>
+            <PlanText counterRotation={model.rotation} x="0" y="3" textAnchor="middle" fontSize="9" fill="#e5edf9" stroke="#101827" strokeWidth="2" paintOrder="stroke">{`3D${model.id}`}</PlanText>
+        </g>;
+    })}
+    {c.counter && g.counterXs.map((cx, i) => <g key={i}><title>{"Balcão " + (i + 1)}</title><rect x={px(cx - (g.counterW + .08) / 2)} y={py(g.counterY + (c.counterDepth + .08) / 2)} width={(g.counterW + .08) * s} height={(c.counterDepth + .08) * s} rx="3" fill={c.counterMat === 'brand' ? c.color : materials.find(m => m.value === c.counterMat)?.color}/><PlanText x={px(cx)} y={py(g.counterY) + 4} textAnchor="middle" fill="white" fontSize={c.projectType === 'reception' ? '10' : '12'}>{c.projectType === 'reception' ? `B${i + 1}` : 'Balcão'}</PlanText></g>)}
+    {c.totem && g.totemXs.map((tx, i) => <g key={i}><rect x={px(tx - (c.totemWidth + .15) / 2)} y={py(g.totemY + (c.totemDepth + .2) / 2)} width={(c.totemWidth + .15) * s} height={(c.totemDepth + .2) * s} rx="2" fill={c.totemMat === 'brand' ? c.color : materials.find(m => m.value === c.totemMat)?.color}/><PlanText x={px(tx)} y={py(g.totemY) + 27} textAnchor="middle" fill="#cdd7ec" fontSize="12">Totem</PlanText></g>)}
     {c.spots && [-1, 1].map(sign => <g key={sign}><path d={`M ${px(sign * (c.width / 2 - .35))} ${py(c.depth / 2 - .25)} V ${py(-c.depth / 2 + .25)}`} stroke="#b49a67" strokeWidth="2"/>{g.spotYs.map((sy, i) => <circle key={i} cx={px(sign * (c.width / 2 - .35))} cy={py(sy)} r="4" fill="#f0ca85"/>)}</g>)}
-    {drag && <g pointerEvents="none" transform={`translate(${Math.max(5, Math.min(390, px(drag.transform.x) + 12))} ${Math.max(20, Math.min(398, py(drag.transform.y) - 16))})`}>
+    {reception && <g pointerEvents="none" aria-label="Rótulos da recepção">
+      {reception.zones.map((zone, index) => <PlanText key={zone.name} x={px(zone.x)} y={py(zone.y)+3}
+        textAnchor="middle" fontSize="9" fill="#e5edf9" stroke="#101827" strokeWidth="2.5" paintOrder="stroke">
+        {index === 0 ? 'Atend.' : index === 1 ? zone.name : 'Acesso'}
+      </PlanText>)}
+    </g>}
+    <PlanText x="300" y={y + h + 35} textAnchor="middle" fill="#8392ae" fontSize="11" letterSpacing="1">{c.projectType === 'activation' ? 'ESPERA · PARTICIPAÇÃO · CIRCULAÇÃO' : 'FRENTE'}</PlanText>
+    </g>
+    {drag && <g pointerEvents="none" transform={`translate(${dragLabel.x} ${dragLabel.y})`}>
       <rect x="0" y="-17" width="198" height="27" rx="5" fill="#101827" stroke={drag.error ? '#ff6575' : '#ffce57'} />
       <text x="8" y="0" fill={drag.error ? '#ff6575' : '#ffce57'} fontSize="12">X: {num(drag.transform.x)} m · Y: {num(drag.transform.y)} m</text>
     </g>}
-    <text x="300" y={y + h + 35} textAnchor="middle" fill="#8392ae" fontSize="13" letterSpacing="3">FRENTE / ENTRADA</text>
+
   </svg>;
 }
 export default function Home() {
-    const [confirmedPartial, setConfirmedPartial] = useState<string | null>(null);
+    const [confirmedPartial, setConfirmedPartial] = useState<{ config: Config; key: string } | null>(null);
     const confirmedPartialRef = useRef<string | null>(null);
-    confirmedPartialRef.current = confirmedPartial;
     const [c, setC] = useState<Config>(() => createProjectConfig("stand"));
-    useEffect(() => {
-        setConfirmedPartial(null);
-        confirmedPartialRef.current = null;
-    }, [c]);
-    const projectDrafts = useRef<Record<ProjectType, Config>>({ stand: createProjectConfig("stand"), palco: createProjectConfig("palco") });
+    const projectDrafts = useRef<Record<ProjectType, Config>>({
+        stand: createProjectConfig('stand'),
+        palco: createProjectConfig('palco'),
+        lounge: createProjectConfig('lounge'),
+        activation: createProjectConfig('activation'),
+        reception: createProjectConfig('reception'),
+    });
     const [tab, setTab] = useState('plan');
     const [output, setOutput] = useState<{
         code: string;
@@ -401,12 +795,11 @@ export default function Home() {
     const [copied, setCopied] = useState(false);
     const [notice, setNotice] = useState('');
     const [selectedId, setSelectedId] = useState<string | null>(null);
-    const [transformDraft, setTransformDraft] = useState({ x: '', y: '', rotation: '' });
+    const [editedTransform, setEditedTransform] = useState<{ config: Config; id: string; values: { x: string; y: string; rotation: string } } | null>(null);
     const [assemblyError, setAssemblyError] = useState('');
     const [dragPreview, setDragPreview] = useState<DragPreview | null>(null);
     const [snapToGrid, setSnapToGrid] = useState(true);
     const current = useRef(c);
-    current.current = c;
     const imageRequest = useRef(0);
     const projectInput = useRef<HTMLInputElement>(null);
     const projectRequest = useRef(0);
@@ -427,15 +820,30 @@ export default function Home() {
         : null;
     const configurationKey = JSON.stringify(c);
     const needsPartialConfirmation = Boolean(seating && seating.missingCount > 0);
-    const partialConfirmed = confirmedPartial === configurationKey;
+    const partialConfirmed = confirmedPartial?.config === c && confirmedPartial.key === configurationKey;
+    // Sincroniza as leituras assíncronas após o commit, antes dos eventos da interface.
+    useLayoutEffect(() => {
+        current.current = c;
+        confirmedPartialRef.current = partialConfirmed ? configurationKey : null;
+    }, [c, partialConfirmed, configurationKey]);
     const assemblyUnits = valid ? assemblyGeometry(c) : [];
+    const loungeMembers = c.projectType === 'lounge' ? assemblyUnits.flatMap(unit => unit.members) : [];
+    const loungeArmchairSeats = loungeMembers.filter(member => member.role === 'armchairs').length;
+    const loungePuffSeats = loungeMembers.filter(member => member.role === 'puffs').length;
+    const loungeStoolSeats = loungeMembers.filter(member => member.role === 'stools').length;
+    const loungeSeatingTotal = loungeArmchairSeats + loungePuffSeats + loungeStoolSeats;
     const selectedUnit = assemblyUnits.find(unit => unit.id === selectedId);
-    useEffect(() => {
-        if (!selectedUnit) { setSelectedId(null); setAssemblyError(''); return; }
-        const t = unitTransform(c, selectedUnit);
-        setTransformDraft({ x: String(Number(t.x.toFixed(6))), y: String(Number(t.y.toFixed(6))), rotation: String(t.rotation) });
+    const selectedTransform = selectedUnit ? unitTransform(c, selectedUnit) : null;
+    const transformDraft = editedTransform?.config === c && editedTransform.id === selectedUnit?.id
+        ? editedTransform.values
+        : selectedTransform
+            ? { x: String(Number(selectedTransform.x.toFixed(6))), y: String(Number(selectedTransform.y.toFixed(6))), rotation: String(selectedTransform.rotation) }
+            : { x: '', y: '', rotation: '' };
+    function selectUnit(id: string | null) {
+        setSelectedId(id);
+        setEditedTransform(null);
         setAssemblyError('');
-    }, [selectedId, c]);
+    }
     function commitTransforms(transforms: Config['objectTransforms']) {
         try {
             const next = { ...c, objectTransforms: transforms };
@@ -467,18 +875,131 @@ export default function Home() {
     }
     const display = c;
     const dirty = output && JSON.stringify(output.config) !== JSON.stringify(c);
-    const update = <K extends keyof Config>(key: K, value: Config[K]) => {
-        const preservesLayout = ['name', 'target', 'color', 'screenImage', 'screenName'].includes(key) || key.endsWith('Mat');
-        setC(prev => ({ ...prev, [key]: value, objectTransforms: preservesLayout ? prev.objectTransforms : {} }));
-        setError(''); setAssemblyError('');
-        setNotice(!preservesLayout && Object.keys(c.objectTransforms).length ? 'As medidas, quantidades ou distribuição mudaram. Os ajustes individuais foram restaurados para a nova distribuição automática.' : '');
+        const update = <K extends keyof Config>(
+        key: K,
+        value: Config[K],
+    ) => {
+        const preservesLayout =
+            [
+                'floorShape', 'floorCornerRadius', 'lightingPreset', 'lightingIntensity',
+                'presentationCameras', 'presentationCamera', 'presentationFormat', 'presentationMargin',
+                'name',
+                'target',
+                'color',
+                'screenImage',
+                'screenName',
+                'frontRotation',
+                'activationExportGuides', 'receptionExportGuides', 'receptionSignText',
+                'showcaseDetailed', 'showcasePlinthEnabled', 'showcasePlinthHeight', 'showcasePlinthInset',
+                'showcaseDeckThickness', 'showcaseProfilesEnabled', 'showcaseProfileWidth',
+                'showcaseGlassRoughness', 'showcaseGlassIor', 'showcaseShelfCount', 'showcaseBaseHeight', 'showcaseGlassThickness',
+                'shelfDetailed', 'shelfBoardThickness', 'shelfBackEnabled', 'shelfBackThickness',
+                'shelfBaseEnabled', 'shelfBaseHeight', 'shelfBaseInset', 'shelfShelfCount',
+                'backdropDetailed', 'backdropFrameEnabled', 'backdropFrameWidth', 'backdropFrameDepth',
+                'counterDetailed', 'counterTopThickness', 'counterBaseHeight', 'counterBaseInset',
+            ].includes(key) || key.startsWith('panelArt') || key.startsWith('counterArt') || key.endsWith('Mat') ||
+            (c.projectType === 'activation' && c.activationModel === 'demo' &&
+                ['demoProductX','demoProductY','demoProductWidth','demoProductDepth','demoProductHeight','demoBenchHeight'].includes(key)) ||
+            (c.projectType === 'activation' && c.activationModel === 'sampling' &&
+                (key.startsWith('samplingSample') || ['samplingCounterHeight','samplingSupportHeight','samplingStorageEnabled','samplingWasteHeight'].includes(key)));
+
+        setC(prev => {
+            const next: Config = {
+                ...prev,
+                [key]: value,
+                objectTransforms: preservesLayout
+                    ? prev.objectTransforms
+                    : {},
+            };
+
+            if (key === 'receptionQueueEnabled' && value === false) next.receptionBarriersEnabled = false;
+            if (prev.projectType === 'activation' && !preservesLayout) next.activationWaitingManual = false;
+
+            // Escolher um modelo ou a lateral da esquina
+            // atualiza todas as paredes na mesma operação.
+            if (
+                key === 'standLayout' ||
+                key === 'cornerOpenSide'
+            ) {
+                const walls = getStandWalls(
+                    next.standLayout,
+                    next.cornerOpenSide,
+                    next,
+                );
+
+                return {
+                    ...next,
+                    ...walls,
+                };
+            }
+
+            // Uma alteração manual nas paredes passa
+            // a representar uma configuração personalizada.
+            if (
+                key === 'back' ||
+                key === 'left' ||
+                key === 'right'
+            ) {
+                return {
+                    ...next,
+                    standLayout: 'custom',
+                };
+            }
+
+            return next;
+        });
+
+        setError('');
+        setAssemblyError('');
+
+        setNotice(
+            !preservesLayout &&
+            (Object.keys(c.objectTransforms).length > 0 || (c.projectType === 'activation' && c.activationWaitingManual))
+                ? 'A configuração mudou. Os ajustes individuais foram restaurados para a distribuição automática.'
+                : '',
+        );
     };
+
+        function placeStorage() {
+        try {
+            const base: Config = {
+                ...c,
+                storageEnabled: true,
+                objectTransforms: {},
+            };
+
+            const position = findStoragePosition(base);
+
+            const next: Config = {
+                ...base,
+                ...position,
+            };
+
+            // Confere também se os móveis cabem no espaço restante.
+            validate(next);
+
+            setC(next);
+            setSelectedId(null);
+            setError('');
+            setAssemblyError('');
+            setNotice(
+                'Depósito posicionado. Os móveis foram redistribuídos e os ajustes individuais foram restaurados.',
+            );
+        } catch (error) {
+            setError(
+                error instanceof Error
+                    ? error.message
+                    : 'Não foi possível posicionar o depósito.',
+            );
+            setNotice('');
+        }
+    }
     const build = () => {
         try {
             validate(c);
             layoutChairs(c, geometry(c).stageY);
             const generated = generate(c, {
-                confirmedPartial: confirmedPartial ?? undefined,
+                confirmedPartial: partialConfirmed ? configurationKey : undefined,
             });
             const code = generated;
             setOutput({ code, config: { ...c } });
@@ -529,7 +1050,7 @@ export default function Home() {
         setNotice('');
         try {
             if (!/\.json$/i.test(file.name) || file.size > MAX_PROJECT_BYTES) {
-                throw new Error('Escolha um arquivo .json do Code Buddy de até 4 MB.');
+                throw new Error('Escolha um arquivo .json do Code Buddy de até 10 MB.');
             }
             const loaded = parseProject(await file.text());
             if (requestId !== projectRequest.current) return;
@@ -635,8 +1156,10 @@ export default function Home() {
         return () => controller.abort();
     }, []);
     const availableElements = elements.filter((element) => libraryCatalog.some((item) => item.id === element.key &&
-        item.projectTypes.some((type) => type === c.projectType)));
+        item.projectTypes.some((type) => type === c.projectType)) && (c.projectType !== 'activation' || (!['demo','sampling'].includes(c.activationModel) && element.key === (c.activationModel === 'photo' ? 'backdrops' : 'touchScreens'))));
     function changeProjectType(type: ProjectType) {
+        if (!projectTypes.some(project => project.value === type))
+            return;
         if (type === c.projectType)
             return;
         imageRequest.current += 1;
@@ -644,12 +1167,17 @@ export default function Home() {
         const currentProjectType = c.projectType;
         // Guarda o preenchimento do projeto atual.
         projectDrafts.current[currentProjectType] = { ...c };
-        // Recupera o preenchimento do próximo projeto.
-        setC({
+        // Refs podem conservar rascunhos antigos durante o recarregamento automático.
+        // Completa os campos ausentes antes de apresentar o próximo projeto.
+        const nextProject: Config = {
+            ...createProjectConfig(type),
             ...projectDrafts.current[type],
+            projectType: type,
             // Mantém o programa de destino selecionado.
             target: c.target,
-        });
+        };
+        projectDrafts.current[type] = nextProject;
+        setC(nextProject);
         setOutput(null);
         setTab("plan");
         setError("");
@@ -657,7 +1185,7 @@ export default function Home() {
         setCopied(false);
     }
     return <div className="app-shell">
-    <header className="topbar"><a href="/" className="brand"><span className="brand-mark"><Box size={24}/></span><span>code<span className="brand-light">buddy</span><small>CENOGRAFIA</small></span></a><div className="topbar-right"><span className="version">V3 · Blender + Max</span><span className="group-name">GRUPO <b>TV1</b></span></div></header>
+    <header className="topbar"><Link href="/" className="brand"><span className="brand-mark"><Box size={24}/></span><span>code<span className="brand-light">buddy</span><small>CENOGRAFIA</small></span></Link><div className="topbar-right"><span className="version">V3 · Blender + Max</span><span className="group-name">GRUPO <b>TV1</b></span></div></header>
     <main><div className="page-heading"><div><div className="eyebrow">SEU ESTÚDIO DE CENOGRAFIA</div><h1>Da ideia ao primeiro projeto<span>.</span></h1><p>Defina as medidas. Escolha os elementos. Leve para o Blender ou 3ds Max.</p></div><div className="format"><Code2 size={20}/><span>SAÍDA DO PROJETO<strong>{c.target === 'max' ? 'MaxScript para 3ds Max' : 'Python para Blender'}</strong></span></div></div>
     <div className="workspace"><section className="config-panel" aria-label="Configuração do projeto"><div className="section-title"><span className="step">01</span><h2>Configure seu projeto</h2></div>
       <div className="project-file-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '12px 0' }}>
@@ -675,18 +1203,421 @@ export default function Home() {
       </div>
       <label className="field engine-label"><span>Gerar para</span><Select value={c.target} onValueChange={v => update('target', v as Target)}><SelectTrigger aria-label="Programa de destino" className="full-select"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="blender">Blender · Python (.py)</SelectItem><SelectItem value="max">3ds Max · MaxScript (.ms)</SelectItem></SelectContent></Select></label>
       <Tabs defaultValue="stand" className="config-tabs"><TabsList className="config-tabs-list"><TabsTrigger value="stand">Projeto</TabsTrigger><TabsTrigger value="params">Parâmetros</TabsTrigger><TabsTrigger value="materials">Materiais</TabsTrigger></TabsList><TabsContent value="stand">
+      {c.projectType === 'activation' && <div className="field engine-label"><span>Modelo da ativação</span>
+        <Select value={c.activationModel} onValueChange={value=>{
+          try {
+            const next=createActivationModelConfig(c,value as ActivationModel); validate(next);
+            setC(next); setSelectedId(null); setAssemblyError(''); setError(''); setTab('plan');
+            setNotice('Modelo alterado. A distribuição foi reiniciada; confira as medidas iniciais da área.');
+          } catch(e) { setError(e instanceof Error?e.message:'Não foi possível alterar o modelo.'); }
+        }}>
+          <SelectTrigger aria-label="Modelo da ativação" className="full-select"><SelectValue/></SelectTrigger>
+          <SelectContent>{activationModels.map(model=><SelectItem key={model.value} value={model.value}>{model.label}</SelectItem>)}</SelectContent>
+        </Select>
+      </div>}
       <label className="field">Nome do projeto<input value={c.name} maxLength={80} onChange={e => update('name', e.target.value)} placeholder="Ex.: Stand KitKat"/></label>
-      <p className="tab-help">{c.projectType === 'palco' ? 'Informe a área disponível e a altura de montagem. Ajuste as medidas da plataforma na aba Parâmetros.' : 'Informe as medidas do stand. A altura também define as paredes e os trilhos de iluminação.'}</p>
+    <p className="tab-help">
+    {c.projectType === 'reception'
+        ? 'Informe a área disponível para recepção e credenciamento. Ajuste a quantidade e as medidas dos balcões na aba Parâmetros.'
+        : c.projectType === 'palco'
+            ? 'Informe a área disponível e a altura de montagem. Ajuste as medidas da plataforma na aba Parâmetros.'
+            : c.projectType === 'lounge'
+                ? 'Informe a área disponível para o lounge. Selecione os móveis abaixo e ajuste os conjuntos na aba Parâmetros.'
+                : c.projectType === 'activation'
+                    ? 'Escolha o modelo de ativação e configure as zonas e os acessos na aba Parâmetros. A montagem acompanha os ajustes da estação.'
+                    : 'Informe as medidas do stand. A altura também define as paredes e os trilhos de iluminação.'}
+</p>
       <div className="dimensions">{([{ key: 'width', label: 'Largura', min: 3, max: 30 }, { key: 'depth', label: 'Profundidade', min: 3, max: 30 }, { key: 'height', label: 'Altura', min: 2, max: 8 }] as const).map(f => <label className="field" key={f.key}>{f.label}<div className="unit-input"><input type="number" inputMode="decimal" min={f.min} max={f.max} step="0.1" value={Number.isNaN(c[f.key]) ? '' : c[f.key]} onChange={e => update(f.key, e.target.value === '' ? NaN : Number(e.target.value))}/><span>m</span></div></label>)}</div>
-      <div className="area-summary"><Ruler size={16}/><span>Área de montagem</span><strong>{valid ? num(c.width * c.depth) : '—'} <small>m²</small></strong></div>
-      {c.projectType === 'stand' && <>
-        <div className="subheading"><h3>Paredes</h3><span>A frente fica aberta</span></div>
-      <div className="wall-options">{([{ key: 'left', label: 'Esquerda' }, { key: 'back', label: 'Fundo' }, { key: 'right', label: 'Direita' }] as const).map(f => <label className={'wall-choice ' + (c[f.key] ? 'chosen' : '')} key={f.key}><Checkbox checked={c[f.key]} onCheckedChange={v => update(f.key, v === true)} aria-label={`Parede ${f.label.toLowerCase()}`}/>{f.label}</label>)}</div>
-      </>}
-      <div className="subheading elements-heading"><h3>Elementos</h3><span>Selecione o que entra</span></div>
-      <div className="element-list">{availableElements.map(f => <label className={'element ' + (c[f.key] ? 'selected' : '')} key={f.key}><span className="element-icon"><f.icon size={19}/></span><span className="element-text"><strong>{f.title}</strong><small>{f.text}</small></span><Checkbox checked={c[f.key]} disabled={c.projectType === 'palco' && f.key === 'stage'} onCheckedChange={v => update(f.key, v === true)} aria-label={f.title}/></label>)}</div>
+      <div className="area-summary"><Ruler size={16}/><span>Área de montagem</span><strong>{valid ? num(floorArea(c)) : '—'} <small>m²</small></strong></div>
+      {c.projectType === 'lounge' && <div className="parameter-section" aria-label="Resumo de assentos do lounge">
+        <h3>Assentos do lounge</h3>
+        {valid ? <>
+          <p className="tab-help">Poltronas: {loungeArmchairSeats} · Puffs: {loungePuffSeats} · Banquetas: {loungeStoolSeats}</p>
+          <strong>Total: {loungeSeatingTotal} assentos</strong>
+          <p className="tab-help">Contagem do mobiliário da montagem. Não representa lotação regulamentar.</p>
+        </> : <p className="tab-help">Corrija os parâmetros da montagem para calcular os assentos.</p>}
+        <p className="tab-help">Para ajustar os conjuntos, abra Parâmetros e localize Mesas de centro. No modo avulso, cada tipo de móvel usa sua própria quantidade.</p>
+      </div>}
+      {c.projectType === 'stand' && (
+        <>
+          <div className="subheading">
+            <h3>Configuração do estande</h3>
+          </div>
+
+          <div className="field engine-label">
+            <span>Modelo do estande</span>
+
+            <Select
+              value={c.standLayout}
+              onValueChange={value =>
+                update('standLayout', value as StandLayout)
+              }
+            >
+              <SelectTrigger
+                aria-label="Modelo do estande"
+                className="full-select"
+              >
+                <SelectValue />
+              </SelectTrigger>
+
+              <SelectContent>
+                <SelectItem value="front">
+                  Frente aberta
+                </SelectItem>
+                <SelectItem value="corner">
+                  Esquina
+                </SelectItem>
+                <SelectItem value="peninsula">
+                  Península
+                </SelectItem>
+                <SelectItem value="island">
+                  Ilha
+                </SelectItem>
+                <SelectItem value="custom">
+                  Personalizado
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {c.standLayout === 'corner' && (
+            <div className="field engine-label">
+              <span>Lateral aberta da esquina</span>
+
+              <Select
+                value={c.cornerOpenSide}
+                onValueChange={value =>
+                  update(
+                    'cornerOpenSide',
+                    value as CornerOpenSide,
+                  )
+                }
+              >
+                <SelectTrigger
+                  aria-label="Lateral aberta da esquina"
+                  className="full-select"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+
+                <SelectContent>
+                  <SelectItem value="left">
+                    Esquerda
+                  </SelectItem>
+                  <SelectItem value="right">
+                    Direita
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          <div className="field engine-label">
+            <span>Orientação da frente</span>
+
+            <Select
+              value={String(c.frontRotation)}
+              onValueChange={value =>
+                update(
+                  'frontRotation',
+                  Number(value) as FrontRotation,
+                )
+              }
+            >
+              <SelectTrigger
+                aria-label="Orientação da frente"
+                className="full-select"
+              >
+                <SelectValue />
+              </SelectTrigger>
+
+              <SelectContent>
+                <SelectItem value="0">
+                  0° — Frente para baixo
+                </SelectItem>
+                <SelectItem value="90">
+                  90° — Frente para a direita
+                </SelectItem>
+                <SelectItem value="180">
+                  180° — Frente para cima
+                </SelectItem>
+                <SelectItem value="270">
+                  270° — Frente para a esquerda
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <p className="tab-help">
+            A orientação gira toda a montagem. As medidas e os
+            ajustes X/Y continuam relativos à frente do estande.
+          </p>
+
+          <div className="subheading">
+            <h3>Paredes</h3>
+            <span>A frente local fica aberta</span>
+          </div>
+
+          <p className="tab-help">
+            Esquerda e direita são vistas da entrada para
+            o fundo. Alterar uma parede muda o modelo
+            para Personalizado.
+          </p>
+
+          <div className="wall-options">
+            {(
+              [
+                { key: 'left', label: 'Esquerda' },
+                { key: 'back', label: 'Fundo' },
+                { key: 'right', label: 'Direita' },
+              ] as const
+            ).map(field => (
+              <label
+                className={
+                  'wall-choice ' +
+                  (c[field.key] ? 'chosen' : '')
+                }
+                key={field.key}
+              >
+                <Checkbox
+                  checked={c[field.key]}
+                  onCheckedChange={value =>
+                    update(field.key, value === true)
+                  }
+                  aria-label={
+                    `Parede ${field.label.toLowerCase()}`
+                  }
+                />
+                {field.label}
+              </label>
+            ))}
+          </div>
+        </>
+      )}
+      {c.projectType === 'stand' && (
+        <div className="parameter-section">
+          <h3>Depósito com porta</h3>
+          <label className="wall-choice">
+            <Checkbox checked={c.storageEnabled} onCheckedChange={value => {
+              if (value === true) placeStorage();
+              else update('storageEnabled', false);
+            }} aria-label="Ativar depósito com porta" />
+            Ativar depósito
+          </label>
+          {c.storageEnabled && <>
+            <p className="tab-help">X/Y indicam o centro do depósito nos eixos locais do estande. A orientação da frente gira toda a montagem.</p>
+            <div className="param-grid">
+              {storageFields.map(field => <label className="field" key={field.key}>
+                {field.label}<div className="unit-input">
+                  <input type="number" inputMode="decimal" min={field.min} max={field.max} step={field.step ?? 0.1}
+                    value={Number.isNaN(c[field.key]) ? '' : c[field.key] as number}
+                    onChange={event => update(field.key, event.target.value === '' ? NaN : Number(event.target.value))} />
+                  <span>m</span>
+                </div>
+              </label>)}
+            </div>
+            <div className="field engine-label"><span>Face da porta</span>
+              <Select value={c.storageDoorSide} onValueChange={value => update('storageDoorSide', value as StorageDoorSide)}>
+                <SelectTrigger aria-label="Face da porta do depósito" className="full-select"><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="front">Frente</SelectItem><SelectItem value="back">Fundo</SelectItem>
+                  <SelectItem value="left">Esquerda</SelectItem><SelectItem value="right">Direita</SelectItem></SelectContent>
+              </Select>
+            </div>
+            <div className="field engine-label"><span>Dobradiça, olhando de fora</span>
+              <Select value={c.storageDoorHinge} onValueChange={value => update('storageDoorHinge', value as StorageDoorHinge)}>
+                <SelectTrigger aria-label="Dobradiça da porta do depósito" className="full-select"><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="left">Esquerda</SelectItem><SelectItem value="right">Direita</SelectItem></SelectContent>
+              </Select>
+            </div>
+            <div className="field engine-label"><span>Sentido de abertura</span>
+              <Select value={c.storageDoorOpening} onValueChange={value => update('storageDoorOpening', value as StorageDoorOpening)}>
+                <SelectTrigger aria-label="Abertura da porta do depósito" className="full-select"><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="inward">Para dentro</SelectItem><SelectItem value="outward">Para fora</SelectItem></SelectContent>
+              </Select>
+            </div>
+            {([{ key: 'storageWallMat', label: 'Material das paredes do depósito' },
+                { key: 'storageDoorMat', label: 'Material da porta do depósito' }] as const).map(field => (
+              <div className="field engine-label" key={field.key}><span>{field.label}</span>
+                <Select value={c[field.key]} onValueChange={value => update(field.key, value as MaterialKind)}>
+                  <SelectTrigger aria-label={field.label} className="full-select"><SelectValue /></SelectTrigger>
+                  <SelectContent>{materials.map(material => <SelectItem key={material.value} value={material.value}>{material.label}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+            ))}
+            <button type="button" className="generate-button" onClick={placeStorage}>Reposicionar depósito automaticamente</button>
+            <p className="tab-help">A área tracejada fica reservada para acesso e abertura externa. Alterar medidas, posição ou porta restaura os ajustes individuais dos móveis. Alterar materiais preserva os ajustes.</p>
+            <p className="tab-help">O depósito é incluído no JSON e nos scripts 3D. A porta é exportada fechada, com pivô na dobradiça; o arco na planta indica sua abertura.</p>
+          </>}
+        </div>
+      )}
+      {c.projectType === 'activation' && c.activationModel === 'sampling' && <p className="tab-help">Balcão de entrega, apoio, armazenamento e áreas da equipe e dos visitantes incluídos. Ajuste a estação na aba Parâmetros.</p>}
+      {c.projectType === 'activation' && c.activationModel === 'demo' && <p className="tab-help">Bancada, produto e áreas do demonstrador e do público incluídos. Ajuste as medidas na aba Parâmetros.</p>}
+      <div className="subheading elements-heading"><h3>{c.projectType === 'activation' && c.activationModel === 'demo' ? 'Estação de demonstração' : c.projectType === 'activation' && c.activationModel === 'sampling' ? 'Experimentação e amostras' : 'Elementos'}</h3><span>{c.projectType === 'activation' && c.activationModel === 'demo' ? 'Uma bancada e um produto' : c.projectType === 'activation' && c.activationModel === 'sampling' ? 'Uma estação de atendimento' : 'Selecione o que entra'}</span></div>
+      <div className="element-list">{availableElements.map(f => <label className={'element ' + (c[f.key] ? 'selected' : '')} key={f.key}><span className="element-icon"><f.icon size={19}/></span><span className="element-text"><strong>{f.title}</strong><small>{f.text}</small></span><Checkbox checked={c[f.key]} disabled={(c.projectType === 'reception' && f.key === 'counter') ||
+    (c.projectType === 'palco' && f.key === 'stage') || (c.projectType === 'activation' && (f.key === 'touchScreens' || f.key === 'backdrops'))} onCheckedChange={v => update(f.key, v === true)} aria-label={f.title}/></label>)}</div>
       <div className="color-row"><label htmlFor="brand-color">Cor de destaque<small>Aplicada ao LED e aos elementos</small></label><div className="color-control"><input id="brand-color" type="color" value={c.color} onChange={e => update('color', e.target.value)}/><span>{c.color.toUpperCase()}</span></div></div>
       </TabsContent><TabsContent value="params">
+      {c.projectType === 'reception' && <ReceptionFinishControls c={c} updateAction={update} applyAction={next => {
+        try { validate(next); setC(next); setError(''); setNotice('Fila, sinalização e guias ativados.'); }
+        catch (error) { setError(error instanceof Error ? error.message : 'A montagem não cabe nesta área.'); }
+      }}/>}
+      <PresentationControls c={c} updateAction={update}/>
+      <ImportedModelControls c={c} onChangeAction={models => {
+          const next = { ...current.current, importedModels: models };
+          serializeProject(next);
+          setC(next); setError('');
+          setNotice('Objetos 3D atualizados. Gere novamente o script para exportar.');
+      }}/>
+      {c.showcases && <ShowcaseControls c={c} updateAction={update}/>}
+      {c.shelving && <ShelvingControls c={c} updateAction={update}/>}
+      {c.backdrops && <PanelControls c={c} updateAction={update}/>}
+      {c.counter && <CounterControls c={c} updateAction={update}/>}
+              {c.projectType === 'reception' && (
+        <div
+          className="parameter-section"
+          aria-label="Organização da recepção"
+        >
+          <h3>Organização dos balcões</h3>
+
+          {([
+            {
+              key: 'receptionCounterGap',
+              label: 'Espaço entre os tampos',
+              min: 0.1,
+              max: 2,
+            },
+            {
+              key: 'receptionRowY',
+              label: 'Posição Y da fileira',
+              min: -15,
+              max: 15,
+            },
+            {
+              key: 'receptionServiceDepth',
+              label: 'Profundidade do atendimento',
+              min: 0.8,
+              max: 5,
+            },
+            {
+              key: 'receptionTeamDepth',
+              label: 'Profundidade da área da equipe',
+              min: 0.8,
+              max: 5,
+            },
+            {
+              key: 'receptionSideAccessWidth',
+              label: 'Largura de cada acesso lateral',
+              min: 0.8,
+              max: 3,
+            },
+          ] as const).map(field => (
+            <label className="field" key={field.key}>
+              <span>{field.label} (m)</span>
+              <input
+                type="number"
+                min={field.min}
+                max={field.max}
+                step="0.1"
+                value={
+                  Number.isFinite(c[field.key])
+                    ? c[field.key]
+                    : ''
+                }
+                onChange={event =>
+                  update(field.key, event.target.valueAsNumber)
+                }
+              />
+            </label>
+          ))}
+
+          <p className="tab-help">
+            Y positivo aproxima a fileira do fundo; Y negativo
+            aproxima da frente. Azul indica atendimento,
+            laranja indica equipe e verde indica acessos laterais.
+            As faixas são referências de espaço livre.
+          </p>
+                    <h3>Fila e fluxo do público</h3>
+
+          <label className="field">
+            <span>Ativar fila compartilhada</span>
+            <Checkbox
+              checked={c.receptionQueueEnabled}
+              onCheckedChange={value =>
+                update('receptionQueueEnabled', value === true)
+              }
+              aria-label="Ativar fila compartilhada"
+            />
+          </label>
+
+          {c.receptionQueueEnabled && (
+            <>
+              {([
+                {
+                  key: 'receptionQueueWidth',
+                  label: 'Largura da fila e dos percursos',
+                  min: 0.8,
+                  max: 2,
+                },
+                {
+                  key: 'receptionQueueDepth',
+                  label: 'Comprimento da fila',
+                  min: 0.8,
+                  max: 6,
+                },
+              ] as const).map(field => (
+                <label className="field" key={field.key}>
+                  <span>{field.label} (m)</span>
+                  <input
+                    type="number"
+                    min={field.min}
+                    max={field.max}
+                    step="0.1"
+                    value={
+                      Number.isFinite(c[field.key])
+                        ? c[field.key]
+                        : ''
+                    }
+                    onChange={event =>
+                      update(field.key, event.target.valueAsNumber)
+                    }
+                  />
+                </label>
+              ))}
+
+              <label className="field">
+                <span>Lado da saída, visto pela frente</span>
+                <Select
+                  value={c.receptionExitSide}
+                  onValueChange={value => {
+                    if (value === 'left' || value === 'right') {
+                      update('receptionExitSide', value);
+                    }
+                  }}
+                >
+                  <SelectTrigger aria-label="Lado da saída">
+                    <SelectValue />
+                  </SelectTrigger>
+
+                  <SelectContent>
+                    <SelectItem value="left">Esquerda</SelectItem>
+                    <SelectItem value="right">Direita</SelectItem>
+                  </SelectContent>
+                </Select>
+              </label>
+
+              <p className="tab-help">
+                A fila fica no lado oposto à saída.
+                O público é distribuído pela frente dos balcões.
+                Os acessos laterais permanecem reservados à equipe.
+              </p>
+            </>
+          )}
+        </div>
+      )}
+      {c.projectType === 'activation' && <ActivationControls c={c} update={update} apply={next=>{
+        try { validate(next); setC(next); setError(''); setNotice('Espera atualizada. O percurso foi recalculado.'); }
+        catch(e) { setError(e instanceof Error?e.message:'Posição inválida.'); }
+      }}/> }
       <p className="tab-help">Medidas em metros. Os elementos seguem uma distribuição automática na planta.</p>
       {seating && c.chairs && (<p className="tab-help">
     {c.chairGenerationMode === 'fill' ? (<>
@@ -746,9 +1677,12 @@ export default function Home() {
                     if (value !== 'free' && value !== 'bistro')
                         return;
                     setC(prev => ({ ...prev, stoolDistribution: value,
-                        bistroTables: value === 'bistro' ? true : prev.bistroTables }));
+                        bistroTables: value === 'bistro' ? true : prev.bistroTables,
+                        objectTransforms: {} }));
+                    setSelectedId(null);
+                    setAssemblyError('');
                     setError('');
-                    setNotice('');
+                    setNotice('Distribuição das banquetas alterada. Os ajustes individuais foram restaurados.');
                 }}>
       <SelectTrigger id="stool-distribution" className="full-select"><SelectValue /></SelectTrigger>
       <SelectContent>
@@ -777,10 +1711,14 @@ export default function Home() {
                     if (value !== 'free' && value !== 'set')
                         return;
                     setC(prev => ({ ...prev, loungeMode: value,
+                        coffeeTables: value === 'set' ? true : prev.coffeeTables,
                         armchairs: value === 'set' && prev.loungeArmchairsPerTable > 0 ? true : prev.armchairs,
-                        puffs: value === 'set' && prev.loungePuffsPerTable > 0 ? true : prev.puffs }));
+                        puffs: value === 'set' && prev.loungePuffsPerTable > 0 ? true : prev.puffs,
+                        objectTransforms: {} }));
+                    setSelectedId(null);
+                    setAssemblyError('');
                     setError('');
-                    setNotice('');
+                    setNotice('Modo de montagem alterado. Os ajustes individuais foram restaurados.');
                 }}>
       <SelectTrigger id="lounge-mode" className="full-select"><SelectValue /></SelectTrigger>
       <SelectContent><SelectItem value="free">Móveis avulsos</SelectItem><SelectItem value="set">Conjunto de lounge</SelectItem></SelectContent>
@@ -789,6 +1727,7 @@ export default function Home() {
                     ? <>Cada mesa de centro forma um conjunto com até 4 assentos. Total: {c.coffeeTableCount} mesas, {c.armchairs ? c.coffeeTableCount * c.loungeArmchairsPerTable : 0} poltronas e {c.puffs ? c.coffeeTableCount * c.loungePuffsPerTable : 0} puffs. Limite de 100 unidades de cada tipo de assento.</>
                     : 'Mesas de centro, poltronas e puffs ocupam posições livres de forma independente.'}</p>
   </div>)} <div className="param-grid">{parameterFields[f.key].filter(field => {
+                if (c.projectType === 'activation' && (field.key === 'touchGap' || field.key === 'backdropCount' || field.key === 'backdropGap')) return false;
                 if (field.key.startsWith('lounge') && c.loungeMode !== 'set')
                     return false;
                 if (field.key === 'coffeeTableGap' && c.loungeMode === 'set')
@@ -805,10 +1744,26 @@ export default function Home() {
                     return false;
                 const isQuantityField = field.key === 'attendeeCount' || field.key === 'chairExtraCount';
                 return c.chairGenerationMode !== 'fill' || !isQuantityField;
-            }).map(field => <label className="field" key={field.key}>{field.key === 'coffeeTableCount' && c.loungeMode === 'set' ? 'Quantidade de conjuntos' : field.label}<div className="unit-input"><input type="number" inputMode={field.unit === 'un' ? 'numeric' : 'decimal'} min={field.min ?? .1} max={field.max ?? 30} step={field.step ?? (field.unit === 'un' ? 1 : field.key === "showcaseGlassThickness" ? .001 : field.key === "roundTableTopThickness" || field.key === "rectTableTopThickness" || field.key === "bistroTableTopThickness" || field.key === "coffeeTableTopThickness" || field.key === "stoolSeatThickness" || field.key === "stoolBistroGap" ? 0.01 : 0.05)} value={Number.isNaN(c[field.key]) ? '' : c[field.key] as number} onChange={e => update(field.key, e.target.value === '' ? NaN : Number(e.target.value))}/><span>{field.unit ?? 'm'}</span></div></label>)}</div></div>)}
-      {!availableElements.some(f => c[f.key]) && <p className="tab-help">Selecione um elemento na aba Projeto para ajustar suas medidas.</p>}
-      {c.led && <div className="texture-section"><h3>Textura da TV / LED</h3><p>Escolha a arte que vai aparecer na tela. A imagem inteira é ajustada às medidas do LED.</p><label className="upload-label" htmlFor="tv-image">Escolher imagem JPG ou PNG<input id="tv-image" type="file" accept="image/png,image/jpeg" onChange={handleImage}/></label><small>Até 2 MB · incorporada ao script · imagem estática</small>{c.screenImage ? <div className="texture-preview"><img src={c.screenImage} alt="Arte selecionada para a tela de TV"/><span>{c.screenName}</span><button onClick={() => { imageRequest.current += 1; setC(prev => ({ ...prev, screenImage: '', screenName: '' })); setNotice('Imagem removida.'); }}>Remover imagem</button></div> : <p className="tab-help">Sem imagem, a tela usa a cor de destaque.</p>}</div>}
-      </TabsContent><TabsContent value="materials"><p className="tab-help">Escolha o acabamento de cada parte. Madeira e concreto usam textura procedural; metal e vidro recebem propriedades de superfície.</p><div className="material-fields">{materialFields.filter((field) => {
+            }).map(field => <label className="field" key={field.key}>{field.key === 'coffeeTableCount' && c.loungeMode === 'set' ? 'Quantidade de conjuntos' : field.label}<div className="unit-input"><input type="number" inputMode={field.unit === 'un' ? 'numeric' : 'decimal'} min={field.min ?? .1} max={c.projectType === 'activation' && field.key === 'touchCount' ? 30 : field.max ?? 30} step={field.step ?? (field.unit === 'un' ? 1 : field.key === "showcaseGlassThickness" ? .001 : field.key === "roundTableTopThickness" || field.key === "rectTableTopThickness" || field.key === "bistroTableTopThickness" || field.key === "coffeeTableTopThickness" || field.key === "stoolSeatThickness" || field.key === "stoolBistroGap" ? 0.01 : 0.05)} value={Number.isNaN(c[field.key]) ? '' : c[field.key] as number} onChange={e => update(field.key, e.target.value === '' ? NaN : Number(e.target.value))}/><span>{field.unit ?? 'm'}</span></div></label>)}</div></div>)}
+      {!(c.projectType === 'activation' && ['demo','sampling'].includes(c.activationModel)) && !availableElements.some(f => c[f.key]) && <p className="tab-help">Selecione um elemento na aba Projeto para ajustar suas medidas.</p>}
+      {c.led && <div className="texture-section"><h3>Textura da TV / LED</h3><p>Escolha a arte que vai aparecer na tela. A imagem inteira é ajustada às medidas do LED.</p><label className="upload-label" htmlFor="tv-image">Escolher imagem JPG ou PNG<input id="tv-image" type="file" accept="image/png,image/jpeg" onChange={handleImage}/></label><small>Até 2 MB · incorporada ao script · imagem estática</small>{c.screenImage ? <div className="texture-preview"><ImagePreview src={c.screenImage} alt="Arte selecionada para a tela de TV" width={320} height={180} unoptimized/><span>{c.screenName}</span><button onClick={() => { imageRequest.current += 1; setC(prev => ({ ...prev, screenImage: '', screenName: '' })); setNotice('Imagem removida.'); }}>Remover imagem</button></div> : <p className="tab-help">Sem imagem, a tela usa a cor de destaque.</p>}</div>}
+      </TabsContent><TabsContent value="materials"><BrandingControls c={c} onChangeAction={patch => {
+          const next = { ...current.current, ...patch };
+          serializeProject(next);
+          setC(next); setError('');
+          setNotice('Arte atualizada. Gere novamente o script para exportar.');
+      }}/><p className="tab-help">Escolha o acabamento de cada parte. Madeira e concreto usam textura procedural; metal e vidro recebem propriedades de superfície.</p><div className="material-fields">{materialFields.filter((field) => {
+            if (field.key === 'showcaseDeckMat') return c.showcases && c.showcaseDetailed;
+            if (field.key === 'showcasePlinthMat') return c.showcases && c.showcaseDetailed && c.showcasePlinthEnabled;
+            if (field.key === 'showcaseProfileMat') return c.showcases && c.showcaseDetailed && c.showcaseProfilesEnabled;
+            if (field.key === 'shelfShelfMat') return c.shelving && c.shelfDetailed;
+            if (field.key === 'shelfBackMat') return c.shelving && c.shelfDetailed && c.shelfBackEnabled;
+            if (field.key === 'shelfBaseMat') return c.shelving && c.shelfDetailed && c.shelfBaseEnabled;
+            if (field.key === 'backdropFrameMat') return c.backdrops && c.backdropDetailed && c.backdropFrameEnabled;
+            if (field.key === 'backdropStructureMat' || field.key === 'backdropBaseMat') return c.backdrops && c.backdropDetailed;
+            if (field.key === 'counterTopMat' || field.key === 'counterBaseMat') return c.counter && c.counterDetailed;
+            if (['samplingCounterMat','samplingSupportMat','samplingSampleMat'].includes(field.key)) return c.projectType === 'activation' && c.activationModel === 'sampling';
+            if (field.key === 'demoBenchMat' || field.key === 'demoProductMat') return c.projectType === 'activation' && c.activationModel === 'demo';
             if (field.key === 'wallMat')
                 return c.back || c.left || c.right;
             return !field.enabled || c[field.enabled];
@@ -844,7 +1799,7 @@ export default function Home() {
             Geração parcial confirmada.
             Clique em Gerar para exportar.
           </p>) : (<button type="button" className="generate-button" onClick={() => {
-                        setConfirmedPartial(configurationKey);
+                        setConfirmedPartial({ config: c, key: configurationKey });
                         setError("");
                     }}>
             Confirmar geração de{" "}
@@ -855,7 +1810,7 @@ export default function Home() {
 
     <button className="generate-button" onClick={build} disabled={!valid ||
             (needsPartialConfirmation &&
-                !partialConfirmed)}><Sparkles size={18}/>Gerar {c.target === 'max' ? 'MaxScript' : 'script Blender'}</button><p className="generation-note">Piso, câmera frontal e iluminação incluídos.</p>{error && <p role="alert" className="error">{error}</p>}
+                !partialConfirmed)}><Sparkles size={18}/>Gerar {c.target === 'max' ? 'MaxScript' : 'script Blender'}</button><p className="generation-note">Piso, iluminação e câmera de apresentação incluídos.</p>{error && <p role="alert" className="error">{error}</p>}
     </section>
     <section className="result-panel" aria-label="Visualização e script">
       <div className="config-panel" style={{ marginBottom: 16, padding: 16 }}>
@@ -867,16 +1822,16 @@ export default function Home() {
         </label>
         <p className="tab-help">Arraste e solte para aplicar. Vermelho indica uma posição inválida; ao soltar, o objeto volta. Pressione Esc para cancelar.</p>
         <label className="field">Objeto ou conjunto
-          <select aria-label="Selecionar objeto da montagem" value={selectedId ?? ''} onChange={event => setSelectedId(event.target.value || null)} style={{ width: '100%', padding: 10, marginTop: 8, background: '#0e1524', color: '#edf1fc', border: '1px solid #34405a', borderRadius: 6 }}>
+          <select aria-label="Selecionar objeto da montagem" value={selectedUnit?.id ?? ''} onChange={event => selectUnit(event.target.value || null)} style={{ width: '100%', padding: 10, marginTop: 8, background: '#0e1524', color: '#edf1fc', border: '1px solid #34405a', borderRadius: 6 }}>
             <option value="">Selecione um objeto</option>
             {assemblyUnits.map(unit => <option key={unit.id} value={unit.id}>{unit.label}{Object.hasOwn(c.objectTransforms, unit.id) ? ' · ajustado' : ''}</option>)}
           </select>
         </label>
         {selectedUnit && <>
-          <p className="tab-help">X: esquerda (−) / direita (+). Y: entrada (−) / fundo (+). Posição medida no centro; rotação adicional em relação à distribuição inicial.</p>
+          <p className="tab-help">X: esquerda (−) / direita (+). Y: frente (−) / fundo (+). Posição medida no centro; rotação da unidade em torno do eixo Z da planta.</p>
           <div className="dimensions">
             {(['x', 'y', 'rotation'] as const).map(key => <label className="field" key={key}>{key === 'rotation' ? 'Rotação (°)' : `${key.toUpperCase()} (m)`}
-              <input aria-label={key === 'rotation' ? 'Rotação do objeto' : `Posição ${key.toUpperCase()} do objeto`} type="number" min={key === 'rotation' ? -360 : -30} max={key === 'rotation' ? 360 : 30} step={key === 'rotation' ? 5 : .1} readOnly={!!dragPreview} value={dragPreview?.id === selectedId ? String(Number(dragPreview.transform[key].toFixed(6))) : transformDraft[key]} onChange={event => setTransformDraft(prev => ({ ...prev, [key]: event.target.value }))} />
+              <input aria-label={key === 'rotation' ? 'Rotação do objeto' : `Posição ${key.toUpperCase()} do objeto`} type="number" min={key === 'rotation' ? -360 : -30} max={key === 'rotation' ? 360 : 30} step={key === 'rotation' ? 5 : .1} readOnly={!!dragPreview} value={dragPreview?.id === selectedId ? String(Number(dragPreview.transform[key].toFixed(6))) : transformDraft[key]} onChange={event => setEditedTransform({ config: c, id: selectedUnit.id, values: { ...transformDraft, [key]: event.target.value } })} />
             </label>)}
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
@@ -885,14 +1840,14 @@ export default function Home() {
           </div>
         </>}
         {Object.keys(c.objectTransforms).length > 0 && <button type="button" className="generate-button" onClick={() => commitTransforms({})}>Restaurar toda a distribuição</button>}
-        <p className="tab-help">Alterar medidas, quantidades ou distribuição restaura os ajustes individuais. Materiais e cores preservam as posições.</p>
+        <p className="tab-help">{c.projectType === 'activation' && c.activationModel === 'sampling' ? 'Medidas que alteram a ocupação no piso restauram a distribuição. Amostras, armazenamento, alturas e materiais preservam a posição da estação.' : c.projectType === 'activation' && c.activationModel === 'demo' ? 'Medidas que alteram a ocupação no piso restauram a distribuição. Produto, altura da bancada, materiais e cores preservam a posição da estação.' : 'Alterar medidas, quantidades ou distribuição restaura os ajustes individuais. Materiais e cores preservam as posições.'}</p>
         {(dragPreview?.error || assemblyError) && <p role="alert" className="error">{dragPreview?.error || assemblyError}</p>}
       </div>
       <Tabs value={tab} onValueChange={setTab}><div className="result-header"><TabsList className="view-tabs"><TabsTrigger value="plan"><Square size={16}/>Planta</TabsTrigger><TabsTrigger value="code"><Code2 size={17}/>{c.target === 'max' ? 'MaxScript' : 'Script Python'}</TabsTrigger></TabsList><span className="plan-scale">{valid ? `${num(c.width)} × ${num(c.depth)} m` : 'Confira as medidas'}</span></div>
-      <TabsContent value="plan"><div className="plan-title"><span>VISTA SUPERIOR</span><small>Planta esquemática · sem perspectiva</small></div><div className="drawing">{valid ? <Plan c={display} selectedId={selectedId} onSelect={setSelectedId} snap={snapToGrid} onDragPreview={previewDrag} onDrop={dropObject}/> : <div className="empty"><Ruler size={32}/><p>{validationMessage}</p></div>}</div><div className="legend">{(c.back || c.left || c.right) && <span><i className="legend-wall"/>Parede</span>}<span><i style={{ background: c.color }}/>Elementos</span><span><i className="legend-light"/>Spots</span></div><div className="model-info"><div><span>ÁREA TOTAL</span><strong>{valid ? num(c.width * c.depth) : '—'} <small>m²</small></strong></div><div><span>ALTURA DE MONTAGEM</span><strong>{valid ? num(c.height) : '—'} <small>m</small></strong></div><div><span>{c.target === 'max' ? 'EXPORTAÇÃO' : 'RENDER'}</span><strong>{c.target === 'max' ? '3ds Max' : 'Cycles'} <small>{c.target === 'max' ? '.ms' : '64 samples'}</small></strong></div></div></TabsContent>
+      <TabsContent value="plan"><div className="plan-title"><span>VISTA SUPERIOR</span><small>Planta esquemática · sem perspectiva</small></div><div className="drawing">{valid ? <Plan c={display} selectedId={selectedUnit?.id ?? null} onSelect={selectUnit} snap={snapToGrid} onDragPreview={previewDrag} onDrop={dropObject}/> : <div className="empty"><Ruler size={32}/><p>{validationMessage}</p></div>}</div><div className="legend">{(c.back || c.left || c.right) && <span><i className="legend-wall"/>Parede</span>}<span><i style={{ background: c.color }}/>Elementos</span>{c.projectType === 'activation' ? <><span><i style={{background:'#fbbf24'}}/>Espera</span><span><i style={{background:'#34d399'}}/>Participação</span><span><i style={{background:'#60a5fa'}}/>Circulação</span>{c.activationModel === 'photo' && <span><i style={{background:'#c084fc'}}/>Captura / câmera</span>}{c.activationModel === 'demo' && <span><i style={{background:'#fb923c'}}/>Demonstrador</span>}{c.activationModel === 'sampling' && <><span><i style={{background:'#fb923c'}}/>Equipe</span>{c.samplingWasteEnabled&&<span><i style={{background:'#f87171'}}/>Descarte</span>}</>}</> : c.projectType === 'reception' ? <><span><i style={{background:'#60a5fa'}}/>Atendimento</span><span><i style={{background:'#fb923c'}}/>Equipe</span><span><i style={{background:'#4ade80'}}/>Acessos</span>{c.receptionQueueEnabled && <span><i style={{background:'#c084fc'}}/>Fila</span>}</> : <span><i className="legend-light"/>Spots</span>}</div><div className="model-info"><div><span>ÁREA TOTAL</span><strong>{valid ? num(floorArea(c)) : '—'} <small>m²</small></strong></div><div><span>ALTURA DE MONTAGEM</span><strong>{valid ? num(c.height) : '—'} <small>m</small></strong></div><div><span>{c.target === 'max' ? 'EXPORTAÇÃO' : 'RENDER'}</span><strong>{c.target === 'max' ? '3ds Max' : 'Cycles'} <small>{c.target === 'max' ? '.ms' : '64 samples'}</small></strong></div></div></TabsContent>
       <TabsContent value="code"><div className="code-toolbar"><span>{output ? filename(output.config) : 'Seu script aparecerá aqui'}</span><div><button onClick={copy} disabled={!output || !!dirty} aria-label="Copiar script">{copied ? <Check size={16}/> : <Copy size={16}/>} {copied ? 'Copiado' : 'Copiar'}</button><button onClick={download} disabled={!output || !!dirty}><Download size={16}/>Baixar {output?.config.target === 'max' ? '.ms' : '.py'}</button></div></div>{dirty && <div className="stale" role="status">Você alterou o projeto. Clique em “Gerar script” para atualizar o arquivo.</div>}{output ? <pre className="code"><code>{output.code.replace(/data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+/g, '[imagem incorporada — baixe ou copie o script completo]').replace(/local IMAGEM_TV = "[A-Za-z0-9+/=]+"/g, 'local IMAGEM_TV = "[imagem incorporada — baixe ou copie o script completo]"')}</code></pre> : <div className="empty"><Code2 size={38}/><h3>Seu projeto, em código.</h3><p>Escolha os elementos ao lado e clique em<br />“Gerar script”.</p></div>}</TabsContent>
     </Tabs><p className="notice" role="status" aria-live="polite">{notice}</p>
-      <div className="blender-guide"><div className="guide-icon"><Box size={22}/></div><div><h3>Como abrir no {c.target === 'max' ? '3ds Max' : 'Blender'}</h3>{c.target === 'max' ? <ol><li><b>1</b>Baixe o arquivo <strong>.ms</strong>.</li><li><b>2</b>Abra o 3ds Max e entre em <strong>Scripting → Run Script</strong>.</li><li><b>3</b>Escolha o arquivo. Use <strong>CB_Camera_Frontal</strong> para visualizar.</li></ol> : <ol><li><b>1</b>Comece com uma cena vazia e entre em <strong>Scripting</strong>.</li><li><b>2</b>Em <strong>Open</strong>, abra o arquivo .py baixado.</li><li><b>3</b>Clique em <strong>Run Script</strong>. Use <strong>F12</strong> para renderizar.</li></ol>}</div></div>
+      <div className="blender-guide"><div className="guide-icon"><Box size={22}/></div><div><h3>Como abrir no {c.target === 'max' ? '3ds Max' : 'Blender'}</h3>{c.target === 'max' ? <ol><li><b>1</b>Baixe o arquivo <strong>.ms</strong>.</li><li><b>2</b>Abra o 3ds Max e entre em <strong>Scripting → Run Script</strong>.</li><li><b>3</b>Escolha o arquivo. {c.presentationCameras ? 'A câmera de apresentação escolhida fica ativa.' : <>Use <strong>CB_Camera_Frontal</strong> para visualizar.</>}</li></ol> : <ol><li><b>1</b>Comece com uma cena vazia e entre em <strong>Scripting</strong>.</li><li><b>2</b>Em <strong>Open</strong>, abra o arquivo .py baixado.</li><li><b>3</b>Clique em <strong>Run Script</strong>. Use <strong>F12</strong> para renderizar.</li></ol>}</div></div>
       <div className="scope-note"><span className="step small-step">i</span><p>Esta versão cria um modelo conceitual. Texturas, artes e detalhes de acabamento podem ser ajustados no programa escolhido. A aparência final depende do renderizador.</p></div>
     </section></div><footer><span>CODE BUDDY / CENOGRAFIA</span><span>Uma base para a sua próxima ideia.</span></footer></main>
   </div>;
