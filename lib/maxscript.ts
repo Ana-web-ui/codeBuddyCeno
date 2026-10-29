@@ -1,3 +1,4 @@
+import { maxImportedModels } from './imported-model-exporters';
 import type {Config} from './generator';
 import { geometry } from './generator';
 import { exportProjectKey } from './export-project';
@@ -217,6 +218,7 @@ ${c.counterDetailed ? maxCounters(c, geometry(c).counterXs, geometry(c).counterY
 )
 ${maxStorage(c)}
 ${receptionExport(c)}
+${maxImportedModels(c)}
 select criados
 undo "Orientar estande Code Buddy" on
 (

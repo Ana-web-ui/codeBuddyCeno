@@ -95,12 +95,12 @@ test('recusa modelo com paredes contraditórias ao abrir e ao salvar', () => {
     assert.throws(()=>parseProject(JSON.stringify({config:c})),/paredes/);
     assert.throws(()=>serializeProject(c),/paredes/);
 });
-test('recusa JSON quebrado, envelope inválido, versão futura e arquivo acima de 4 MB', () => {
+test('recusa JSON quebrado, envelope inválido, versão futura e arquivo acima de 10 MB', () => {
     for (const text of ['{','null','[]','{"config":null}',
         JSON.stringify({format:'outro',version:3,config:base()}),
         JSON.stringify({format:'code-buddy-project',version:99,config:base()}),
         JSON.stringify({version:3,config:base()})]) assert.throws(()=>parseProject(text));
-    assert.throws(()=>parseProject(' '.repeat(MAX_PROJECT_BYTES+1)),/4 MB/);
+    assert.throws(()=>parseProject(' '.repeat(MAX_PROJECT_BYTES+1)),/10 MB/);
 });
 test('edição real da interface aplica modelos, personaliza paredes e preserva ajustes ao girar', () => {
     const source=readFileSync(resolve('app/page.tsx'),'utf8');
@@ -218,7 +218,7 @@ test('ativação inicial contém somente dois equipamentos touch e salva JSON ve
     assert.equal(units.length,2);
     assert.ok(units.every(unit=>unit.id.startsWith('touchScreens:')));
     const text=serializeProject(c);
-    assert.equal(JSON.parse(text).version,16);
+    assert.equal(JSON.parse(text).version,19);
     writeFileSync(join(output,'activation.json'),text);
     const restored=parseProject(readFileSync(join(output,'activation.json'),'utf8'));
     assert.deepEqual(restored,c);
@@ -257,7 +257,7 @@ test('JSON versão 6 exige modelo e versões antigas não mascaram modelo invál
         assert.throws(()=>parseProject(JSON.stringify({format:'code-buddy-project',version,
             config:{...createProjectConfig('activation'),activationModel}})));
     }
-    assert.throws(()=>parseProject(JSON.stringify({...doc,version:17})),/versão/);
+    assert.throws(()=>parseProject(JSON.stringify({...doc,version:20})),/versão/);
 });
 
 test('troca real para ativação recupera rascunho ausente e preserva o estande',()=>{

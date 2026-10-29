@@ -1,3 +1,8 @@
+import { importedModelsDefaults, validateImportedModels } from './imported-models';
+import type { ImportedModelsConfig } from './imported-models';
+import { blenderImportedModels } from './imported-model-exporters';
+import { showcaseDetailDefaults, validateShowcaseDetail } from './showcase';
+import type { ShowcaseDetailConfig } from './showcase';
 import { buildAssembly, validateAssembly, unitTransform, checkTransforms } from './assembly.js';
 import type { AssemblyConfig, AssemblyScene, AssemblyUnit } from './assembly.js';
 import { wrapBlenderUnit, wrapMaxUnit } from './assembly-exporters.js';
@@ -38,6 +43,8 @@ import type { ShelvingConfig } from './shelving';
 import { blenderShelving, maxShelving } from './shelving-exporters';
 import { blenderPanels, maxPanels } from './panel-exporters';
 import type { PanelConfig } from './panel';
+import { brandingDefaults, validateBranding } from './branding';
+import type { BrandingConfig } from './branding';
 export type MaterialKind = 'white' | 'brand' | 'wood' | 'metal' | 'glass' | 'concrete' | 'plastic';
 export type ProjectType = 'stand' | 'palco' | 'lounge'| 'activation' | 'reception';
 export type Target = 'blender' | 'max';
@@ -51,7 +58,7 @@ export const materials: {
     { value: 'glass', label: 'Vidro', color: '#81bfce' }, { value: 'concrete', label: 'Concreto', color: '#747b86' },
     { value: 'plastic', label: 'Plástico', color: '#c4d1e1' }
 ];
-export type Config = ShelvingConfig & PanelConfig & CounterConfig & ReceptionConfig & ActivationConfig & StorageConfig & AssemblyConfig & ChairConfig & RoundTableConfig & RectTableConfig & BistroTableConfig & StoolConfig & TableChairConfig & PedestalConfig & LoungeConfig & CoffeeTableConfig & LoungeSetConfig & ShowcaseConfig & ExtraObjectsConfig & {
+export type Config = ImportedModelsConfig & BrandingConfig &  ShowcaseDetailConfig & ShelvingConfig & PanelConfig & CounterConfig & ReceptionConfig & ActivationConfig & StorageConfig & AssemblyConfig & ChairConfig & RoundTableConfig & RectTableConfig & BistroTableConfig & StoolConfig & TableChairConfig & PedestalConfig & LoungeConfig & CoffeeTableConfig & LoungeSetConfig & ShowcaseConfig & ExtraObjectsConfig & {
     projectType: ProjectType;
     standLayout: StandLayout;
     frontRotation: FrontRotation;
@@ -95,11 +102,14 @@ export type Config = ShelvingConfig & PanelConfig & CounterConfig & ReceptionCon
     screenName: string;
 };
 export const defaults: Config = {
+    ...importedModelsDefaults,
     standLayout: 'custom',
     frontRotation: 0,
     cornerOpenSide: 'right',
     objectTransforms: {},
+    ...brandingDefaults,
     ...panelDefaults,
+    ...showcaseDetailDefaults,
     ...shelvingDefaults,
     ...counterDefaults,
     ...receptionDefaults,
@@ -596,6 +606,9 @@ export function extraObjectGeometry(c: Config) {
     });
 }
 export function validate(c: Config) {
+    validateImportedModels(c);
+    validateBranding(c);
+    validateShowcaseDetail(c);
     validateShelving(c);
     validatePanel(c);
     validateCounter(c);
@@ -654,7 +667,7 @@ export function validate(c: Config) {
     for (const [key, initial] of Object.entries(defaults))
         if (typeof initial === 'number' && (!Number.isFinite(c[key as keyof Config] as number)))
             throw new Error('Confira os parâmetros dos elementos: todas as medidas e quantidades devem conter números.');
-    for (const k of ['shelfShelfMat', 'shelfBackMat', 'shelfBaseMat', 'backdropFrameMat', 'backdropStructureMat', 'backdropBaseMat', 'receptionBarrierMat','receptionBeltMat','receptionSignMat','receptionSignTextMat','counterTopMat','counterBaseMat','samplingCounterMat','samplingSupportMat','samplingSampleMat','demoBenchMat', 'demoProductMat', 'floorMat', 'wallMat', 'counterMat', 'stageMat', 'totemMat', 'roundTableMat', 'rectTableMat', 'bistroTableMat', 'stoolMat', 'pedestalMat', 'armchairMat', 'puffMat', 'coffeeTableMat', 'showcaseBaseMat', 'shelfMat', 'backdropMat', 'touchMat', 'cabinetMat', 'openCubeMat', 'rugMat'] as const)
+    for (const k of ['showcaseDeckMat', 'showcasePlinthMat', 'showcaseProfileMat', 'shelfShelfMat', 'shelfBackMat', 'shelfBaseMat', 'backdropFrameMat', 'backdropStructureMat', 'backdropBaseMat', 'receptionBarrierMat','receptionBeltMat','receptionSignMat','receptionSignTextMat','counterTopMat','counterBaseMat','samplingCounterMat','samplingSupportMat','samplingSampleMat','demoBenchMat', 'demoProductMat', 'floorMat', 'wallMat', 'counterMat', 'stageMat', 'totemMat', 'roundTableMat', 'rectTableMat', 'bistroTableMat', 'stoolMat', 'pedestalMat', 'armchairMat', 'puffMat', 'coffeeTableMat', 'showcaseBaseMat', 'shelfMat', 'backdropMat', 'touchMat', 'cabinetMat', 'openCubeMat', 'rugMat'] as const)
         if (!materials.some(m => m.value === c[k]))
             throw new Error('Material inválido.');
     const check = (keys: (keyof Config)[], label: string) => {
@@ -844,7 +857,7 @@ function assemblyScript(c: Config): string {
                 case 'stools': return blender ? blenderStools(c, positions) : maxStools(c, positions);
                 case 'pedestals': return blender ? blenderPedestals(c, positions) : maxPedestals(c, positions);
                 case 'coffeeTables': return blender ? blenderCoffeeTables(c, positions) : maxCoffeeTables(c, positions);
-                case 'showcases': return blender ? blenderShowcases(c, positions) : maxShowcases(c, positions);
+                case 'showcases': return blender ? blenderShowcases(c, positions, { grouped: false }) : maxShowcases(c, positions, { grouped: false });
                 case 'armchairs': case 'puffs': {
                     const empty = { positions: [] as [number, number][], rotations: [] as number[], generatedCount: 0 };
                     const lounge = { armchairs: empty, puffs: empty, [role]: positions };
@@ -869,10 +882,11 @@ function assemblyScript(c: Config): string {
         }).join('\n');
         const t = unitTransform(c, unit);
         const detailedPanel = unit.id.startsWith('backdrops:') && c.backdropDetailed;
+        const detailedShowcase = unit.id.startsWith('showcases:') && c.showcaseDetailed;
         const detailedShelf = unit.id.startsWith('shelving:') && c.shelfDetailed;
         return blender ? wrapBlenderUnit(unit, t, code) : wrapMaxUnit(unit, t, code, {
-            group: detailedShelf || (detailedPanel && c.projectType !== 'activation'),
-            preserveNames: detailedPanel || detailedShelf,
+            group: detailedShowcase || detailedShelf || (detailedPanel && c.projectType !== 'activation'),
+            preserveNames: detailedShowcase || detailedPanel || detailedShelf,
         });
     }).join('\n');
 }
@@ -1288,6 +1302,7 @@ gerar_stand()
 ${blenderStorage(c)}
 ${additions}
 ${receptionExport(c)}
+${blenderImportedModels(c)}
 aplicar_orientacao()
 finalizar_geracao()
 `;

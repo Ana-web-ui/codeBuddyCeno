@@ -24,9 +24,12 @@ import { activationGeometry } from '@/lib/activation-geometry';
 import { storageGeometry } from '@/lib/storage';
 import type { StorageDoorSide, StorageDoorHinge, StorageDoorOpening } from '@/lib/storage';
 import { ReceptionFinishControls } from '@/components/reception-finish-controls';
+import { ShowcaseControls } from '@/components/showcase-controls';
 import { ShelvingControls } from '@/components/shelving-controls';
 import { PanelControls } from '@/components/panel-controls';
 import { panelParts } from '@/lib/panel';
+import { ImportedModelControls } from '@/components/imported-model-controls';
+import { modelGeometry } from '@/lib/imported-models';
 import { CounterControls } from '@/components/counter-controls';
 import { receptionGeometry } from '@/lib/reception';
 
@@ -239,7 +242,7 @@ const parameterFields: Record<'led' | 'counter' | 'stage' | 'totem' | 'spots' | 
     roundRugs: [{ "key": "rugCount", "label": "Quantidade", "min": 1, "max": 100, "unit": "un" }, { "key": "rugDiameter", "label": "Diâmetro", "min": 0.4, "max": 10 }, { "key": "rugGap", "label": "Vão livre entre unidades", "min": 0, "max": 3 }],
 };
 const materialFields: {
-    key: 'shelfShelfMat' | 'shelfBackMat' | 'shelfBaseMat' | 'backdropFrameMat' | 'backdropStructureMat' | 'backdropBaseMat' | 'counterTopMat' | 'counterBaseMat' | 'samplingCounterMat' | 'samplingSupportMat' | 'samplingSampleMat' | 'demoBenchMat' | 'demoProductMat' | 'floorMat' | 'wallMat' | 'counterMat' | 'stageMat' | 'totemMat' | 'roundTableMat' | 'rectTableMat' | 'bistroTableMat' | 'stoolMat' | 'pedestalMat' | 'armchairMat' | 'puffMat' | 'coffeeTableMat' | 'showcaseBaseMat' | 'shelfMat' | 'backdropMat' | 'touchMat' | 'cabinetMat' | 'openCubeMat' | 'rugMat';
+    key: 'showcaseDeckMat' | 'showcasePlinthMat' | 'showcaseProfileMat' | 'shelfShelfMat' | 'shelfBackMat' | 'shelfBaseMat' | 'backdropFrameMat' | 'backdropStructureMat' | 'backdropBaseMat' | 'counterTopMat' | 'counterBaseMat' | 'samplingCounterMat' | 'samplingSupportMat' | 'samplingSampleMat' | 'demoBenchMat' | 'demoProductMat' | 'floorMat' | 'wallMat' | 'counterMat' | 'stageMat' | 'totemMat' | 'roundTableMat' | 'rectTableMat' | 'bistroTableMat' | 'stoolMat' | 'pedestalMat' | 'armchairMat' | 'puffMat' | 'coffeeTableMat' | 'showcaseBaseMat' | 'shelfMat' | 'backdropMat' | 'touchMat' | 'cabinetMat' | 'openCubeMat' | 'rugMat';
     label: string;
     enabled?: 'counter' | 'stage' | 'totem' | 'roundTables' | 'rectTables' | 'bistroTables' | 'stools' | 'pedestals' | 'armchairs' | 'puffs' | 'coffeeTables' | 'showcases' | 'shelving' | 'backdrops' | 'touchScreens' | 'cabinets' | 'openCubes' | 'roundRugs';
 }[] = [{key:'samplingCounterMat',label:'Balcão de entrega'},{key:'samplingSupportMat',label:'Apoio e armazenamento'},{key:'samplingSampleMat',label:'Amostras de referência'}, { key: 'demoBenchMat', label: 'Corpo da bancada de demonstração' }, { key: 'demoProductMat', label: 'Produto de referência' }, { key: 'floorMat', label: 'Piso' },
@@ -257,7 +260,10 @@ const materialFields: {
     { key: 'armchairMat', label: 'Poltronas — assento, encosto e braços', enabled: 'armchairs' },
     { key: 'puffMat', label: 'Puffs', enabled: 'puffs' },
     { key: 'coffeeTableMat', label: 'Tampo das mesas de centro', enabled: 'coffeeTables' },
-    { key: 'showcaseBaseMat', label: 'Base das vitrines expositoras', enabled: 'showcases' },
+    { key: 'showcaseDeckMat', label: 'Tampo da base das vitrines', enabled: 'showcases' },
+    { key: 'showcasePlinthMat', label: 'Rodapé das vitrines', enabled: 'showcases' },
+    { key: 'showcaseProfileMat', label: 'Perfis das vitrines', enabled: 'showcases' },
+    { key: 'showcaseBaseMat', label: 'Corpo da base das vitrines', enabled: 'showcases' },
     { key: 'shelfMat', label: 'Estrutura das estantes', enabled: 'shelving' },
     { key: 'shelfShelfMat', label: 'Prateleiras das estantes', enabled: 'shelving' },
     { key: 'shelfBackMat', label: 'Fundo das estantes', enabled: 'shelving' },
@@ -738,6 +744,16 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
       </g>}
     </g>}
     {drawUnits(false)}
+    {c.importedModels.map(model => {
+        const { size: [w, d] } = modelGeometry(model);
+        return <g key={model.id} transform={`translate(${px(model.x)} ${py(model.y)}) rotate(${-model.rotation})`}>
+            <title>{`${model.name} — objeto OBJ ${model.id}, elevação ${model.z} m`}</title>
+            <rect x={-w*s/2} y={-d*s/2} width={Math.max(w*s, 1)} height={Math.max(d*s, 1)}
+                fill={model.material === 'brand' ? c.color : materials.find(m => m.value === model.material)?.color}
+                fillOpacity=".5" stroke="#8de5dc" strokeWidth="1.5" strokeDasharray="4 2"/>
+            <PlanText counterRotation={model.rotation} x="0" y="3" textAnchor="middle" fontSize="9" fill="#e5edf9" stroke="#101827" strokeWidth="2" paintOrder="stroke">{`3D${model.id}`}</PlanText>
+        </g>;
+    })}
     {c.counter && g.counterXs.map((cx, i) => <g key={i}><title>{"Balcão " + (i + 1)}</title><rect x={px(cx - (g.counterW + .08) / 2)} y={py(g.counterY + (c.counterDepth + .08) / 2)} width={(g.counterW + .08) * s} height={(c.counterDepth + .08) * s} rx="3" fill={c.counterMat === 'brand' ? c.color : materials.find(m => m.value === c.counterMat)?.color}/><PlanText x={px(cx)} y={py(g.counterY) + 4} textAnchor="middle" fill="white" fontSize={c.projectType === 'reception' ? '10' : '12'}>{c.projectType === 'reception' ? `B${i + 1}` : 'Balcão'}</PlanText></g>)}
     {c.totem && g.totemXs.map((tx, i) => <g key={i}><rect x={px(tx - (c.totemWidth + .15) / 2)} y={py(g.totemY + (c.totemDepth + .2) / 2)} width={(c.totemWidth + .15) * s} height={(c.totemDepth + .2) * s} rx="2" fill={c.totemMat === 'brand' ? c.color : materials.find(m => m.value === c.totemMat)?.color}/><PlanText x={px(tx)} y={py(g.totemY) + 27} textAnchor="middle" fill="#cdd7ec" fontSize="12">Totem</PlanText></g>)}
     {c.spots && [-1, 1].map(sign => <g key={sign}><path d={`M ${px(sign * (c.width / 2 - .35))} ${py(c.depth / 2 - .25)} V ${py(-c.depth / 2 + .25)}`} stroke="#b49a67" strokeWidth="2"/>{g.spotYs.map((sy, i) => <circle key={i} cx={px(sign * (c.width / 2 - .35))} cy={py(sy)} r="4" fill="#f0ca85"/>)}</g>)}
@@ -869,6 +885,9 @@ export default function Home() {
                 'screenName',
                 'frontRotation',
                 'activationExportGuides', 'receptionExportGuides', 'receptionSignText',
+                'showcaseDetailed', 'showcasePlinthEnabled', 'showcasePlinthHeight', 'showcasePlinthInset',
+                'showcaseDeckThickness', 'showcaseProfilesEnabled', 'showcaseProfileWidth',
+                'showcaseGlassRoughness', 'showcaseGlassIor', 'showcaseShelfCount', 'showcaseBaseHeight', 'showcaseGlassThickness',
                 'shelfDetailed', 'shelfBoardThickness', 'shelfBackEnabled', 'shelfBackThickness',
                 'shelfBaseEnabled', 'shelfBaseHeight', 'shelfBaseInset', 'shelfShelfCount',
                 'backdropDetailed', 'backdropFrameEnabled', 'backdropFrameWidth', 'backdropFrameDepth',
@@ -1026,7 +1045,7 @@ export default function Home() {
         setNotice('');
         try {
             if (!/\.json$/i.test(file.name) || file.size > MAX_PROJECT_BYTES) {
-                throw new Error('Escolha um arquivo .json do Code Buddy de até 4 MB.');
+                throw new Error('Escolha um arquivo .json do Code Buddy de até 10 MB.');
             }
             const loaded = parseProject(await file.text());
             if (requestId !== projectRequest.current) return;
@@ -1437,6 +1456,13 @@ export default function Home() {
         try { validate(next); setC(next); setError(''); setNotice('Fila, sinalização e guias ativados.'); }
         catch (error) { setError(error instanceof Error ? error.message : 'A montagem não cabe nesta área.'); }
       }}/>}
+      <ImportedModelControls c={c} onChangeAction={models => {
+          const next = { ...current.current, importedModels: models };
+          serializeProject(next);
+          setC(next); setError('');
+          setNotice('Objetos 3D atualizados. Gere novamente o script para exportar.');
+      }}/>
+      {c.showcases && <ShowcaseControls c={c} updateAction={update}/>}
       {c.shelving && <ShelvingControls c={c} updateAction={update}/>}
       {c.backdrops && <PanelControls c={c} updateAction={update}/>}
       {c.counter && <CounterControls c={c} updateAction={update}/>}
@@ -1716,6 +1742,9 @@ export default function Home() {
       {!(c.projectType === 'activation' && ['demo','sampling'].includes(c.activationModel)) && !availableElements.some(f => c[f.key]) && <p className="tab-help">Selecione um elemento na aba Projeto para ajustar suas medidas.</p>}
       {c.led && <div className="texture-section"><h3>Textura da TV / LED</h3><p>Escolha a arte que vai aparecer na tela. A imagem inteira é ajustada às medidas do LED.</p><label className="upload-label" htmlFor="tv-image">Escolher imagem JPG ou PNG<input id="tv-image" type="file" accept="image/png,image/jpeg" onChange={handleImage}/></label><small>Até 2 MB · incorporada ao script · imagem estática</small>{c.screenImage ? <div className="texture-preview"><ImagePreview src={c.screenImage} alt="Arte selecionada para a tela de TV" width={320} height={180} unoptimized/><span>{c.screenName}</span><button onClick={() => { imageRequest.current += 1; setC(prev => ({ ...prev, screenImage: '', screenName: '' })); setNotice('Imagem removida.'); }}>Remover imagem</button></div> : <p className="tab-help">Sem imagem, a tela usa a cor de destaque.</p>}</div>}
       </TabsContent><TabsContent value="materials"><p className="tab-help">Escolha o acabamento de cada parte. Madeira e concreto usam textura procedural; metal e vidro recebem propriedades de superfície.</p><div className="material-fields">{materialFields.filter((field) => {
+            if (field.key === 'showcaseDeckMat') return c.showcases && c.showcaseDetailed;
+            if (field.key === 'showcasePlinthMat') return c.showcases && c.showcaseDetailed && c.showcasePlinthEnabled;
+            if (field.key === 'showcaseProfileMat') return c.showcases && c.showcaseDetailed && c.showcaseProfilesEnabled;
             if (field.key === 'shelfShelfMat') return c.shelving && c.shelfDetailed;
             if (field.key === 'shelfBackMat') return c.shelving && c.shelfDetailed && c.shelfBackEnabled;
             if (field.key === 'shelfBaseMat') return c.shelving && c.shelfDetailed && c.shelfBaseEnabled;

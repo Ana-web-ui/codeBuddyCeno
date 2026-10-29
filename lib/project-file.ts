@@ -1,3 +1,6 @@
+import { checkImportedModels, importedModelsDefaults } from './imported-models';
+import { showcaseDetailDefaults } from './showcase';
+import { brandingDefaults } from './branding';
 import { defaults, validate } from './generator';
 import type { Config } from './generator';
 import { createProjectConfig } from './project-types';
@@ -12,9 +15,9 @@ import { receptionDefaults, receptionQueueDefaults } from './reception';
 import { panelDefaults } from './panel';
 import { shelvingDefaults } from './shelving';
 
-export const MAX_PROJECT_BYTES = 4 * 1024 * 1024;
+export const MAX_PROJECT_BYTES = 10 * 1024 * 1024;
 const FORMAT = 'code-buddy-project';
-const VERSION = 16;
+const VERSION = 19;
 
 function object(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -36,6 +39,9 @@ function checkedConfig(
     migrateReceptionFinish = false,
     migratePanel = false,
     migrateShelving = false,
+    migrateShowcase = false,
+    migrateBranding = false,
+    migrateImportedModels = false,
 ): Config  {
     if (!object(value)) {
         throw new Error('O projeto é inválido.');
@@ -59,6 +65,9 @@ function checkedConfig(
 
         const canUseDefault =
             legacy ||
+            (migrateImportedModels && Object.hasOwn(importedModelsDefaults, key)) ||
+            (migrateBranding && Object.hasOwn(brandingDefaults, key)) ||
+            (migrateShowcase && Object.hasOwn(showcaseDetailDefaults, key)) ||
             (migrateShelving && Object.hasOwn(shelvingDefaults, key)) ||
             (migratePanel && Object.hasOwn(panelDefaults, key)) ||
             (migrateReceptionFinish && Object.hasOwn(receptionFinishDefaults, key)) ||
@@ -102,6 +111,11 @@ function checkedConfig(
         }
 
         const item = present ? value[key]
+            : key === 'importedModels' ? []
+            : Object.hasOwn(brandingDefaults, key)
+                ? brandingDefaults[key as keyof typeof brandingDefaults]
+            : Object.hasOwn(showcaseDetailDefaults, key)
+                ? showcaseDetailDefaults[key as keyof typeof showcaseDetailDefaults]
             : Object.hasOwn(shelvingDefaults, key)
                 ? shelvingDefaults[key as keyof typeof shelvingDefaults]
             : Object.hasOwn(panelDefaults, key)
@@ -111,7 +125,10 @@ function checkedConfig(
             : Object.hasOwn(counterDefaults, key)
                 ? counterDefaults[key as keyof typeof counterDefaults]
                 : initial[key];
-        if (key === 'objectTransforms') {
+        if (key === 'importedModels') {
+            checkImportedModels(item);
+            clean[key] = item.map(model => ({ ...model }));
+        } else if (key === 'objectTransforms') {
             checkTransforms(item);
             clean[key] = Object.fromEntries(Object.entries(item).map(([id, t]) => [id, { x: t.x, y: t.y, rotation: t.rotation }]));
         } else {
@@ -155,13 +172,13 @@ export function serializeProject(config: Config): string {
     const clean = checkedConfig(config);
     const text = JSON.stringify({ format: FORMAT, version: VERSION, config: clean }, null, 2);
     if (new TextEncoder().encode(text).length > MAX_PROJECT_BYTES) {
-        throw new Error('O projeto ultrapassa 4 MB. Reduza a imagem da tela e tente novamente.');
+        throw new Error('O projeto ultrapassa 10 MB. Reduza as imagens ou os objetos importados e tente novamente.');
     }
     return text;
 }
 
 export function parseProject(text: string): Config {
-    if (new TextEncoder().encode(text).length > MAX_PROJECT_BYTES) throw new Error('Use um arquivo de projeto de até 4 MB.');
+    if (new TextEncoder().encode(text).length > MAX_PROJECT_BYTES) throw new Error('Use um arquivo de projeto de até 10 MB.');
     let document: unknown;
     try { document = JSON.parse(text); }
     catch { throw new Error('Não foi possível abrir: o arquivo não é um JSON válido.'); }
@@ -184,6 +201,9 @@ export function parseProject(text: string): Config {
             document.version !== 13 &&
             document.version !== 14 &&
             document.version !== 15 &&
+            document.version !== 16 &&
+            document.version !== 17 &&
+            document.version !== 18 &&
             document.version !== VERSION
         ) {
             throw new Error(
@@ -207,6 +227,9 @@ export function parseProject(text: string): Config {
             typeof document.version === 'number' && document.version <= 13,
             typeof document.version === 'number' && document.version <= 14,
             typeof document.version === 'number' && document.version <= 15,
+            typeof document.version === 'number' && document.version <= 16,
+            typeof document.version === 'number' && document.version <= 17,
+            typeof document.version === 'number' && document.version <= 18,
         );
     }
     // Formatos antigos da interface: { config } e configuração direta.
