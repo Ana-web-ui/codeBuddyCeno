@@ -96,7 +96,7 @@ test('mantém imagens guardadas quando a aplicação está desativada', () => {
 test('comporta as três imagens no limite individual e recusa excedentes', () => {
     // Payload sintético para medir o orçamento de bytes, sem renderizar a imagem.
     const bytes = Buffer.alloc(MAX_ARTWORK_BYTES);
-    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(bytes);
+    Buffer.from(png.split(',')[1], 'base64').copy(bytes);
     const image = 'data:image/png;base64,' + bytes.toString('base64');
     const c = { ...createProjectConfig('stand'), panelArtEnabled: true, panelArtImage: image,
         counterArtEnabled: true, counterArtImage: image, screenImage: image };

@@ -1,3 +1,4 @@
+import { blenderArtwork, maxArtwork } from './branding-exporters';
 import type { Config } from './generator';
 import { counterParts } from './counter';
 
@@ -21,7 +22,8 @@ peca_balcao['code_buddy_role'] = '${p.role}'
 bpy.context.view_layer.update()
 matriz_balcao = peca_balcao.matrix_world.copy()
 peca_balcao.parent = raiz_balcao
-peca_balcao.matrix_world = matriz_balcao`).join('\n')}
+peca_balcao.matrix_world = matriz_balcao
+${p.role === 'counter_body' ? blenderArtwork(c, 'counterArt', 'peca_balcao') : ''}`).join('\n')}
 `;
     }).join('\n');
 }
@@ -40,7 +42,8 @@ ${parts.map(p => `    local pecaBalcao = cbCaixa "${prefix}_${p.name}" ${p.size.
     pecaBalcao.name = nomeGeracao+"_${prefix}_${p.name}"
     setUserProp pecaBalcao "code_buddy_id" "counter:${index}"
     setUserProp pecaBalcao "code_buddy_role" "${p.role}"
-    pecaBalcao.parent = raizBalcao`).join('\n')}
+    pecaBalcao.parent = raizBalcao
+${p.role === 'counter_body' ? maxArtwork(c, 'counterArt', 'pecaBalcao') : ''}`).join('\n')}
 )
 `;
     }).join('\n');

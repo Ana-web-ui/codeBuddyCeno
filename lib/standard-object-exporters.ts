@@ -1,10 +1,8 @@
 import type { ExtraSceneConfig, ExtraObjectId, ExtraObjectLayouts } from './library';
-import type { MaterialKind } from './generator';
-import type { PanelConfig } from './panel';
+import type { Config, MaterialKind } from './generator';
 import { blenderPanels, maxPanels } from './panel-exporters';
-import type { ShelvingConfig } from './shelving';
 import { blenderShelving, maxShelving } from './shelving-exporters';
-type StandardSceneConfig = ExtraSceneConfig & PanelConfig & ShelvingConfig;
+type StandardSceneConfig = Config;
 // Shape (0=box,1=cylinder), width, depth, height, offset X/Y, center Z, material.
 type Part = [
     number,
@@ -87,7 +85,7 @@ function sceneData(c: StandardSceneConfig, layouts: ExtraObjectLayouts) {
     for (const id of ['shelving', 'backdrops', 'touchScreens', 'cabinets', 'openCubes', 'roundRugs'] as const) {
         if (!c[id] || !layouts[id].positions.length)
             continue;
-        if (id === 'backdrops' && c.backdropDetailed) continue;
+        if (id === 'backdrops' && (c.backdropDetailed || c.panelArtEnabled)) continue;
         if (id === 'shelving' && c.shelfDetailed) continue;
         const { name, parts } = objectParts(c, id);
         const numeric = parts.map(p => { let index = materials.indexOf(p[7]); if (index < 0) {

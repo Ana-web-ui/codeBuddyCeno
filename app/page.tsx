@@ -1,5 +1,6 @@
 'use client';
 import { floorOutline, floorArea } from '@/lib/presentation';
+import { BrandingControls } from '@/components/branding-controls';
 import { PresentationControls } from '@/components/presentation-controls';
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
@@ -896,7 +897,7 @@ export default function Home() {
                 'shelfBaseEnabled', 'shelfBaseHeight', 'shelfBaseInset', 'shelfShelfCount',
                 'backdropDetailed', 'backdropFrameEnabled', 'backdropFrameWidth', 'backdropFrameDepth',
                 'counterDetailed', 'counterTopThickness', 'counterBaseHeight', 'counterBaseInset',
-            ].includes(key) || key.endsWith('Mat') ||
+            ].includes(key) || key.startsWith('panelArt') || key.startsWith('counterArt') || key.endsWith('Mat') ||
             (c.projectType === 'activation' && c.activationModel === 'demo' &&
                 ['demoProductX','demoProductY','demoProductWidth','demoProductDepth','demoProductHeight','demoBenchHeight'].includes(key)) ||
             (c.projectType === 'activation' && c.activationModel === 'sampling' &&
@@ -1746,7 +1747,12 @@ export default function Home() {
             }).map(field => <label className="field" key={field.key}>{field.key === 'coffeeTableCount' && c.loungeMode === 'set' ? 'Quantidade de conjuntos' : field.label}<div className="unit-input"><input type="number" inputMode={field.unit === 'un' ? 'numeric' : 'decimal'} min={field.min ?? .1} max={c.projectType === 'activation' && field.key === 'touchCount' ? 30 : field.max ?? 30} step={field.step ?? (field.unit === 'un' ? 1 : field.key === "showcaseGlassThickness" ? .001 : field.key === "roundTableTopThickness" || field.key === "rectTableTopThickness" || field.key === "bistroTableTopThickness" || field.key === "coffeeTableTopThickness" || field.key === "stoolSeatThickness" || field.key === "stoolBistroGap" ? 0.01 : 0.05)} value={Number.isNaN(c[field.key]) ? '' : c[field.key] as number} onChange={e => update(field.key, e.target.value === '' ? NaN : Number(e.target.value))}/><span>{field.unit ?? 'm'}</span></div></label>)}</div></div>)}
       {!(c.projectType === 'activation' && ['demo','sampling'].includes(c.activationModel)) && !availableElements.some(f => c[f.key]) && <p className="tab-help">Selecione um elemento na aba Projeto para ajustar suas medidas.</p>}
       {c.led && <div className="texture-section"><h3>Textura da TV / LED</h3><p>Escolha a arte que vai aparecer na tela. A imagem inteira é ajustada às medidas do LED.</p><label className="upload-label" htmlFor="tv-image">Escolher imagem JPG ou PNG<input id="tv-image" type="file" accept="image/png,image/jpeg" onChange={handleImage}/></label><small>Até 2 MB · incorporada ao script · imagem estática</small>{c.screenImage ? <div className="texture-preview"><ImagePreview src={c.screenImage} alt="Arte selecionada para a tela de TV" width={320} height={180} unoptimized/><span>{c.screenName}</span><button onClick={() => { imageRequest.current += 1; setC(prev => ({ ...prev, screenImage: '', screenName: '' })); setNotice('Imagem removida.'); }}>Remover imagem</button></div> : <p className="tab-help">Sem imagem, a tela usa a cor de destaque.</p>}</div>}
-      </TabsContent><TabsContent value="materials"><p className="tab-help">Escolha o acabamento de cada parte. Madeira e concreto usam textura procedural; metal e vidro recebem propriedades de superfície.</p><div className="material-fields">{materialFields.filter((field) => {
+      </TabsContent><TabsContent value="materials"><BrandingControls c={c} onChangeAction={patch => {
+          const next = { ...current.current, ...patch };
+          serializeProject(next);
+          setC(next); setError('');
+          setNotice('Arte atualizada. Gere novamente o script para exportar.');
+      }}/><p className="tab-help">Escolha o acabamento de cada parte. Madeira e concreto usam textura procedural; metal e vidro recebem propriedades de superfície.</p><div className="material-fields">{materialFields.filter((field) => {
             if (field.key === 'showcaseDeckMat') return c.showcases && c.showcaseDetailed;
             if (field.key === 'showcasePlinthMat') return c.showcases && c.showcaseDetailed && c.showcasePlinthEnabled;
             if (field.key === 'showcaseProfileMat') return c.showcases && c.showcaseDetailed && c.showcaseProfilesEnabled;

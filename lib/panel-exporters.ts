@@ -1,11 +1,12 @@
-import type { PanelInput } from './panel';
+import type { Config } from './generator';
+import { blenderArtwork, maxArtwork } from './branding-exporters';
 import { panelParts } from './panel';
 
 type Layout = { positions: [number, number][] };
 type Options = { grouped?: boolean };
 
-export function blenderPanels(c: PanelInput, layout: Layout, options: Options = {}): string {
-    if (!c.backdrops || !c.backdropDetailed || !layout.positions.length) return '';
+export function blenderPanels(c: Config, layout: Layout, options: Options = {}): string {
+    if (!c.backdrops || (!c.backdropDetailed && !c.panelArtEnabled) || !layout.positions.length) return '';
     const parts = panelParts(c);
     return layout.positions.map(([x, y], index) => {
         const prefix = `Painel_${String(index + 1).padStart(3, '0')}`;
@@ -25,13 +26,14 @@ peca_painel['code_buddy_id'] = 'backdrops:${index}'
 ${options.grouped === false ? '' : `bpy.context.view_layer.update()
 matriz_painel = peca_painel.matrix_world.copy()
 peca_painel.parent = raiz_painel
-peca_painel.matrix_world = matriz_painel`}`).join('\n')}
+peca_painel.matrix_world = matriz_painel`}
+${p.role === 'panel_front' || p.role === 'panel_body' ? blenderArtwork(c, 'panelArt', 'peca_painel') : ''}`).join('\n')}
 `;
     }).join('\n');
 }
 
-export function maxPanels(c: PanelInput, layout: Layout, options: Options = {}): string {
-    if (!c.backdrops || !c.backdropDetailed || !layout.positions.length) return '';
+export function maxPanels(c: Config, layout: Layout, options: Options = {}): string {
+    if (!c.backdrops || (!c.backdropDetailed && !c.panelArtEnabled) || !layout.positions.length) return '';
     const parts = panelParts(c);
     return layout.positions.map(([x, y], index) => {
         const prefix = `Painel_${String(index + 1).padStart(3, '0')}`;
@@ -45,7 +47,8 @@ ${parts.map(p => `    local pecaPainel = cbCaixa "${prefix}_${p.name}" ${p.size.
     pecaPainel.name = nomeGeracao+"_${prefix}_${p.name}"
     setUserProp pecaPainel "code_buddy_role" "${p.role}"
     setUserProp pecaPainel "code_buddy_id" "backdrops:${index}"
-${options.grouped === false ? '' : '    pecaPainel.parent = raizPainel'}`).join('\n')}
+${options.grouped === false ? '' : '    pecaPainel.parent = raizPainel'}
+${p.role === 'panel_front' || p.role === 'panel_body' ? maxArtwork(c, 'panelArt', 'pecaPainel') : ''}`).join('\n')}
 )
 `;
     }).join('\n');

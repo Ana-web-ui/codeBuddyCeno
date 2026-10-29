@@ -1,3 +1,5 @@
+import { artworkImageSize } from './branding-image';
+export { MAX_ARTWORK_BYTES } from './branding-image';
 export type ArtworkMode = 'contain' | 'cover';
 
 export type BrandingConfig = {
@@ -18,7 +20,6 @@ export type BrandingConfig = {
     counterArtOffsetY: number;
 };
 
-export const MAX_ARTWORK_BYTES = 2 * 1024 * 1024;
 
 export const brandingDefaults: BrandingConfig = {
     panelArtEnabled: false,
@@ -99,46 +100,7 @@ export function validateBranding(c: BrandingConfig): void {
             continue;
         }
 
-        // Limita o tamanho antes de decodificar.
-        const maxDataUrlLength =
-            64 + 4 * Math.ceil(MAX_ARTWORK_BYTES / 3);
-
-        if (image.length > maxDataUrlLength) {
-            throw new Error(`${label}: use uma imagem de até 2 MB.`);
-        }
-
-        const match = image.match(
-            /^data:image\/(png|jpeg);base64,([A-Za-z0-9+/]+={0,2})$/,
-        );
-
-        if (!match) {
-            throw new Error(`${label}: use uma imagem PNG ou JPG.`);
-        }
-
-        let bytes: string;
-
-        try {
-            bytes = atob(match[2]);
-        } catch {
-            throw new Error(`${label}: os dados da imagem são inválidos.`);
-        }
-
-        if (bytes.length > MAX_ARTWORK_BYTES) {
-            throw new Error(`${label}: use uma imagem de até 2 MB.`);
-        }
-
-        const signature = match[1] === 'png'
-            ? [137, 80, 78, 71, 13, 10, 26, 10]
-            : [255, 216, 255];
-
-        if (
-            !signature.every(
-                (value, index) => bytes.charCodeAt(index) === value,
-            )
-        ) {
-            throw new Error(
-                `${label}: o conteúdo não corresponde a uma imagem PNG ou JPG.`,
-            );
-        }
+        try { artworkImageSize(image); }
+        catch (error) { throw new Error(`${label}: ${error instanceof Error ? error.message : 'Imagem inválida.'}`); }
     }
 }

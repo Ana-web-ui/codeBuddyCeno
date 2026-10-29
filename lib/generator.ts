@@ -1,3 +1,4 @@
+import { blenderBrandingSupport } from './branding-exporters';
 import { presentationDefaults, validatePresentation, assertFloorOccupancy, lightColor } from './presentation';
 import type { PresentationConfig, FloorFootprint } from './presentation';
 import { blenderFloor, blenderPresentationCameras } from './presentation-exporters';
@@ -897,7 +898,7 @@ function assemblyScript(c: Config): string {
                         return blender ? blenderShelving(c, positions, { grouped: false })
                             : maxShelving(c, positions, { grouped: false });
                     }
-                    if (role === 'backdrops' && c.backdropDetailed) {
+                    if (role === 'backdrops' && (c.backdropDetailed || c.panelArtEnabled)) {
                         return blender ? blenderPanels(c, positions, { grouped: false })
                             : maxPanels(c, positions, { grouped: false });
                     }
@@ -910,7 +911,7 @@ function assemblyScript(c: Config): string {
             }
         }).join('\n');
         const t = unitTransform(c, unit);
-        const detailedPanel = unit.id.startsWith('backdrops:') && c.backdropDetailed;
+        const detailedPanel = unit.id.startsWith('backdrops:') && (c.backdropDetailed || c.panelArtEnabled);
         const detailedShowcase = unit.id.startsWith('showcases:') && c.showcaseDetailed;
         const detailedShelf = unit.id.startsWith('shelving:') && c.shelfDetailed;
         return blender ? wrapBlenderUnit(unit, t, code) : wrapMaxUnit(unit, t, code, {
@@ -1241,6 +1242,7 @@ def luz(nome, tipo, posicao, alvo, energia, cor=(1, 1, 1), tamanho=4):
         dados.shadow_soft_size = 0.15
     return obj
 
+${blenderBrandingSupport(c)}
 def criar_estrutura(branco, marca):
 ${blenderFloor(c).split('\n').map(line => '    ' + line).join('\n')}
     if PAREDE_FUNDO:
@@ -1263,7 +1265,7 @@ def criar_elementos(branco, marca, escuro, tela):
                 suporte_h = z - altura_led/2 - 0.1
                 caixa('LED_Suporte', (0.09, 0.09, suporte_h), (x, y, 0.1 + suporte_h/2), escuro)
                 caixa('LED_Base', (0.45, 0.5, 0.06), (x, y, 0.13), escuro)
-${c.counterDetailed ? blenderCounters(c, geometry(c).counterXs, geometry(c).counterY).split("\n").map(line => "    " + line).join("\n") : `    if ADICIONAR_BALCAO:
+${c.counterDetailed || c.counterArtEnabled ? blenderCounters(c, geometry(c).counterXs, geometry(c).counterY).split("\n").map(line => "    " + line).join("\n") : `    if ADICIONAR_BALCAO:
         for i in range(BALCOES):
             x = [${geometry(c).counterXs.join(', ')}][i]
             y = ${geometry(c).counterY}

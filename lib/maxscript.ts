@@ -1,3 +1,4 @@
+import { maxBrandingSupport } from './branding-exporters';
 import { lightColor } from './presentation';
 import { maxFloor, maxPresentationCameras } from './presentation-exporters';
 import { maxImportedModels } from './imported-model-exporters';
@@ -146,6 +147,7 @@ fn cbSpot nome posicao alvo potencia cor =
     cbRegistrar obj
 )
 
+${maxBrandingSupport(c)}
 -- Materiais novos por execução preservam os refinamentos das versões anteriores.
 local branco = cbMaterial "white"
 local marca = cbMaterial "brand"
@@ -181,7 +183,7 @@ ${maxFloor(c).split('\n').map(line => '    ' + line).join('\n')}
             cbCaixa "LED_Base" .45 .5 .06 x y .13 escuro
         )
     )
-${c.counterDetailed ? maxCounters(c, geometry(c).counterXs, geometry(c).counterY) : `    if ADICIONAR_BALCAO do for i = 1 to BALCOES do
+${c.counterDetailed || c.counterArtEnabled ? maxCounters(c, geometry(c).counterXs, geometry(c).counterY) : `    if ADICIONAR_BALCAO do for i = 1 to BALCOES do
     (
         local x = (#(${geometry(c).counterXs.join(', ')}))[i]
         local y = ${geometry(c).counterY}
