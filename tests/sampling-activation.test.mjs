@@ -77,6 +77,6 @@ test('JSON versão 9 migra os tipos e modelos anteriores; versão atual exige ca
    const old={...c};for(const key of Object.keys(samplingDefaults))delete old[key];
    assert.deepEqual(parseProject(JSON.stringify({format:'code-buddy-project',version:9,config:old})),c);
  }
- const current=JSON.parse(serializeProject(base()));assert.equal(current.version,19);delete current.config.samplingStorageEnabled;
+ const current=JSON.parse(serializeProject(base()));assert.equal(current.version,20);delete current.config.samplingStorageEnabled;
  assert.throws(()=>parseProject(JSON.stringify(current)),/ausente/);
 });

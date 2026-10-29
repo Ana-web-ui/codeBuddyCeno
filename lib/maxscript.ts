@@ -1,3 +1,5 @@
+import { lightColor } from './presentation';
+import { maxFloor, maxPresentationCameras } from './presentation-exporters';
 import { maxImportedModels } from './imported-model-exporters';
 import type {Config} from './generator';
 import { geometry } from './generator';
@@ -138,7 +140,8 @@ fn cbTela largura altura y z mat =
 fn cbSpot nome posicao alvo potencia cor =
 (
     local destino = cbRegistrar (TargetObject name:("CB_Alvo_"+nome) pos:(alvo*METRO))
-    local obj = Targetspot name:("CB_"+nome) pos:(posicao*METRO) target:destino multiplier:potencia rgb:cor hotspot:40 falloff:65
+    local obj = Targetspot name:("CB_"+nome) pos:(posicao*METRO) target:destino multiplier:(potencia*${c.lightingIntensity}) rgb:(${lightColor(c) ? `(if nome == "Luz_Preenchimento" then (color ${lightColor(c, true)!.map(n => Math.round(n*255)).join(" ")}) else (color ${lightColor(c)!.map(n => Math.round(n*255)).join(" ")}))` : "cor"}) hotspot:40 falloff:65
+    setUserProp obj "code_buddy_role" "presentation_light"
     obj.castShadows = true
     cbRegistrar obj
 )
@@ -157,7 +160,7 @@ escuro.base_color = color 30 35 43
 
 undo "Gerar stand Code Buddy" on
 (
-    cbCaixa "Piso" LARGURA PROFUNDIDADE .1 0 0 .05 piso
+${maxFloor(c).split('\n').map(line => '    ' + line).join('\n')}
     if PAREDE_FUNDO do
     (
         cbCaixa "Parede_Fundo" LARGURA .15 ALTURA 0 (PROFUNDIDADE/2.0-.075) (ALTURA/2.0+.1) parede
@@ -196,7 +199,7 @@ ${c.counterDetailed ? maxCounters(c, geometry(c).counterXs, geometry(c).counterY
     )
     cbSpot "Luz_Principal" [0,-PROFUNDIDADE*.6,ALTURA+3] [0,0,1] 1.2 (color 255 245 235)
     cbSpot "Luz_Preenchimento" [LARGURA/2.0,0,ALTURA+1] [0,0,1] .6 (color 220 230 255)
-    if ADICIONAR_SPOTS do for sinal in #(-1,1) do
+${c.lightingPreset === 'studio' ? '    cbSpot "Luz_Recorte" [-LARGURA*.4,PROFUNDIDADE*.5,ALTURA+2] [0,0,1] .8 (color 255 255 255)\n' : ''}    if ADICIONAR_SPOTS do for sinal in #(-1,1) do
     (
         local x = sinal*(LARGURA/2.0-.35)
         cbCaixa "Poste_Luz" .07 .07 ALTURA x (PROFUNDIDADE/2.0-.35) (ALTURA/2.0+.1) escuro
@@ -208,13 +211,13 @@ ${c.counterDetailed ? maxCounters(c, geometry(c).counterXs, geometry(c).counterY
             cbCaixa "Spot_Corpo" .15 .15 .2 x y (ALTURA+.05) escuro
         )
     )
-    local distancia = amax (PROFUNDIDADE*1.8) (LARGURA*1.35)
+${c.presentationCameras ? maxPresentationCameras(c) : `    local distancia = amax (PROFUNDIDADE*1.8) (LARGURA*1.35)
     local destino = cbRegistrar (TargetObject name:"CB_Alvo_Camera" pos:[0,0,ALTURA*.35*METRO])
     local camera = cbRegistrar (TargetCamera name:"CB_Camera_Frontal" pos:[0,-distancia*METRO,ALTURA*1.45*METRO] target:destino)
     local tamanho = amax #(LARGURA*1.25,PROFUNDIDADE*1.4,ALTURA*2.5)
     camera.fov = 2*atan(tamanho/(2*distancia))
     renderWidth = 1920
-    renderHeight = 1080
+    renderHeight = 1080`}
 )
 ${maxStorage(c)}
 ${receptionExport(c)}
@@ -237,7 +240,7 @@ undo "Orientar estande Code Buddy" on
         raiz.transform = rotateZMatrix anguloFrente
     )
 )
-max zoomext sel all
+${c.presentationCameras ? '' : 'max zoomext sel all'}
 format "Code Buddy: nova versão criada na camada %. Anteriores preservadas.\\n" nomeGeracao
 )
 `;

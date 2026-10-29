@@ -1,9 +1,12 @@
-import { importedModelsDefaults, validateImportedModels } from './imported-models';
+import { presentationDefaults, validatePresentation, assertFloorOccupancy, lightColor } from './presentation';
+import type { PresentationConfig, FloorFootprint } from './presentation';
+import { blenderFloor, blenderPresentationCameras } from './presentation-exporters';
+import { importedModelsDefaults, validateImportedModels, modelGeometry } from './imported-models';
 import type { ImportedModelsConfig } from './imported-models';
 import { blenderImportedModels } from './imported-model-exporters';
 import { showcaseDetailDefaults, validateShowcaseDetail } from './showcase';
 import type { ShowcaseDetailConfig } from './showcase';
-import { buildAssembly, validateAssembly, unitTransform, checkTransforms } from './assembly.js';
+import { buildAssembly, validateAssembly, unitTransform, checkTransforms, placedMembers } from './assembly.js';
 import type { AssemblyConfig, AssemblyScene, AssemblyUnit } from './assembly.js';
 import { wrapBlenderUnit, wrapMaxUnit } from './assembly-exporters.js';
 import { blenderStandardObjects, maxStandardObjects } from './standard-object-exporters';
@@ -58,7 +61,7 @@ export const materials: {
     { value: 'glass', label: 'Vidro', color: '#81bfce' }, { value: 'concrete', label: 'Concreto', color: '#747b86' },
     { value: 'plastic', label: 'Plástico', color: '#c4d1e1' }
 ];
-export type Config = ImportedModelsConfig & BrandingConfig &  ShowcaseDetailConfig & ShelvingConfig & PanelConfig & CounterConfig & ReceptionConfig & ActivationConfig & StorageConfig & AssemblyConfig & ChairConfig & RoundTableConfig & RectTableConfig & BistroTableConfig & StoolConfig & TableChairConfig & PedestalConfig & LoungeConfig & CoffeeTableConfig & LoungeSetConfig & ShowcaseConfig & ExtraObjectsConfig & {
+export type Config = PresentationConfig & ImportedModelsConfig & BrandingConfig &  ShowcaseDetailConfig & ShelvingConfig & PanelConfig & CounterConfig & ReceptionConfig & ActivationConfig & StorageConfig & AssemblyConfig & ChairConfig & RoundTableConfig & RectTableConfig & BistroTableConfig & StoolConfig & TableChairConfig & PedestalConfig & LoungeConfig & CoffeeTableConfig & LoungeSetConfig & ShowcaseConfig & ExtraObjectsConfig & {
     projectType: ProjectType;
     standLayout: StandLayout;
     frontRotation: FrontRotation;
@@ -102,6 +105,7 @@ export type Config = ImportedModelsConfig & BrandingConfig &  ShowcaseDetailConf
     screenName: string;
 };
 export const defaults: Config = {
+    ...presentationDefaults,
     ...importedModelsDefaults,
     standLayout: 'custom',
     frontRotation: 0,
@@ -606,6 +610,7 @@ export function extraObjectGeometry(c: Config) {
     });
 }
 export function validate(c: Config) {
+    validatePresentation(c);
     validateImportedModels(c);
     validateBranding(c);
     validateShowcaseDetail(c);
@@ -815,6 +820,7 @@ export function validate(c: Config) {
     showcaseGeometry(c);
     extraObjectGeometry(c);
     if (c.projectType !== 'activation' && Object.keys(c.objectTransforms).length) validateAssembly(c, assemblyGeometry(c), tableReservedAreas(c));
+    validateFloorOccupancy(c);
     return c;
 }
 /** Posições automáticas são a base dos ajustes; não chama validate para evitar recursão. */
@@ -830,6 +836,29 @@ export function assemblyScene(c: Config): AssemblyScene {
 }
 export function assemblyGeometry(c: Config): AssemblyUnit[] {
     return buildAssembly(c, assemblyScene(c));
+}
+function validateFloorOccupancy(c: Config): void {
+    if (c.floorShape === 'rectangle' || (c.floorShape === 'rounded' && c.floorCornerRadius === 0)) return;
+    if (c.back || c.left || c.right) throw new Error('Piso curvo: as paredes retas chegam aos cantos. Desative as paredes ou escolha o piso retangular.');
+    const boxes: FloorFootprint[] = tableReservedAreas({ ...c, chairs: false }).slice(4).map(a => ({
+        name: 'Estrutura ou depósito', x: a.centerX, y: a.centerY, width: a.width, depth: a.depth,
+    }));
+    for (const unit of assemblyGeometry(c)) for (const m of placedMembers(c, unit))
+        boxes.push({ name: unit.label, ...m });
+    if (c.chairs) for (const [x, y] of layoutChairs(c, geometry(c).stageY).positions)
+        boxes.push({ name: 'Cadeira da plateia', x, y, width: c.chairWidth, depth: c.chairDepth });
+    for (const model of c.importedModels) {
+        const { size: [width, depth] } = modelGeometry(model);
+        boxes.push({ name: model.name, x: model.x, y: model.y, width, depth, rotation: model.rotation });
+    }
+    const activation = activationGeometry(c);
+    if (activation) boxes.push(...activation.equipment, ...activation.participation,
+        ...(activation.waiting ? [activation.waiting] : []),
+        ...activation.circulation.filter(z => Math.abs(z.x)+z.width/2 < c.width/2-1e-7 && Math.abs(z.y)+z.depth/2 < c.depth/2-1e-7));
+    const reception = receptionGeometry(c);
+    if (reception) boxes.push(...reception.zones, ...reception.details.footprints,
+        ...(reception.flow ? [reception.flow.queue, ...reception.flow.corridors] : []));
+    assertFloorOccupancy(c, boxes);
 }
 function assemblyScript(c: Config): string {
     const scene = assemblyScene(c), units = buildAssembly(c, scene), blender = c.target === 'blender';
@@ -1195,11 +1224,13 @@ def apontar(objeto, alvo):
 
 def luz(nome, tipo, posicao, alvo, energia, cor=(1, 1, 1), tamanho=4):
     dados = bpy.data.lights.new(nome, tipo)
-    dados.energy = energia
-    dados.color = cor
+    identificar(dados)
+    dados.energy = energia * ${c.lightingIntensity}
+    dados.color = ${lightColor(c) ? `(${lightColor(c, true)!.join(', ')}) if nome == 'Luz_Preenchimento' else (${lightColor(c)!.join(', ')})` : 'cor'}
     obj = bpy.data.objects.new(nome, dados)
     colecao.objects.link(obj)
     obj.location = posicao
+    obj['code_buddy_role'] = 'presentation_light'
     apontar(obj, alvo)
     if tipo == 'AREA':
         dados.shape = 'DISK'
@@ -1211,7 +1242,7 @@ def luz(nome, tipo, posicao, alvo, energia, cor=(1, 1, 1), tamanho=4):
     return obj
 
 def criar_estrutura(branco, marca):
-    caixa('Piso', (LARGURA, PROFUNDIDADE, 0.1), (0, 0, 0.05), acabamento(MATERIAL_PISO), 0.02)
+${blenderFloor(c).split('\n').map(line => '    ' + line).join('\n')}
     if PAREDE_FUNDO:
         caixa('Parede_Fundo', (LARGURA, 0.15, ALTURA), (0, PROFUNDIDADE/2 - 0.075, ALTURA/2 + 0.1), acabamento(MATERIAL_PAREDES))
         caixa('Faixa_Marca', (LARGURA - 0.3, 0.025, 0.22), (0, PROFUNDIDADE/2 - 0.165, ALTURA - 0.15), marca)
@@ -1252,7 +1283,7 @@ def criar_iluminacao(escuro):
     # Luz ampla para o render e spots laterais opcionais.
     luz('Luz_Principal', 'AREA', (0, -PROFUNDIDADE*0.6, ALTURA + 3), (0, 0, 1), max(1000, LARGURA*PROFUNDIDADE*60), tamanho=max(LARGURA, PROFUNDIDADE))
     luz('Luz_Preenchimento', 'AREA', (LARGURA/2, 0, ALTURA + 1), (0, 0, 1), max(600, LARGURA*PROFUNDIDADE*25), tamanho=max(3, PROFUNDIDADE))
-    if ADICIONAR_SPOTS:
+${c.lightingPreset === 'studio' ? "    luz('Luz_Recorte', 'AREA', (-LARGURA*.4, PROFUNDIDADE*.5, ALTURA+2), (0, 0, 1), max(600, LARGURA*PROFUNDIDADE*30), tamanho=max(3, LARGURA*.5))\n" : ''}    if ADICIONAR_SPOTS:
         # Trilhos independentes, mesmo sem paredes laterais.
         for sinal in [-1, 1]:
             x = sinal*(LARGURA/2 - 0.35)
@@ -1303,6 +1334,7 @@ ${blenderStorage(c)}
 ${additions}
 ${receptionExport(c)}
 ${blenderImportedModels(c)}
+${blenderPresentationCameras(c)}
 aplicar_orientacao()
 finalizar_geracao()
 `;

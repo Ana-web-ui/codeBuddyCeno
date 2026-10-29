@@ -119,7 +119,7 @@ test('JSON anterior recebe o modo simples sem perder os cinco tipos e seus ajust
 test('versão atual exige os campos das estantes e rejeita dados corrompidos', () => {
     for (const key of Object.keys(shelvingDefaults)) {
         const doc = JSON.parse(serializeProject(base()));
-        assert.equal(doc.version, 19);
+        assert.equal(doc.version, 20);
         delete doc.config[key];
         assert.throws(() => parseProject(JSON.stringify(doc)), /ausente/);
     }

@@ -87,7 +87,7 @@ test('arquivos até a versão 13 recebem os opcionais desligados sem perder fila
 test('campos obrigatórios e materiais inválidos são rejeitados', () => {
     for (const key of Object.keys(receptionFinishDefaults)) {
         const doc = JSON.parse(serializeProject(base()));
-        assert.equal(doc.version, 19);
+        assert.equal(doc.version, 20);
         delete doc.config[key];
         assert.throws(() => parseProject(JSON.stringify(doc)), /ausente/);
     }

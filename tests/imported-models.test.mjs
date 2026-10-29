@@ -69,7 +69,7 @@ for (const [id, config] of cases) test('OBJ: ' + id, () => {
     const before = JSON.stringify(config);
     validate(config);
     const restored = parseProject(serializeProject(config));
-    assert.equal(JSON.parse(serializeProject(config)).version, 19);
+    assert.equal(JSON.parse(serializeProject(config)).version, 20);
     assert.deepEqual(restored, config);
     for (const target of ['blender', 'max']) {
         const script = generate({ ...config, target });
@@ -134,8 +134,8 @@ test('migra versões 1 a 18 nos cinco tipos e mantém os ajustes existentes', ()
         assert.deepEqual(parseProject(JSON.stringify(old)), current);
     }
     const missing = { ...base() }; delete missing.importedModels;
-    assert.throws(() => parseProject(JSON.stringify({ format: 'code-buddy-project', version: 19, config: missing })), /ausente/);
-    assert.throws(() => parseProject(JSON.stringify({ format: 'code-buddy-project', version: 20, config: base() })), /versão/);
+    assert.throws(() => parseProject(JSON.stringify({ format: 'code-buddy-project', version: 20, config: missing })), /ausente/);
+    assert.throws(() => parseProject(JSON.stringify({ format: 'code-buddy-project', version: 21, config: base() })), /versão/);
 });
 
 test('recusa dados corrompidos e alterações fora da área sem modificar a configuração', () => {

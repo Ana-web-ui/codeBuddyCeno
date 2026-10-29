@@ -124,7 +124,7 @@ test('JSON anterior recebe o modo simples nos cinco tipos, sem perder ajustes', 
 test('JSON atual exige os campos, rejeita valores inválidos e versões futuras', () => {
     for (const key of Object.keys(showcaseDetailDefaults)) {
         const doc = JSON.parse(serializeProject(base()));
-        assert.equal(doc.version, 19);
+        assert.equal(doc.version, 20);
         delete doc.config[key];
         assert.throws(() => parseProject(JSON.stringify(doc)), /ausente/);
     }
@@ -141,5 +141,5 @@ test('JSON atual exige os campos, rejeita valores inválidos e versões futuras'
         assert.equal(JSON.stringify(c), before);
     }
     const doc = JSON.parse(serializeProject(base()));
-    assert.throws(() => parseProject(JSON.stringify({ ...doc, version: 20 })), /versão/);
+    assert.throws(() => parseProject(JSON.stringify({ ...doc, version: 21 })), /versão/);
 });

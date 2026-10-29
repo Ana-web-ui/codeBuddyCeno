@@ -1,4 +1,6 @@
 'use client';
+import { floorOutline, floorArea } from '@/lib/presentation';
+import { PresentationControls } from '@/components/presentation-controls';
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import ImagePreview from 'next/image';
@@ -551,7 +553,7 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
     <PlanText x="300" y={y - 33} textAnchor="middle" fill="#b6c3d7" fontSize="14">{num(c.width)} m</PlanText>
     <path d={`M ${x + w + 24} ${y} V ${y + h} M ${x + w + 17} ${y} h 14 M ${x + w + 17} ${y + h} h 14`} stroke="#67758e" fill="none"/>
     <PlanText x={x + w + 40} y={y + h / 2} transform={`rotate(90 ${x + w + 40} ${y + h / 2})`} textAnchor="middle" fill="#b6c3d7" fontSize="14">{num(c.depth)} m</PlanText>
-    <rect x={x} y={y} width={w} height={h} fill={(c.floorMat === 'brand' ? c.color : materials.find(m => m.value === c.floorMat)?.color) + '25'} stroke="#687695" strokeDasharray="5 5"/>
+    <polygon points={floorOutline(c).map(([fx, fy]) => `${px(fx)},${py(fy)}`).join(' ')} fill={(c.floorMat === 'brand' ? c.color : materials.find(m => m.value === c.floorMat)?.color) + '25'} stroke="#687695" strokeDasharray="5 5"/>
     {drawUnits(true)}
     {activation && <g aria-label="Espera, participação e circulação" pointerEvents="none">
       {activation.sampling && <g>
@@ -878,6 +880,8 @@ export default function Home() {
     ) => {
         const preservesLayout =
             [
+                'floorShape', 'floorCornerRadius', 'lightingPreset', 'lightingIntensity',
+                'presentationCameras', 'presentationCamera', 'presentationFormat', 'presentationMargin',
                 'name',
                 'target',
                 'color',
@@ -1223,7 +1227,7 @@ export default function Home() {
                     : 'Informe as medidas do stand. A altura também define as paredes e os trilhos de iluminação.'}
 </p>
       <div className="dimensions">{([{ key: 'width', label: 'Largura', min: 3, max: 30 }, { key: 'depth', label: 'Profundidade', min: 3, max: 30 }, { key: 'height', label: 'Altura', min: 2, max: 8 }] as const).map(f => <label className="field" key={f.key}>{f.label}<div className="unit-input"><input type="number" inputMode="decimal" min={f.min} max={f.max} step="0.1" value={Number.isNaN(c[f.key]) ? '' : c[f.key]} onChange={e => update(f.key, e.target.value === '' ? NaN : Number(e.target.value))}/><span>m</span></div></label>)}</div>
-      <div className="area-summary"><Ruler size={16}/><span>Área de montagem</span><strong>{valid ? num(c.width * c.depth) : '—'} <small>m²</small></strong></div>
+      <div className="area-summary"><Ruler size={16}/><span>Área de montagem</span><strong>{valid ? num(floorArea(c)) : '—'} <small>m²</small></strong></div>
       {c.projectType === 'lounge' && <div className="parameter-section" aria-label="Resumo de assentos do lounge">
         <h3>Assentos do lounge</h3>
         {valid ? <>
@@ -1456,6 +1460,7 @@ export default function Home() {
         try { validate(next); setC(next); setError(''); setNotice('Fila, sinalização e guias ativados.'); }
         catch (error) { setError(error instanceof Error ? error.message : 'A montagem não cabe nesta área.'); }
       }}/>}
+      <PresentationControls c={c} updateAction={update}/>
       <ImportedModelControls c={c} onChangeAction={models => {
           const next = { ...current.current, importedModels: models };
           serializeProject(next);
@@ -1799,7 +1804,7 @@ export default function Home() {
 
     <button className="generate-button" onClick={build} disabled={!valid ||
             (needsPartialConfirmation &&
-                !partialConfirmed)}><Sparkles size={18}/>Gerar {c.target === 'max' ? 'MaxScript' : 'script Blender'}</button><p className="generation-note">Piso, câmera frontal e iluminação incluídos.</p>{error && <p role="alert" className="error">{error}</p>}
+                !partialConfirmed)}><Sparkles size={18}/>Gerar {c.target === 'max' ? 'MaxScript' : 'script Blender'}</button><p className="generation-note">Piso, iluminação e câmera de apresentação incluídos.</p>{error && <p role="alert" className="error">{error}</p>}
     </section>
     <section className="result-panel" aria-label="Visualização e script">
       <div className="config-panel" style={{ marginBottom: 16, padding: 16 }}>
@@ -1833,10 +1838,10 @@ export default function Home() {
         {(dragPreview?.error || assemblyError) && <p role="alert" className="error">{dragPreview?.error || assemblyError}</p>}
       </div>
       <Tabs value={tab} onValueChange={setTab}><div className="result-header"><TabsList className="view-tabs"><TabsTrigger value="plan"><Square size={16}/>Planta</TabsTrigger><TabsTrigger value="code"><Code2 size={17}/>{c.target === 'max' ? 'MaxScript' : 'Script Python'}</TabsTrigger></TabsList><span className="plan-scale">{valid ? `${num(c.width)} × ${num(c.depth)} m` : 'Confira as medidas'}</span></div>
-      <TabsContent value="plan"><div className="plan-title"><span>VISTA SUPERIOR</span><small>Planta esquemática · sem perspectiva</small></div><div className="drawing">{valid ? <Plan c={display} selectedId={selectedUnit?.id ?? null} onSelect={selectUnit} snap={snapToGrid} onDragPreview={previewDrag} onDrop={dropObject}/> : <div className="empty"><Ruler size={32}/><p>{validationMessage}</p></div>}</div><div className="legend">{(c.back || c.left || c.right) && <span><i className="legend-wall"/>Parede</span>}<span><i style={{ background: c.color }}/>Elementos</span>{c.projectType === 'activation' ? <><span><i style={{background:'#fbbf24'}}/>Espera</span><span><i style={{background:'#34d399'}}/>Participação</span><span><i style={{background:'#60a5fa'}}/>Circulação</span>{c.activationModel === 'photo' && <span><i style={{background:'#c084fc'}}/>Captura / câmera</span>}{c.activationModel === 'demo' && <span><i style={{background:'#fb923c'}}/>Demonstrador</span>}{c.activationModel === 'sampling' && <><span><i style={{background:'#fb923c'}}/>Equipe</span>{c.samplingWasteEnabled&&<span><i style={{background:'#f87171'}}/>Descarte</span>}</>}</> : c.projectType === 'reception' ? <><span><i style={{background:'#60a5fa'}}/>Atendimento</span><span><i style={{background:'#fb923c'}}/>Equipe</span><span><i style={{background:'#4ade80'}}/>Acessos</span>{c.receptionQueueEnabled && <span><i style={{background:'#c084fc'}}/>Fila</span>}</> : <span><i className="legend-light"/>Spots</span>}</div><div className="model-info"><div><span>ÁREA TOTAL</span><strong>{valid ? num(c.width * c.depth) : '—'} <small>m²</small></strong></div><div><span>ALTURA DE MONTAGEM</span><strong>{valid ? num(c.height) : '—'} <small>m</small></strong></div><div><span>{c.target === 'max' ? 'EXPORTAÇÃO' : 'RENDER'}</span><strong>{c.target === 'max' ? '3ds Max' : 'Cycles'} <small>{c.target === 'max' ? '.ms' : '64 samples'}</small></strong></div></div></TabsContent>
+      <TabsContent value="plan"><div className="plan-title"><span>VISTA SUPERIOR</span><small>Planta esquemática · sem perspectiva</small></div><div className="drawing">{valid ? <Plan c={display} selectedId={selectedUnit?.id ?? null} onSelect={selectUnit} snap={snapToGrid} onDragPreview={previewDrag} onDrop={dropObject}/> : <div className="empty"><Ruler size={32}/><p>{validationMessage}</p></div>}</div><div className="legend">{(c.back || c.left || c.right) && <span><i className="legend-wall"/>Parede</span>}<span><i style={{ background: c.color }}/>Elementos</span>{c.projectType === 'activation' ? <><span><i style={{background:'#fbbf24'}}/>Espera</span><span><i style={{background:'#34d399'}}/>Participação</span><span><i style={{background:'#60a5fa'}}/>Circulação</span>{c.activationModel === 'photo' && <span><i style={{background:'#c084fc'}}/>Captura / câmera</span>}{c.activationModel === 'demo' && <span><i style={{background:'#fb923c'}}/>Demonstrador</span>}{c.activationModel === 'sampling' && <><span><i style={{background:'#fb923c'}}/>Equipe</span>{c.samplingWasteEnabled&&<span><i style={{background:'#f87171'}}/>Descarte</span>}</>}</> : c.projectType === 'reception' ? <><span><i style={{background:'#60a5fa'}}/>Atendimento</span><span><i style={{background:'#fb923c'}}/>Equipe</span><span><i style={{background:'#4ade80'}}/>Acessos</span>{c.receptionQueueEnabled && <span><i style={{background:'#c084fc'}}/>Fila</span>}</> : <span><i className="legend-light"/>Spots</span>}</div><div className="model-info"><div><span>ÁREA TOTAL</span><strong>{valid ? num(floorArea(c)) : '—'} <small>m²</small></strong></div><div><span>ALTURA DE MONTAGEM</span><strong>{valid ? num(c.height) : '—'} <small>m</small></strong></div><div><span>{c.target === 'max' ? 'EXPORTAÇÃO' : 'RENDER'}</span><strong>{c.target === 'max' ? '3ds Max' : 'Cycles'} <small>{c.target === 'max' ? '.ms' : '64 samples'}</small></strong></div></div></TabsContent>
       <TabsContent value="code"><div className="code-toolbar"><span>{output ? filename(output.config) : 'Seu script aparecerá aqui'}</span><div><button onClick={copy} disabled={!output || !!dirty} aria-label="Copiar script">{copied ? <Check size={16}/> : <Copy size={16}/>} {copied ? 'Copiado' : 'Copiar'}</button><button onClick={download} disabled={!output || !!dirty}><Download size={16}/>Baixar {output?.config.target === 'max' ? '.ms' : '.py'}</button></div></div>{dirty && <div className="stale" role="status">Você alterou o projeto. Clique em “Gerar script” para atualizar o arquivo.</div>}{output ? <pre className="code"><code>{output.code.replace(/data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+/g, '[imagem incorporada — baixe ou copie o script completo]').replace(/local IMAGEM_TV = "[A-Za-z0-9+/=]+"/g, 'local IMAGEM_TV = "[imagem incorporada — baixe ou copie o script completo]"')}</code></pre> : <div className="empty"><Code2 size={38}/><h3>Seu projeto, em código.</h3><p>Escolha os elementos ao lado e clique em<br />“Gerar script”.</p></div>}</TabsContent>
     </Tabs><p className="notice" role="status" aria-live="polite">{notice}</p>
-      <div className="blender-guide"><div className="guide-icon"><Box size={22}/></div><div><h3>Como abrir no {c.target === 'max' ? '3ds Max' : 'Blender'}</h3>{c.target === 'max' ? <ol><li><b>1</b>Baixe o arquivo <strong>.ms</strong>.</li><li><b>2</b>Abra o 3ds Max e entre em <strong>Scripting → Run Script</strong>.</li><li><b>3</b>Escolha o arquivo. Use <strong>CB_Camera_Frontal</strong> para visualizar.</li></ol> : <ol><li><b>1</b>Comece com uma cena vazia e entre em <strong>Scripting</strong>.</li><li><b>2</b>Em <strong>Open</strong>, abra o arquivo .py baixado.</li><li><b>3</b>Clique em <strong>Run Script</strong>. Use <strong>F12</strong> para renderizar.</li></ol>}</div></div>
+      <div className="blender-guide"><div className="guide-icon"><Box size={22}/></div><div><h3>Como abrir no {c.target === 'max' ? '3ds Max' : 'Blender'}</h3>{c.target === 'max' ? <ol><li><b>1</b>Baixe o arquivo <strong>.ms</strong>.</li><li><b>2</b>Abra o 3ds Max e entre em <strong>Scripting → Run Script</strong>.</li><li><b>3</b>Escolha o arquivo. {c.presentationCameras ? 'A câmera de apresentação escolhida fica ativa.' : <>Use <strong>CB_Camera_Frontal</strong> para visualizar.</>}</li></ol> : <ol><li><b>1</b>Comece com uma cena vazia e entre em <strong>Scripting</strong>.</li><li><b>2</b>Em <strong>Open</strong>, abra o arquivo .py baixado.</li><li><b>3</b>Clique em <strong>Run Script</strong>. Use <strong>F12</strong> para renderizar.</li></ol>}</div></div>
       <div className="scope-note"><span className="step small-step">i</span><p>Esta versão cria um modelo conceitual. Texturas, artes e detalhes de acabamento podem ser ajustados no programa escolhido. A aparência final depende do renderizador.</p></div>
     </section></div><footer><span>CODE BUDDY / CENOGRAFIA</span><span>Uma base para a sua próxima ideia.</span></footer></main>
   </div>;

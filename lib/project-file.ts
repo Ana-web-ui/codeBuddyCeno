@@ -1,3 +1,4 @@
+import { presentationDefaults } from './presentation';
 import { checkImportedModels, importedModelsDefaults } from './imported-models';
 import { showcaseDetailDefaults } from './showcase';
 import { brandingDefaults } from './branding';
@@ -17,7 +18,7 @@ import { shelvingDefaults } from './shelving';
 
 export const MAX_PROJECT_BYTES = 10 * 1024 * 1024;
 const FORMAT = 'code-buddy-project';
-const VERSION = 19;
+const VERSION = 20;
 
 function object(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -42,6 +43,7 @@ function checkedConfig(
     migrateShowcase = false,
     migrateBranding = false,
     migrateImportedModels = false,
+    migratePresentation = false,
 ): Config  {
     if (!object(value)) {
         throw new Error('O projeto é inválido.');
@@ -65,6 +67,7 @@ function checkedConfig(
 
         const canUseDefault =
             legacy ||
+            (migratePresentation && Object.hasOwn(presentationDefaults, key)) ||
             (migrateImportedModels && Object.hasOwn(importedModelsDefaults, key)) ||
             (migrateBranding && Object.hasOwn(brandingDefaults, key)) ||
             (migrateShowcase && Object.hasOwn(showcaseDetailDefaults, key)) ||
@@ -111,6 +114,8 @@ function checkedConfig(
         }
 
         const item = present ? value[key]
+            : Object.hasOwn(presentationDefaults, key)
+                ? presentationDefaults[key as keyof typeof presentationDefaults]
             : key === 'importedModels' ? []
             : Object.hasOwn(brandingDefaults, key)
                 ? brandingDefaults[key as keyof typeof brandingDefaults]
@@ -204,6 +209,7 @@ export function parseProject(text: string): Config {
             document.version !== 16 &&
             document.version !== 17 &&
             document.version !== 18 &&
+            document.version !== 19 &&
             document.version !== VERSION
         ) {
             throw new Error(
@@ -230,6 +236,7 @@ export function parseProject(text: string): Config {
             typeof document.version === 'number' && document.version <= 16,
             typeof document.version === 'number' && document.version <= 17,
             typeof document.version === 'number' && document.version <= 18,
+            typeof document.version === 'number' && document.version <= 19,
         );
     }
     // Formatos antigos da interface: { config } e configuração direta.

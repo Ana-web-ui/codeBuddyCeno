@@ -16,3 +16,8 @@
 .imported-model-controls .imported-model-actions button{flex:1 1 140px;min-height:44px;padding:10px;border:1px solid #526489;border-radius:6px;background:#263450;color:#edf1fc;font-size:13px;line-height:1.4}
 .imported-model-controls .imported-model-actions button[type=submit]{background:#6475ed;border-color:#8493ff}
 .imported-model-controls [role=alert]{color:#ff9fa9;font-size:13px;line-height:1.5;overflow-wrap:anywhere}
+
+.presentation-controls>.field{margin-bottom:14px}
+.presentation-controls .field>select{display:block;width:100%;min-height:44px;margin-top:9px;padding:10px 12px;background:#0e1524;border:1px solid #34405a;border-radius:6px;color:#edf1fc;font:inherit}
+.presentation-controls .field>select:focus-visible{outline:2px solid #7589e9;outline-offset:1px}
+.presentation-controls .floor-shape-preview{display:block;width:100%;height:135px;margin:12px 0;background:#0e1524;border:1px solid #34405a;border-radius:6px}
