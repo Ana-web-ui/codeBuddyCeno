@@ -81,3 +81,17 @@ export function wallBetween(a:V3,b:V3,id:number):FreeObject {
     const length=Math.hypot(b[0]-a[0],b[1]-a[1]);if(length<.05) throw new Error('Desenhe uma parede com pelo menos 5 cm.');
     const wall=newFreeObject('wall',id);wall.size[0]=length;wall.position=[(a[0]+b[0])/2,(a[1]+b[1])/2,0];wall.rotation[2]=Math.atan2(b[1]-a[1],b[0]-a[0])*180/Math.PI;return wall;
 }
+
+export function rectangleBetween(a: V3, b: V3, id: number): FreeObject {
+    const width = Math.abs(b[0] - a[0]);
+    const depth = Math.abs(b[1] - a[1]);
+
+    if (width < 0.05 || depth < 0.05) {
+        throw new Error('Desenhe um retângulo com pelo menos 5 cm em cada lado.');
+    }
+
+    const block = newFreeObject('box', id);
+    block.position = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, 0];
+    block.size = [width, depth, 1];
+    return block;
+}

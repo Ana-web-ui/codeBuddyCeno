@@ -5,7 +5,7 @@ import type { ChangeEvent, KeyboardEvent } from 'react';
 import { Box, MousePointer2, Move3D, Rotate3D, Scaling, Hand, BrickWall, Type, CopyPlus, Trash2, Undo2, Redo2, ZoomIn, ZoomOut, Maximize, Plus, Eye, EyeOff, Lock, Unlock, Upload, Grid2X2, Layers, Download, Save, FolderOpen } from 'lucide-react';
 import { FreeSceneViewport } from './free-scene-viewport';
 import type { FreeTool, FreeViewportApi, FreePose } from './free-scene-viewport';
-import { emptyFreeScene, freeCatalog, newFreeObject, validateFreeScene, stringifyFreeScene, parseFreeScene, sceneFilename, wallBetween, MAX_FREE_SCENE_BYTES } from '@/lib/free-scene';
+import { emptyFreeScene, freeCatalog, newFreeObject, validateFreeScene, stringifyFreeScene, parseFreeScene, sceneFilename, wallBetween, rectangleBetween, MAX_FREE_SCENE_BYTES } from '@/lib/free-scene';
 import type { FreeScene, FreeKind, FreeObject, V3 } from '@/lib/free-scene';
 import { exportFreeBlender, exportFreeMax } from '@/lib/free-scene-exporters';
 import { readArtworkFile } from '@/lib/branding-upload';
@@ -19,7 +19,7 @@ function NumberField({label,value,min=-10000,max=10000,step=.1,disabled=false,ch
         onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur();}}
         onBlur={event=>{const raw=event.currentTarget.value,n=Number(raw);if(raw===String(Number(value.toFixed(4))))return;if(!raw.trim() || !Number.isFinite(n) || n<min || n>max || !change(n))event.currentTarget.value=String(Number(value.toFixed(4)));}}/></label>;
 }
-const toolItems=[{id:'select',label:'Selecionar (M)',Icon:MousePointer2},{id:'move',label:'Mover (V)',Icon:Move3D},{id:'rotate',label:'Girar (R)',Icon:Rotate3D},{id:'scale',label:'Redimensionar (S)',Icon:Scaling},{id:'hand',label:'Navegar (H)',Icon:Hand},{id:'wall',label:'Desenhar parede (B)',Icon:BrickWall}] as const;
+const toolItems=[{id:'select',label:'Selecionar (M)',Icon:MousePointer2},{id:'move',label:'Mover (V)',Icon:Move3D},{id:'rotate',label:'Girar (G)',Icon:Rotate3D},{id:'scale',label:'Redimensionar (S)',Icon:Scaling},{id:'hand',label:'Navegar (H)',Icon:Hand},{id:'wall',label:'Desenhar parede (B)',Icon:BrickWall},{id:'rectangle',label:'Desenhar retângulo (R)',Icon:Box}] as const;
 export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
     const [history,setHistory]=useState(()=>({past:[] as FreeScene[],present:emptyFreeScene(),future:[] as FreeScene[]}));
     const data=history.present,current=useRef(data),epoch=useRef(0);
@@ -47,6 +47,24 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
         const scene=current.current,id=Math.max(0,...scene.objects.map(o=>o.id))+1;
         try{const wall=wallBetween(a,b,id);if(commit({...scene,objects:[...scene.objects,wall]})){select(id);setNotice('Parede criada. Continue desenhando ou use Mover e Girar.');}}catch(e){setError(e instanceof Error?e.message:'Não foi possível criar a parede.');}
     },[commit,select]);
+    function addRectangle(a: V3, b: V3) {
+        const scene = current.current;
+        const block = rectangleBetween(a, b, nextId());
+
+        if (commit({ ...scene, objects: [...scene.objects, block] })) {
+            select(block.id);
+            setTool('move');
+            setNotice('Bloco criado. Ajuste a altura no painel Peça.');
+        }
+    }
+
+    function activateTool(nextTool: FreeTool) {
+        setTool(nextTool);
+        if (nextTool === 'rectangle') {
+            setNotice('Arraste no chão para desenhar. V ou Esc volta para Mover.');
+        }
+    }
+
     function add(kind:FreeKind) {
         if(busy || loading)return;const item=newFreeObject(kind,nextId());item.position=api.current?.center() ?? [0,0,0];
         if(commit({...current.current,objects:[...current.current.objects,item]})){select(item.id);setTool('move');setNotice(`${item.name} adicionado. Arraste ou ajuste as propriedades.`);}
@@ -112,14 +130,25 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
     function keys(event:KeyboardEvent<HTMLDivElement>) {
         if((event.target as HTMLElement).closest('input,textarea,select,[contenteditable="true"]'))return;
         const key=event.key.toLowerCase(),modifier=event.ctrlKey || event.metaKey;
-        if(key==='escape'){api.current?.cancel();if(!busy)select(null);return;}
+        if (!loading && tool === 'rectangle' && !modifier && (key === 'v' || key === 'escape')) {
+            event.preventDefault();
+            api.current?.cancel();
+            setTool('move');
+            setNotice('Ferramenta Mover ativa.');
+            return;
+        }
+        if (key === 'escape') {
+            api.current?.cancel();
+            if (!busy) select(null);
+            return;
+        }
         if(busy || loading)return;
         if(modifier && key==='z'){event.preventDefault();travel(event.shiftKey?'redo':'undo');}
         else if(modifier && key==='y'){event.preventDefault();travel('redo');}
         else if(modifier && key==='d'){event.preventDefault();duplicate();}
         else if(modifier && key==='s'){event.preventDefault();save();}
         else if(key==='delete' || key==='backspace'){event.preventDefault();remove();}
-        else if(!modifier){const modes:Record<string,FreeTool>={m:'select',v:'move',r:'rotate',s:'scale',h:'hand',b:'wall'};if(modes[key])setTool(modes[key]);else if(key==='t')add('text');else if(key==='0')api.current?.fit();}
+        else if(!modifier){const modes:Record<string,FreeTool>={m:'select',v:'move',r:'rectangle',g:'rotate',s:'scale',h:'hand',b:'wall'};if(modes[key])activateTool(modes[key]);else if(key==='t')add('text');else if(key==='0')api.current?.fit();}
     }
     const isBusy=busy || loading;
     return <div className="free-editor" onKeyDown={keys}>
@@ -130,16 +159,16 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
       <div className="free-documentbar"><span><i/>{data.name}</span><span>{selected?.name ?? `${data.objects.length} peças · metros`}</span><div className="free-view-switch" role="group" aria-label="Vista da cena"><button aria-pressed={view==='3d'} onClick={()=>setView('3d')} disabled={isBusy}>3D</button><button aria-pressed={view==='plan'} onClick={()=>setView('plan')} disabled={isBusy}>Planta</button></div></div>
       <main className="free-workspace">
         <nav className="free-tools" aria-label="Ferramentas da cena livre">
-          {toolItems.map(({id,label,Icon})=><button key={id} title={label} aria-label={label} aria-pressed={tool===id} disabled={isBusy} onClick={()=>setTool(id)}><Icon size={19}/></button>)}
+          {toolItems.map(({id,label,Icon})=><button key={id} title={label} aria-label={label} aria-pressed={tool===id} disabled={isBusy} onClick={()=>activateTool(id)}><Icon size={19}/></button>)}
           <button title="Adicionar texto (T)" aria-label="Adicionar texto" disabled={isBusy} onClick={()=>add('text')}><Type size={20}/></button><span/>
           <button title="Duplicar (Ctrl+D)" aria-label="Duplicar peça" disabled={!selected || isBusy} onClick={duplicate}><CopyPlus size={19}/></button><button title="Excluir (Delete)" aria-label="Excluir peça" disabled={!canEdit} onClick={remove}><Trash2 size={18}/></button><span/>
           <button title="Desfazer (Ctrl+Z)" aria-label="Desfazer cena" disabled={!history.past.length || isBusy} onClick={()=>travel('undo')}><Undo2 size={19}/></button><button title="Refazer (Ctrl+Shift+Z)" aria-label="Refazer cena" disabled={!history.future.length || isBusy} onClick={()=>travel('redo')}><Redo2 size={19}/></button><span/>
           <button aria-label="Aproximar cena" title="Aproximar" disabled={isBusy} onClick={()=>api.current?.zoom(1.25)}><ZoomIn size={19}/></button><button aria-label="Afastar cena" title="Afastar" disabled={isBusy} onClick={()=>api.current?.zoom(.8)}><ZoomOut size={19}/></button><button aria-label="Enquadrar cena" title="Enquadrar todas as peças (0)" disabled={isBusy} onClick={()=>api.current?.fit()}><Maximize size={18}/></button>
         </nav>
         <section className="free-stage" aria-label="Editor da cena livre">
-          <FreeSceneViewport data={data} selectedId={selectedId} tool={tool} view={view} snap={snap} apiRef={api} onSelectAction={select} onTransformAction={transform} onWallAction={addWall} onBusyAction={setBusy}/>
+          <FreeSceneViewport data={data} selectedId={selectedId} tool={tool} view={view} snap={snap} apiRef={api} onSelectAction={select} onTransformAction={transform} onWallAction={addWall} onRectangleAction={addRectangle} onBusyAction={setBusy}/>
           <div className="free-canvas-controls"><label><input type="checkbox" checked={data.grid} disabled={isBusy} onChange={event=>commit({...data,grid:event.target.checked})}/><Grid2X2 size={13}/>Grade</label><label><input type="checkbox" checked={snap} disabled={isBusy} onChange={event=>setSnap(event.target.checked)}/>Encaixar 10 cm / 15°</label></div>
-          <div className="free-stage-help">{tool==='wall'?'Arraste no chão para desenhar a parede. Esc cancela.':view==='plan'?'Planta: mova no plano ou use os eixos. Role para aproximar.':'3D: arraste o fundo para orbitar · botão direito para navegar · role para aproximar'}</div>
+          <div className="free-stage-help">{tool==='rectangle'?'Arraste no chão de um canto ao outro. V ou Esc volta para Mover.':tool==='wall'?'Arraste no chão para desenhar a parede. Esc cancela.':view==='plan'?'Planta: mova no plano ou use os eixos. Role para aproximar.':'3D: arraste o fundo para orbitar · botão direito para navegar · role para aproximar'}</div>
         </section>
         <aside className="free-inspector" aria-label="Criação e propriedades da cena livre">
           <nav className="free-panel-tabs" aria-label="Painel da cena livre">{([{id:'insert',label:'Inserir'},{id:'object',label:'Peça'},{id:'layers',label:'Objetos'},{id:'scene',label:'Cena'}] as const).map(item=><button key={item.id} aria-pressed={panel===item.id} onClick={()=>setPanel(item.id)}>{item.label}</button>)}</nav>

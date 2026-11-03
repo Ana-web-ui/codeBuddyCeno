@@ -6,12 +6,12 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { freeParts } from '@/lib/free-scene-geometry';
 import type { FreeScene, FreeObject, V3 } from '@/lib/free-scene';
-export type FreeTool='select'|'move'|'rotate'|'scale'|'hand'|'wall';
+export type FreeTool='select'|'move'|'rotate'|'scale'|'hand'|'wall'|'rectangle';
 export type FreePose={position:V3;rotation:V3;size:V3};
 export type FreeViewportApi={fit:()=>void;zoom:(factor:number)=>void;center:()=>V3;cancel:()=>void};
 type Props={data:FreeScene;selectedId:number|null;tool:FreeTool;view:'3d'|'plan';snap:boolean;
     apiRef:MutableRefObject<FreeViewportApi|null>;onSelectAction:(id:number|null)=>void;
-    onTransformAction:(id:number,pose:FreePose)=>boolean;onWallAction:(a:V3,b:V3)=>void;onBusyAction:(busy:boolean)=>void};
+    onTransformAction:(id:number,pose:FreePose)=>boolean;onWallAction:(a:V3,b:V3)=>void;onRectangleAction:(a:V3,b:V3)=>void;onBusyAction:(busy:boolean)=>void};
 function disposeTree(root:THREE.Object3D) {
     root.traverse(obj=>{ if(obj instanceof THREE.Mesh || obj instanceof THREE.LineSegments) {
         obj.geometry.dispose(); const materials=Array.isArray(obj.material)?obj.material:[obj.material];
@@ -96,7 +96,15 @@ export function FreeSceneViewport(props:Props) {
             transform.setSpace('world');transform.setTranslationSnap(p.snap?.1:null);transform.setRotationSnap(p.snap?Math.PI/12:null);transform.setScaleSnap(null);
             transform.showX=p.view==='3d' || p.tool!=='rotate';transform.showY=transform.showX;transform.showZ=p.view==='3d' || p.tool==='rotate';
             const selected=p.selectedId===null?null:nodes.get(p.selectedId),data=selected?.userData.config as FreeObject|undefined;
-            if(selected && data?.visible && !data.locked && ['move','rotate','scale'].includes(p.tool)) {if(transform.object!==selected)transform.attach(selected);} else transform.detach();
+            const showManipulator = ['select', 'move', 'rotate', 'scale'].includes(p.tool);
+
+if (selected && data?.visible && !data.locked && showManipulator) {
+    if (transform.object !== selected) {
+        transform.attach(selected);
+    }
+} else {
+    transform.detach();
+}
             selection.visible=!!selected && !!data?.visible;if(selected && selection.visible)selection.box.setFromObject(selected);
         }
         function sync() {
@@ -140,7 +148,7 @@ export function FreeSceneViewport(props:Props) {
         function pointerDown(event:PointerEvent) {
             if(event.button!==0)return;renderer.domElement.focus();down={x:event.clientX,y:event.clientY,gizmo:!!transform.axis && !!transform.object};
             const p=latest.current;
-            if(p.tool==='wall') {const point=ground(event);if(!point)return;wallStart=point;wallEnd=point.clone();controls.enabled=false;renderer.domElement.setPointerCapture(event.pointerId);markBusy(true);event.preventDefault();return;}
+            if(p.tool==='wall' || p.tool==='rectangle') {const point=ground(event);if(!point)return;wallStart=point;wallEnd=point.clone();controls.enabled=false;renderer.domElement.setPointerCapture(event.pointerId);markBusy(true);event.preventDefault();return;}
             if(down.gizmo)return;
             const node=hitObject(event);
             if(node && p.tool==='move' && !(node.userData.config as FreeObject).locked){
@@ -150,13 +158,54 @@ export function FreeSceneViewport(props:Props) {
             }
         }
         function pointerMove(event:PointerEvent) {
-            if(wallStart){const point=ground(event);if(!point)return;wallEnd=point;const dx=point.x-wallStart.x,dy=point.y-wallStart.y,length=Math.hypot(dx,dy);draft.visible=length>.01;draft.scale.set(Math.max(.001,length),.12,3);draft.position.set((point.x+wallStart.x)/2,(point.y+wallStart.y)/2,1.5);draft.rotation.z=Math.atan2(dy,dx);}
+            if (wallStart) {
+                const point = ground(event);
+                if (point) {
+                    wallEnd = point;
+                    const dx = point.x - wallStart.x;
+                    const dy = point.y - wallStart.y;
+                    const centerX = (point.x + wallStart.x) / 2;
+                    const centerY = (point.y + wallStart.y) / 2;
+
+                    if (latest.current.tool === 'rectangle') {
+                        const width = Math.abs(dx);
+                        const depth = Math.abs(dy);
+                        draft.visible = width >= 0.05 && depth >= 0.05;
+                        draft.scale.set(width, depth, 1);
+                        draft.position.set(centerX, centerY, 0.5);
+                        draft.rotation.z = 0;
+                    } else {
+                        const length = Math.hypot(dx, dy);
+                        draft.visible = length > 0.01;
+                        draft.scale.set(Math.max(0.001, length), 0.12, 3);
+                        draft.position.set(centerX, centerY, 1.5);
+                        draft.rotation.z = Math.atan2(dy, dx);
+                    }
+                }
+            }
             if(direct){const node=nodes.get(direct.id),point=ground(event,direct.position[2]);if(node && point){node.position.set(direct.position[0]+point.x-direct.start.x,direct.position[1]+point.y-direct.start.y,direct.position[2]);}}
         }
         function pointerUp(event:PointerEvent) {
             if(event.button!==0)return;
             const hadWall=!!wallStart,hadDirect=!!direct;
-            if(wallStart && wallEnd){const a=wallStart.toArray() as V3,b=wallEnd.toArray() as V3;wallStart=null;wallEnd=null;draft.visible=false;markBusy(false);if(Math.hypot(b[0]-a[0],b[1]-a[1])>=.05)latest.current.onWallAction(a,b);}
+            if (wallStart && wallEnd) {
+                const a = wallStart.toArray() as V3;
+                const b = (ground(event) ?? wallEnd).toArray() as V3;
+                wallStart = null;
+                wallEnd = null;
+                draft.visible = false;
+                markBusy(false);
+
+                const dx = b[0] - a[0];
+                const dy = b[1] - a[1];
+                if (latest.current.tool === 'rectangle') {
+                    if (Math.abs(dx) >= 0.05 && Math.abs(dy) >= 0.05) {
+                        latest.current.onRectangleAction(a, b);
+                    }
+                } else if (Math.hypot(dx, dy) >= 0.05) {
+                    latest.current.onWallAction(a, b);
+                }
+            }
             if(direct){const node=nodes.get(direct.id);direct=null;markBusy(false);if(node)commitNode(node);}
             if(!hadWall && !hadDirect && down && !down.gizmo && Math.hypot(event.clientX-down.x,event.clientY-down.y)<4 && latest.current.tool!=='hand')latest.current.onSelectAction(hitObject(event)?.userData.freeId ?? null);
             if((hadWall || hadDirect) && renderer.domElement.hasPointerCapture(event.pointerId))renderer.domElement.releasePointerCapture(event.pointerId);
@@ -164,7 +213,7 @@ export function FreeSceneViewport(props:Props) {
         }
         function cancel() {
             if(direct){const node=nodes.get(direct.id);if(node)resetNode(node);direct=null;}
-            wallStart=null;wallEnd=null;draft.visible=false;
+            wallStart=null;wallEnd=null;draft.visible=false;down=null;
             if(transform.dragging){ignoreGizmoCommit=true;transform.reset();transform.pointerUp(null);ignoreGizmoCommit=false;}
             markBusy(false);configure();
         }
@@ -181,7 +230,7 @@ export function FreeSceneViewport(props:Props) {
         const onDrag=(event:{value:unknown})=>{markBusy(!!event.value);controls.enabled=!event.value && latest.current.tool!=='wall';};
         const onGizmoUp=()=>{if(transform.object && !ignoreGizmoCommit)commitNode(transform.object as THREE.Group);};
         transform.addEventListener('dragging-changed',onDrag);transform.addEventListener('mouseUp',onGizmoUp);
-        const onKey=(event:KeyboardEvent)=>{if(event.key==='Escape' && busy){event.preventDefault();event.stopPropagation();cancel();}};
+        const onKey=(event:KeyboardEvent)=>{if(event.key==='Escape' && busy && latest.current.tool!=='rectangle'){event.preventDefault();event.stopPropagation();cancel();}};
         const canvas=renderer.domElement;
         canvas.addEventListener('pointerdown',pointerDown,true);canvas.addEventListener('pointermove',pointerMove);canvas.addEventListener('pointerup',pointerUp);
         canvas.addEventListener('pointercancel',cancel);canvas.addEventListener('keydown',onKey);
