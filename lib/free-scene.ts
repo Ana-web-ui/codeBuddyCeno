@@ -7,7 +7,14 @@ export type FreeObject = {
     color: string; visible: boolean; locked: boolean; text: string; image: string;
     source: string; objUnit: 'm'|'cm'|'mm'; upAxis: 'z'|'y'; shelves: number; roughness: number; opacity: number;
 };
-export type FreeScene = { name: string; grid: boolean; gridSize: number; view: '3d'|'plan'; objects: FreeObject[] };
+export const freeEnvironments = {
+    white: 'Branco padrão',
+    outdoors: 'Céu azul aberto com grama',
+    hotel: 'Hall de hotel',
+    pavilion: 'Pavilhão cinza',
+} as const;
+export type FreeEnvironment = keyof typeof freeEnvironments;
+export type FreeScene = { name: string; grid: boolean; gridSize: number; environment?: FreeEnvironment; view: '3d'|'plan'; objects: FreeObject[] };
 export const MAX_FREE_SCENE_BYTES = 10*1024*1024;
 export const freeCatalog: {kind: FreeKind; label: string; size: V3; color: string}[] = [
     {kind:'wall',label:'Parede',size:[3,.12,3],color:'#e1e4eb'},
@@ -16,7 +23,7 @@ export const freeCatalog: {kind: FreeKind; label: string; size: V3; color: strin
     {kind:'floor',label:'Piso',size:[8,6,.1],color:'#ede7df'},
     {kind:'counter',label:'Balcão',size:[2,.65,1],color:'#596edc'},
     {kind:'stage',label:'Palco',size:[4,2,.3],color:'#454e60'},
-    {kind:'led',label:'Painel de LED',size:[3,.5,2.8],color:'#465bdd'},
+    {kind:'led',label:'Painel de LED',size:[3,.12,2.8],color:'#465bdd'},
     {kind:'text',label:'Texto',size:[3,.02,.6],color:'#243657'},
     {kind:'backdrop',label:'Painel / backdrop',size:[3,.45,2.5],color:'#6279dc'},
     {kind:'shelf',label:'Estante',size:[1.5,.4,2],color:'#a87c53'},
@@ -28,17 +35,20 @@ export const freeCatalog: {kind: FreeKind; label: string; size: V3; color: strin
     {kind:'puff',label:'Puff',size:[.6,.6,.42],color:'#b8a4bb'},
     {kind:'coffeeTable',label:'Mesa de centro',size:[1,.6,.42],color:'#bc9875'},
 ];
-export function emptyFreeScene(): FreeScene { return {name:'Cena sem título',grid:true,gridSize:20,view:'3d',objects:[]}; }
+export function emptyFreeScene(): FreeScene { return {name:'Cena sem título',grid:true,gridSize:20,environment:'white',view:'3d',objects:[]}; }
 export function newFreeObject(kind: FreeKind, id: number): FreeObject {
     const item=freeCatalog.find(item=>item.kind===kind);
     if (!item && kind!=='obj') throw new Error('Tipo de peça inválido.');
-    return {id,kind,name:item?.label ?? 'Objeto 3D',position:[0,0,0],rotation:[0,0,0],size:[...(item?.size ?? [1,1,1])],
+    return {id,kind,name:item?.label ?? 'Objeto 3D',position:[0,0,kind==='floor' ? -(item?.size[2] ?? 0) : 0],rotation:[0,0,0],size:[...(item?.size ?? [1,1,1])],
         color:item?.color ?? '#8f9cb2',visible:true,locked:false,text:kind==='text'?'Sua marca':'',image:'',source:'',objUnit:'m',upAxis:'z',shelves:3,roughness:.55,opacity:1};
 }
 const objectKeys=Object.keys(newFreeObject('box',1)).sort().join(',');
 const isRecord=(v:unknown):v is Record<string,unknown>=>!!v && typeof v==='object' && !Array.isArray(v);
 export function validateFreeScene(value: unknown): asserts value is FreeScene {
-    if(!isRecord(value) || Object.keys(value).sort().join(',')!=='grid,gridSize,name,objects,view') throw new Error('Cena livre inválida.');
+    if(!isRecord(value) || !['grid,gridSize,name,objects,view','environment,grid,gridSize,name,objects,view'].includes(Object.keys(value).sort().join(','))) throw new Error('Cena livre inválida.');
+    if ('environment' in value && (typeof value.environment !== 'string' || !Object.hasOwn(freeEnvironments, value.environment))) {
+        throw new Error('Cenário desconhecido.');
+    }
     if(typeof value.name!=='string' || value.name.length>100 || typeof value.grid!=='boolean' || !['3d','plan'].includes(value.view as string) ||
         typeof value.gridSize!=='number' || !Number.isFinite(value.gridSize) || value.gridSize<2 || value.gridSize>200)
         throw new Error('Confira o nome, a vista e o tamanho da grade (2 a 200 m).');

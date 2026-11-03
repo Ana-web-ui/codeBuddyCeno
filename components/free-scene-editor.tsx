@@ -5,8 +5,8 @@ import type { ChangeEvent, KeyboardEvent } from 'react';
 import { Box, MousePointer2, Move3D, Rotate3D, Scaling, Hand, BrickWall, Type, CopyPlus, Trash2, Undo2, Redo2, ZoomIn, ZoomOut, Maximize, Plus, Eye, EyeOff, Lock, Unlock, Upload, Grid2X2, Layers, Download, Save, FolderOpen } from 'lucide-react';
 import { FreeSceneViewport } from './free-scene-viewport';
 import type { FreeTool, FreeViewportApi, FreePose } from './free-scene-viewport';
-import { emptyFreeScene, freeCatalog, newFreeObject, validateFreeScene, stringifyFreeScene, parseFreeScene, sceneFilename, wallBetween, rectangleBetween, MAX_FREE_SCENE_BYTES } from '@/lib/free-scene';
-import type { FreeScene, FreeKind, FreeObject, V3 } from '@/lib/free-scene';
+import { emptyFreeScene, freeCatalog, freeEnvironments, newFreeObject, validateFreeScene, stringifyFreeScene, parseFreeScene, sceneFilename, wallBetween, rectangleBetween, MAX_FREE_SCENE_BYTES } from '@/lib/free-scene';
+import type { FreeEnvironment, FreeScene, FreeKind, FreeObject, V3 } from '@/lib/free-scene';
 import { exportFreeBlender, exportFreeMax } from '@/lib/free-scene-exporters';
 import { readArtworkFile } from '@/lib/branding-upload';
 import { modelGeometry, MAX_MODEL_BYTES } from '@/lib/imported-models';
@@ -66,7 +66,9 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
     }
 
     function add(kind:FreeKind) {
-        if(busy || loading)return;const item=newFreeObject(kind,nextId());item.position=api.current?.center() ?? [0,0,0];
+        if(busy || loading)return;const item=newFreeObject(kind,nextId());
+        const [x,y]=api.current?.center() ?? [0,0,0];
+        item.position=[x,y,item.position[2]];
         if(commit({...current.current,objects:[...current.current.objects,item]})){select(item.id);setTool('move');setNotice(`${item.name} adicionado. Arraste ou ajuste as propriedades.`);}
     }
     function patch(id:number,change:Partial<FreeObject>):boolean {
@@ -189,7 +191,15 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
             </>:<><h2>Selecione uma peça</h2><p>Clique na cena ou abra a lista de objetos. Cada peça tem propriedades independentes.</p><button className="free-secondary" onClick={()=>setPanel('insert')}>Inserir peça</button></>}
           </div>}
           {panel==='layers' && <div className="free-panel"><h2>Objetos · {data.objects.length}</h2>{!data.objects.length && <p>A cena está vazia. Comece inserindo uma peça.</p>}<div className="free-object-list">{[...data.objects].reverse().map(o=><div key={o.id} className={selectedId===o.id?'selected':''}><button aria-label={`Selecionar ${o.name} ${o.id}`} onClick={()=>select(o.id)}><Layers size={15}/><span>{o.name}</span></button><button title={o.visible?'Ocultar':'Mostrar'} aria-label={`${o.visible?'Ocultar':'Mostrar'} peça ${o.id}`} disabled={isBusy} onClick={()=>patch(o.id,{visible:!o.visible})}>{o.visible?<Eye size={14}/>:<EyeOff size={14}/>}</button><button title={o.locked?'Desbloquear':'Bloquear'} aria-label={`${o.locked?'Desbloquear':'Bloquear'} peça ${o.id}`} disabled={isBusy} onClick={()=>patch(o.id,{locked:!o.locked})}>{o.locked?<Lock size={14}/>:<Unlock size={14}/>}</button></div>)}</div></div>}
-          {panel==='scene' && <div className="free-panel"><h2>Cena livre</h2><label className="free-field">Nome da cena<input aria-label="Nome da cena" maxLength={100} value={data.name} disabled={isBusy} onChange={event=>commit({...data,name:event.target.value})}/></label><NumberField label="Tamanho da grade (m)" value={data.gridSize} min={2} max={200} step={1} disabled={isBusy} change={n=>commit({...data,gridSize:n})}/><p>A grade é uma referência. Você pode criar e mover peças além dela e permitir sobreposições.</p><p>Cada execução do script cria uma nova coleção ou camada, preservando as cenas anteriores.</p><button className="free-secondary" onClick={onGuided} disabled={isBusy}>Abrir projetos guiados anteriores</button></div>}
+          {panel==='scene' && <div className="free-panel"><h2>Cena livre</h2>
+              <label className="free-field">
+                  Cenário
+                  <select className="mt-2 block w-full rounded border border-slate-600 bg-slate-900 p-2 text-slate-100" aria-label="Cenário" value={data.environment ?? 'white'} disabled={isBusy}
+                    onChange={event=>commit({...data,environment:event.target.value as FreeEnvironment})}>
+                      {Object.entries(freeEnvironments).map(([id,label])=><option key={id} value={id}>{label}</option>)}
+                  </select>
+              </label>
+              <label className="free-field">Nome da cena<input aria-label="Nome da cena" maxLength={100} value={data.name} disabled={isBusy} onChange={event=>commit({...data,name:event.target.value})}/></label><NumberField label="Tamanho da grade (m)" value={data.gridSize} min={2} max={200} step={1} disabled={isBusy} change={n=>commit({...data,gridSize:n})}/><p>A grade é uma referência. Você pode criar e mover peças além dela e permitir sobreposições.</p><p>Cada execução do script cria uma nova coleção ou camada, preservando as cenas anteriores.</p><button className="free-secondary" onClick={onGuided} disabled={isBusy}>Abrir projetos guiados anteriores</button></div>}
         </aside>
       </main>
       <footer className="free-status"><span role={error?'alert':'status'} aria-live="polite" className={error?'has-error':''}>{error || (loading?'Lendo arquivo…':notice)}</span><span>{data.objects.length}/200 peças · X / Y / Z</span></footer>

@@ -2,6 +2,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { MutableRefObject } from 'react';
 import * as THREE from 'three';
+import { createFreeEnvironment, environmentLighting } from './free-scene-environment';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { freeParts } from '@/lib/free-scene-geometry';
@@ -63,7 +64,11 @@ export function FreeSceneViewport(props:Props) {
         renderer.setClearColor('#ffffff');renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1;renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1,2));renderer.outputColorSpace=THREE.SRGBColorSpace;
         renderer.domElement.tabIndex=0;renderer.domElement.setAttribute('aria-label','Cena 3D livre: selecione e transforme objetos');container.appendChild(renderer.domElement);
         const scene=new THREE.Scene(),objects=new THREE.Group();scene.add(objects);
-        scene.add(new THREE.HemisphereLight(0xffffff,0xa3afc3,2.2));
+        const hemisphere = new THREE.HemisphereLight(0xffffff, 0xa3afc3, 2.2);
+        scene.add(hemisphere);
+        let environment = createFreeEnvironment('white');
+        let activeEnvironment = 'white';
+        scene.add(environment);
         const light=new THREE.DirectionalLight(0xffffff,2.4);light.position.set(5,-8,12);scene.add(light);
         const fill=new THREE.DirectionalLight(0xffffff,1.2);fill.position.set(-8,4,6);scene.add(fill);
         const perspective=new THREE.PerspectiveCamera(42,1,.01,500000);perspective.up.set(0,0,1);perspective.position.set(10,-12,10);
@@ -125,7 +130,22 @@ if (selected && data?.visible && !data.locked && showManipulator) {
             if(gridSize!==p.data.gridSize || !grid){if(grid){scene.remove(grid);disposeTree(grid);}grid=new THREE.GridHelper(p.data.gridSize,Math.min(100,Math.round(p.data.gridSize)),0xc6cdd9,0xe7eaf0);grid.rotation.x=Math.PI/2;grid.position.z=-.003;scene.add(grid);gridSize=p.data.gridSize;}
             const usedImages=new Set(p.data.objects.filter(o=>o.visible).map(o=>o.image));
             for(const [image,texture] of textures)if(!usedImages.has(image)){texture.dispose();textures.delete(image);}
-            grid.visible=p.data.grid;scene.updateMatrixWorld();configure();resize();
+            const nextEnvironment = p.view === '3d' ? (p.data.environment ?? 'white') : 'white';
+            if (nextEnvironment !== activeEnvironment) {
+                scene.remove(environment);
+                disposeTree(environment);
+                environment = createFreeEnvironment(nextEnvironment);
+                scene.add(environment);
+                const preset = environmentLighting[nextEnvironment];
+                renderer.setClearColor(preset.background);
+                hemisphere.color.set(preset.sky);
+                hemisphere.groundColor.set(preset.ground);
+                hemisphere.intensity = preset.intensity;
+                light.intensity = preset.key;
+                activeEnvironment = nextEnvironment;
+            }
+            grid.visible = p.data.grid;
+            scene.updateMatrixWorld();configure();resize();
         }
         function setRay(event:PointerEvent) {
             const rect=renderer.domElement.getBoundingClientRect();pointer.set((event.clientX-rect.left)/rect.width*2-1,-(event.clientY-rect.top)/rect.height*2+1);ray.setFromCamera(pointer,camera);

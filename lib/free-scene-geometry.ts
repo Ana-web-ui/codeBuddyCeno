@@ -26,7 +26,6 @@ export function freeParts(o:FreeObject):FreePart[] {
             const screenH=h*.65, screenZ=h-screenH/2;
             box('Moldura',[w,.12,screenH],[0,0,screenZ],dark);
             box('Tela',[Math.max(.01,w-.08),.012,Math.max(.01,screenH-.08)],[0,-.067,screenZ],o.color);
-            for(const side of [-1,1]) {box('Suporte',[Math.min(.08,w*.05),.08,h-screenH],[side*w*.38,0,(h-screenH)/2],dark);box('Base',[w*.15,d,.05],[side*w*.38,0,.025],dark);}
             break;
         }
         case 'backdrop':
