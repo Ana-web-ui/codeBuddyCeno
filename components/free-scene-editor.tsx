@@ -5,14 +5,15 @@ import type { ChangeEvent, KeyboardEvent } from 'react';
 import { Box, MousePointer2, Move3D, Rotate3D, Scaling, Hand, BrickWall, Type, CopyPlus, Trash2, Undo2, Redo2, ZoomIn, ZoomOut, Maximize, Plus, Eye, EyeOff, Lock, Unlock, Upload, Grid2X2, Layers, Download, Save, FolderOpen } from 'lucide-react';
 import { FreeSceneViewport } from './free-scene-viewport';
 import type { FreeTool, FreeViewportApi, FreePose } from './free-scene-viewport';
-import { emptyFreeScene, freeCatalog, freeEnvironments, newFreeObject, validateFreeScene, stringifyFreeScene, parseFreeScene, sceneFilename, wallBetween, rectangleBetween, MAX_FREE_SCENE_BYTES } from '@/lib/free-scene';
+import { emptyFreeScene, freeCatalog, freeEnvironments, newFreeObject, stringifyFreeScene, parseFreeScene, sceneFilename, wallBetween, rectangleBetween, MAX_FREE_SCENE_BYTES } from '@/lib/free-scene';
 import type { FreeEnvironment, FreeScene, FreeKind, FreeObject, V3 } from '@/lib/free-scene';
 import { exportFreeBlender, exportFreeMax } from '@/lib/free-scene-exporters';
+import { exportFreePackage } from '@/lib/free-scene-package';
 import { readArtworkFile } from '@/lib/branding-upload';
 import { modelGeometry, MAX_MODEL_BYTES } from '@/lib/imported-models';
 
-function downloadText(text:string,name:string,type:string) {
-    const url=URL.createObjectURL(new Blob([text],{type})),anchor=document.createElement('a');anchor.href=url;anchor.download=name;anchor.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+function downloadFile(content:BlobPart,name:string,type:string) {
+    const url=URL.createObjectURL(new Blob([content],{type})),anchor=document.createElement('a');anchor.href=url;anchor.download=name;anchor.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 function NumberField({label,value,min=-10000,max=10000,step=.1,disabled=false,change}:{label:string;value:number;min?:number;max?:number;step?:number;disabled?:boolean;change:(n:number)=>boolean}) {
     return <label>{label}<input key={String(value)} aria-label={label} type="number" min={min} max={max} step={step} disabled={disabled} defaultValue={Number(value.toFixed(4))}
@@ -98,7 +99,7 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
         });setError('');setNotice(direction==='undo'?'Edição desfeita.':'Edição refeita.');
     }
     function clearScene() {if(busy || loading)return;if(commit(emptyFreeScene())){select(null);setView('3d');setPanel('insert');setTool('move');requestAnimationFrame(()=>api.current?.fit());setNotice('Nova cena vazia. Desfazer recupera a cena anterior.');}}
-    function save() {try{downloadText(stringifyFreeScene({...current.current,view}),sceneFilename(data,'json'),'application/json');setNotice('Cena livre salva em JSON, com peças, textos, artes e objetos 3D.');setError('');}catch(e){setError(e instanceof Error?e.message:'Não foi possível salvar.');}}
+    function save() {try{downloadFile(stringifyFreeScene({...current.current,view}),sceneFilename(data,'json'),'application/json');setNotice('Cena livre salva em JSON, com peças, textos, artes e objetos 3D.');setError('');}catch(e){setError(e instanceof Error?e.message:'Não foi possível salvar.');}}
     async function open(event:ChangeEvent<HTMLInputElement>) {
         const file=event.target.files?.[0];event.target.value='';if(!file)return;
         const request=++fileRequest.current,start=epoch.current;setLoading(true);setError('');
@@ -126,7 +127,19 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
         catch(e){setError(e instanceof Error?e.message:'Não foi possível aplicar a arte.');}finally{setLoading(false);}
     }
     function exportScene() {
-        try{const scene=current.current;validateFreeScene(scene);downloadText(target==='blender'?exportFreeBlender(scene):exportFreeMax(scene),sceneFilename(scene,target==='blender'?'py':'ms'),'text/plain');setError('');setNotice('Script exportado com peças independentes, texto editável e artes.');}
+        try {
+            const scene = current.current;
+            if (scene.objects.some(item => item.image)) {
+                const archive = exportFreePackage(scene, target);
+                downloadFile(new Uint8Array(archive), sceneFilename(scene, 'zip'), 'application/zip');
+                setNotice('ZIP exportado com o script e a pasta materiais. Extraia tudo antes de abrir o script.');
+            } else {
+                const script = target === 'blender' ? exportFreeBlender(scene) : exportFreeMax(scene);
+                downloadFile(script, sceneFilename(scene, target === 'blender' ? 'py' : 'ms'), 'text/plain');
+                setNotice('Script exportado com peças independentes e texto editável.');
+            }
+            setError('');
+        }
         catch(e){setError(e instanceof Error?e.message:'Não foi possível exportar.');}
     }
     function keys(event:KeyboardEvent<HTMLDivElement>) {

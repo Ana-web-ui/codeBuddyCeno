@@ -2,16 +2,32 @@ import { validateFreeScene } from './free-scene';
 import type { FreeScene, FreeObject } from './free-scene';
 import { freeParts } from './free-scene-geometry';
 
-export function exportFreeBlender(scene:FreeScene):string {
+type ArtworkPaths = ReadonlyMap<string, string>;
+
+export function exportFreeBlender(scene:FreeScene, artwork?:ArtworkPaths):string {
     validateFreeScene(scene);
-    const data=scene.objects.map(o=>({...o,parts:freeParts(o)}));
+    const data=scene.objects.map(o=>({
+        ...o,
+        image: artwork?.get(o.image) ?? o.image,
+        parts: freeParts(o).map(part=>part.image ? {...part,image:artwork?.get(part.image) ?? part.image} : part),
+    }));
+    const preflight = artwork?.size ? `arquivo_script = globals().get('__file__', '')
+espaco = bpy.context.space_data
+texto = getattr(espaco, 'text', None)
+if texto and texto.filepath:
+    arquivo_script = bpy.path.abspath(texto.filepath)
+pasta_script = os.path.dirname(os.path.abspath(arquivo_script))
+for caminho_relativo in ${JSON.stringify([...artwork.values()])}:
+    if not os.path.isfile(os.path.join(pasta_script, caminho_relativo)):
+        raise FileNotFoundError('Extraia todo o ZIP e mantenha a pasta materiais ao lado do script: ' + caminho_relativo)
+` : '';
     return `# CODE BUDDY — CENA LIVRE 3D
 # Blender: Scripting > Open > Run Script. Cada execução preserva as anteriores.
 import bpy, math, json, uuid, base64, os, tempfile
 from mathutils import Vector, Euler
 objetos = json.loads(${JSON.stringify(JSON.stringify(data))})
 nome = ${JSON.stringify(scene.name)}
-colecao = bpy.data.collections.new('CB_Livre_' + uuid.uuid4().hex[:8])
+${preflight}colecao = bpy.data.collections.new('CB_Livre_' + uuid.uuid4().hex[:8])
 bpy.context.scene.collection.children.link(colecao)
 colecao['code_buddy_free_scene'] = True
 bpy.context.scene.unit_settings.system = 'METRIC'
@@ -38,14 +54,19 @@ def material_parte(parte, acabamento):
     if parte['shape'] == 'image':
         dados = parte['image']
         if dados not in imagens:
-            cabecalho,conteudo = dados.split(',',1)
-            fd,caminho = tempfile.mkstemp(suffix='.png' if 'png' in cabecalho else '.jpg')
-            try:
-                with os.fdopen(fd,'wb') as arquivo: arquivo.write(base64.b64decode(conteudo))
-                imagem = bpy.data.images.load(caminho,check_existing=False)
-                imagem.pack(); imagens[dados] = imagem
-            finally:
-                if os.path.exists(caminho): os.remove(caminho)
+            if dados.startswith('data:'):
+                cabecalho,conteudo = dados.split(',',1)
+                fd,caminho = tempfile.mkstemp(suffix='.png' if 'png' in cabecalho else '.jpg')
+                try:
+                    with os.fdopen(fd,'wb') as arquivo: arquivo.write(base64.b64decode(conteudo))
+                    imagem = bpy.data.images.load(caminho,check_existing=False)
+                    imagem.pack()
+                finally:
+                    if os.path.exists(caminho): os.remove(caminho)
+            else:
+                imagem = bpy.data.images.load(os.path.join(pasta_script, dados),check_existing=False)
+                imagem.pack()
+            imagens[dados] = imagem
         textura = mat.node_tree.nodes.new('ShaderNodeTexImage'); textura.image = imagens[dados]
         mat.node_tree.links.new(textura.outputs['Color'],shader.inputs['Base Color'])
         alpha=mat.node_tree.nodes.new('ShaderNodeMath'); alpha.operation='MULTIPLY'; alpha.inputs[1].default_value=parte['opacity']
@@ -127,13 +148,19 @@ print('Code Buddy: cena livre criada, com objetos independentes e texto editáve
 }
 const ms=(value:string)=>JSON.stringify(value).replace(/\\u([0-9a-f]{4})/gi,(_,h:string)=>String.fromCharCode(parseInt(h,16)));
 const vec=(v:number[])=>'['+v.map(n=>`(${n})*METRO`).join(',')+']';
-export function exportFreeMax(scene:FreeScene):string {
+export function exportFreeMax(scene:FreeScene, artwork?:ArtworkPaths):string {
     validateFreeScene(scene);
     return `-- CODE BUDDY — CENA LIVRE 3D
 -- Scripting > Run Script. Objetos anteriores sao preservados.
--- As artes ficam em userScripts/CodeBuddy_Artes; inclua-as ao compartilhar o .max.
+-- Mantenha a pasta materiais junto ao script ao executar um pacote ZIP.
 (
-local METRO = units.decodeValue "1m"
+${artwork?.size ? `local arquivoScript = getSourceFileName()
+if arquivoScript == undefined or arquivoScript == "" do throw "Execute o arquivo .ms extraido do ZIP."
+local pastaScript = getFilenamePath arquivoScript
+for arquivo in #(${[...artwork.values()].map(ms).join(',')}) do (
+    if not doesFileExist (pastaScript + arquivo) do throw ("Material ausente. Extraia todo o ZIP: " + arquivo)
+)
+` : ''}local METRO = units.decodeValue "1m"
 local camada = LayerManager.newLayerFromName ("CB_Livre_" + ((dotNetClass "System.Guid").NewGuid().ToString()))
 fn registrar obj = (camada.addNode obj; obj)
 fn materialLivre nome rgb opacidade aspereza =
@@ -142,12 +169,12 @@ fn materialLivre nome rgb opacidade aspereza =
     mat.base_color = rgb; mat.roughness = aspereza; mat.transparency = 1-opacidade
     mat
 )
-${scene.objects.map(o=>maxObject(o)).join('\n')}
+${scene.objects.map(o=>maxObject(o,artwork)).join('\n')}
 format "Code Buddy: cena livre criada.\\n"
 )
 `;
 }
-function maxObject(o:FreeObject):string {
+function maxObject(o:FreeObject, artwork?:ArtworkPaths):string {
     const color=(hex:string)=>'(color '+[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16)).join(' ')+')';
     return `(
 local raiz=registrar (Dummy name:${ms(o.name)} pos:[0,0,0])
@@ -156,6 +183,7 @@ setUserProp raiz "code_buddy_id" "free:${o.id}"
 setUserProp raiz "code_buddy_role" ${ms(o.kind)}
 ${freeParts(o).map((part,i)=>{
     const [w,d,h]=part.size,c=part.center,mat=`materialLivre ${ms(o.name+'_'+part.name)} ${color(part.color)} (${part.opacity}) (${o.roughness})`;
+    const artworkPath = part.image ? artwork?.get(part.image) : undefined;
     let code='';
     if(part.shape==='box') code=`local obj=registrar (box width:(${w}*METRO) length:(${d}*METRO) height:(${h}*METRO) pos:${vec([c[0],c[1],c[2]-h/2])})`;
     else if(part.shape==='cylinder') code=`local obj=registrar (cylinder radius:(${w/2}*METRO) height:(${h}*METRO) sides:32 pos:${vec([c[0],c[1],c[2]-h/2])})\nobj.scale=[1,${d/w},1]`;
@@ -166,7 +194,8 @@ ${freeParts(o).map((part,i)=>{
 ${code}
 obj.name=${ms(o.name+'_'+part.name+'_'+i)}
 obj.material=(${mat})
-${part.shape==='image'?`local pasta=(getDir #userScripts)+"/CodeBuddy_Artes/"\nmakeDir pasta all:true\nlocal caminho=pasta+((dotNetClass "System.Guid").NewGuid().ToString())+${ms(part.image!.includes('image/png')?'.png':'.jpg')}\n(dotNetClass "System.IO.File").WriteAllBytes caminho ((dotNetClass "System.Convert").FromBase64String ${ms(part.image!.split(',')[1])})\nlocal textura=Bitmaptexture filename:caminho\ntextura.alphaSource=0;textura.monoOutput=1\nobj.material.base_color_map=textura\n${part.image!.includes('image/png')?'obj.material.cutout_map=textura':''}`:''}
+${part.shape==='image'?`${artworkPath ? `local caminho=pastaScript+${ms(artworkPath)}\n` : `local pasta=(getDir #userScripts)+"/CodeBuddy_Artes/"\nmakeDir pasta all:true\nlocal caminho=pasta+((dotNetClass "System.Guid").NewGuid().ToString())+${ms(part.image!.includes('image/png')?'.png':'.jpg')}\n(dotNetClass "System.IO.File").WriteAllBytes caminho ((dotNetClass "System.Convert").FromBase64String ${ms(part.image!.split(',')[1])})\n` }
+local textura=Bitmaptexture filename:caminho\ntextura.alphaSource=0;textura.monoOutput=1\nobj.material.base_color_map=textura\n${part.image!.includes('image/png')?'obj.material.cutout_map=textura':''}`:''}
 obj.parent=raiz
 setUserProp obj "code_buddy_id" "free:${o.id}"
 append pecas obj
