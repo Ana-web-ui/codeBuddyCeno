@@ -56,7 +56,7 @@ for (const [id, config] of cases) test('apresentação: ' + id, () => {
     const before = JSON.stringify(config);
     validate(config);
     const restored = parseProject(serializeProject(config));
-    assert.equal(JSON.parse(serializeProject(config)).version, 20);
+    assert.equal(JSON.parse(serializeProject(config)).version, 21);
     assert.deepEqual(restored, config);
     const mesh = floorMesh(config), n = floorOutline(config).length;
     assert.equal(mesh.vertices.length, n * 2 + 2);
@@ -132,5 +132,5 @@ test('migra versões anteriores com piso, luz e câmera originais nos cinco tipo
         const c = base(); delete c[key];
         assert.throws(() => parseProject(JSON.stringify({ format: 'code-buddy-project', version: 20, config: c })), /ausente/);
     }
-    assert.throws(() => parseProject(JSON.stringify({ format: 'code-buddy-project', version: 21, config: base() })), /versão/);
+    assert.throws(() => parseProject(JSON.stringify({ format: 'code-buddy-project', version: 22, config: base() })), /versão/);
 });

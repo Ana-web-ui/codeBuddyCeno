@@ -1,3 +1,6 @@
+import { ledHasSupports, ledUnit } from './led-layout';
+import { wrapMaxUnit } from './assembly-exporters';
+import { structureTransform } from './structure-layout';
 import { maxBrandingSupport } from './branding-exporters';
 import { lightColor } from './presentation';
 import { maxFloor, maxPresentationCameras } from './presentation-exporters';
@@ -170,7 +173,20 @@ ${maxFloor(c).split('\n').map(line => '    ' + line).join('\n')}
     )
     if PAREDE_ESQUERDA do cbCaixa "Parede_Esquerda" .15 PROFUNDIDADE ALTURA (-LARGURA/2.0+.075) 0 (ALTURA/2.0+.1) parede
     if PAREDE_DIREITA do cbCaixa "Parede_Direita" .15 PROFUNDIDADE ALTURA (LARGURA/2.0-.075) 0 (ALTURA/2.0+.1) parede
-    if ADICIONAR_LED do
+${c.led && c.objectTransforms['led:0'] ? wrapMaxUnit(ledUnit(c), structureTransform(c, 'led:0'), `    if ADICIONAR_LED do
+    (
+        local y = PROFUNDIDADE/2.0-.35
+        local z = .1+LED_BASE+LED_ALTURA/2.0
+        cbCaixa "LED_Moldura" (LED_LARGURA+.12) .12 (LED_ALTURA+.12) 0 y z escuro
+        cbTela LED_LARGURA LED_ALTURA (y-.075) z tela
+        if ${ledHasSupports(c) ? 'true' : 'false'} do for sinal in #(-1,1) do
+        (
+            local x = sinal*LED_LARGURA*.4
+            cbCaixa "LED_Suporte" .09 .09 LED_BASE x y (.1+LED_BASE/2.0) escuro
+            cbCaixa "LED_Base" .45 .5 .06 x y .13 escuro
+        )
+    )
+`, { group: true, preserveNames: true }) : `    if ADICIONAR_LED do
     (
         local y = PROFUNDIDADE/2.0-.35
         local z = .1+LED_BASE+LED_ALTURA/2.0
@@ -183,7 +199,8 @@ ${maxFloor(c).split('\n').map(line => '    ' + line).join('\n')}
             cbCaixa "LED_Base" .45 .5 .06 x y .13 escuro
         )
     )
-${c.counterDetailed || c.counterArtEnabled ? maxCounters(c, geometry(c).counterXs, geometry(c).counterY) : `    if ADICIONAR_BALCAO do for i = 1 to BALCOES do
+`}
+${c.counterDetailed || c.counterArtEnabled || Object.keys(c.objectTransforms).some(id => id.startsWith('counter:')) ? maxCounters(c, geometry(c).counterXs, geometry(c).counterY) : `    if ADICIONAR_BALCAO do for i = 1 to BALCOES do
     (
         local x = (#(${geometry(c).counterXs.join(', ')}))[i]
         local y = ${geometry(c).counterY}
@@ -191,7 +208,13 @@ ${c.counterDetailed || c.counterArtEnabled ? maxCounters(c, geometry(c).counterX
         cbCaixa "Balcao_Tampo" (BALCAO_LARGURA+.08) (BALCAO_PROFUNDIDADE+.08) .06 x y (.1+BALCAO_ALTURA-.03) branco
     )
 `}
-    if ADICIONAR_PALCO do cbCaixa "Palco" PALCO_LARGURA PALCO_PROFUNDIDADE PALCO_ALTURA 0 ${geometry(c).stageY} (.1+PALCO_ALTURA/2.0) palco
+    if ADICIONAR_PALCO do
+    (
+        local palcoObj = cbCaixa "Palco" PALCO_LARGURA PALCO_PROFUNDIDADE PALCO_ALTURA (${structureTransform(c, 'stage:0').x}) (${structureTransform(c, 'stage:0').y}) (.1+PALCO_ALTURA/2.0) palco
+        palcoObj.rotation = angleaxis ${structureTransform(c, 'stage:0').rotation} [0,0,1]
+        setUserProp palcoObj "code_buddy_id" "stage:0"
+        setUserProp palcoObj "code_buddy_role" "stage"
+    )
     if ADICIONAR_TOTEM do for i = 1 to TOTENS do
     (
         local x = (i-1-(TOTENS-1)/2.0)*(TOTEM_LARGURA+.5)

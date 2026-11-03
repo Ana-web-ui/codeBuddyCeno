@@ -21,7 +21,7 @@ ${code.split('\n').map(line => '    ' + line).join('\n')}
     bpy.context.view_layer.update()
     for i, obj in enumerate(novos, 1):
         obj['code_buddy_id'] = '${unit.id}'
-        if obj.get('code_buddy_role') == 'branding_artwork' and obj.parent in novos:
+        if obj.parent in novos:
             obj.name = '${name}_' + obj.name
             continue
         matriz = movimento @ obj.matrix_world.copy()
@@ -47,7 +47,7 @@ ${code}
     for i = 1 to cbNovos.count do
     (
         local obj = cbNovos[i]
-        if not ((getUserProp obj "code_buddy_role") == "branding_artwork" and (findItem cbNovos obj.parent) != 0) do
+        if (findItem cbNovos obj.parent) == 0 do
             obj.transform = obj.transform * cbMovimento
         obj.name = "${name}_" + ${options.preserveNames ? 'obj.name' : '(i as string)'}
         setUserProp obj "code_buddy_id" "${unit.id}"
@@ -57,7 +57,7 @@ ${(options.group || unit.id.startsWith('demoStations:')||unit.id.startsWith('sam
     raizDemo.rotation = angleaxis ${t.rotation} [0,0,1]
     setUserProp raizDemo "code_buddy_role" "assembly_unit"
     setUserProp raizDemo "code_buddy_id" "${unit.id}"
-    for obj in cbNovos where ((getUserProp obj "code_buddy_role") != "branding_artwork") do obj.parent = raizDemo`:''}
+    for obj in cbNovos where ((findItem cbNovos obj.parent) == 0) do obj.parent = raizDemo`:''}
 )
 `;
 }

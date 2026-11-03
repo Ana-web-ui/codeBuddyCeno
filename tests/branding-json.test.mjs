@@ -50,7 +50,7 @@ for (const type of ['stand', 'palco', 'lounge', 'activation', 'reception']) {
             counterArtMode: 'cover', counterArtScale: 1.2, counterArtOffsetX: .1, counterArtOffsetY: -.1 };
         const before = JSON.stringify(config);
         const text = serializeProject(config);
-        assert.equal(JSON.parse(text).version, 20);
+        assert.equal(JSON.parse(text).version, 21);
         assert.deepEqual(parseProject(text), config);
         assert.equal(JSON.stringify(config), before);
     });
@@ -62,7 +62,7 @@ test('versão 20 exige todos os campos e rejeita versões futuras', () => {
         delete config[key];
         assert.throws(() => parseProject(envelope(config, 20)), /ausente/);
     }
-    assert.throws(() => parseProject(envelope(createProjectConfig('stand'), 21)), /versão/);
+    assert.throws(() => parseProject(envelope(createProjectConfig('stand'), 22)), /versão/);
     assert.throws(() => parseProject(envelope({ ...createProjectConfig('stand'), panelArtUnknown: 1 }, 19)), /desconhecidos/);
 });
 

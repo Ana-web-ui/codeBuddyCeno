@@ -5,7 +5,7 @@ import { brandingDefaults } from './branding';
 import { defaults, validate } from './generator';
 import type { Config } from './generator';
 import { createProjectConfig } from './project-types';
-import { checkTransforms } from './assembly';
+import { checkTransforms, checkCopies } from './assembly';
 import { storageDefaults } from './storage';
 import { activationDefaults, photoDefaults, demoDefaults } from './activation';
 import { materials } from './generator';
@@ -18,7 +18,7 @@ import { shelvingDefaults } from './shelving';
 
 export const MAX_PROJECT_BYTES = 10 * 1024 * 1024;
 const FORMAT = 'code-buddy-project';
-const VERSION = 20;
+const VERSION = 21;
 
 function object(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -44,6 +44,7 @@ function checkedConfig(
     migrateBranding = false,
     migrateImportedModels = false,
     migratePresentation = false,
+    migrateCopies = false,
 ): Config  {
     if (!object(value)) {
         throw new Error('O projeto é inválido.');
@@ -66,7 +67,7 @@ function checkedConfig(
         const present = Object.hasOwn(value, key);
 
         const canUseDefault =
-            legacy ||
+            legacy || (migrateCopies && key === 'objectCopies') ||
             (migratePresentation && Object.hasOwn(presentationDefaults, key)) ||
             (migrateImportedModels && Object.hasOwn(importedModelsDefaults, key)) ||
             (migrateBranding && Object.hasOwn(brandingDefaults, key)) ||
@@ -130,7 +131,10 @@ function checkedConfig(
             : Object.hasOwn(counterDefaults, key)
                 ? counterDefaults[key as keyof typeof counterDefaults]
                 : initial[key];
-        if (key === 'importedModels') {
+        if (key === 'objectCopies') {
+            checkCopies(item);
+            clean[key] = item.map(copy => ({ ...copy }));
+        } else if (key === 'importedModels') {
             checkImportedModels(item);
             clean[key] = item.map(model => ({ ...model }));
         } else if (key === 'objectTransforms') {
@@ -210,6 +214,7 @@ export function parseProject(text: string): Config {
             document.version !== 17 &&
             document.version !== 18 &&
             document.version !== 19 &&
+            document.version !== 20 &&
             document.version !== VERSION
         ) {
             throw new Error(
@@ -237,6 +242,7 @@ export function parseProject(text: string): Config {
             typeof document.version === 'number' && document.version <= 17,
             typeof document.version === 'number' && document.version <= 18,
             typeof document.version === 'number' && document.version <= 19,
+            typeof document.version === 'number' && document.version <= 20,
         );
     }
     // Formatos antigos da interface: { config } e configuração direta.

@@ -1,3 +1,6 @@
+import { copiedLed } from './copy-exporters';
+import { ledHasSupports, ledUnit } from './led-layout';
+import { structureLayout, structureTransform, structureBounds } from './structure-layout';
 import { blenderBrandingSupport } from './branding-exporters';
 import { presentationDefaults, validatePresentation, assertFloorOccupancy, lightColor } from './presentation';
 import type { PresentationConfig, FloorFootprint } from './presentation';
@@ -7,7 +10,7 @@ import type { ImportedModelsConfig } from './imported-models';
 import { blenderImportedModels } from './imported-model-exporters';
 import { showcaseDetailDefaults, validateShowcaseDetail } from './showcase';
 import type { ShowcaseDetailConfig } from './showcase';
-import { buildAssembly, validateAssembly, unitTransform, checkTransforms, placedMembers } from './assembly.js';
+import { buildAssembly, validateAssembly, unitTransform, checkTransforms, checkCopies, placedMembers } from './assembly.js';
 import type { AssemblyConfig, AssemblyScene, AssemblyUnit } from './assembly.js';
 import { wrapBlenderUnit, wrapMaxUnit } from './assembly-exporters.js';
 import { blenderStandardObjects, maxStandardObjects } from './standard-object-exporters';
@@ -40,7 +43,7 @@ import type { ReceptionConfig } from './reception.js';
 import { receptionExport } from './reception-exporters';
 import { counterDefaults, validateCounter } from './counter';
 import type { CounterConfig } from './counter';
-import { blenderCounters } from './counter-exporters';
+import { blenderCounters, maxCounters } from './counter-exporters';
 import { panelDefaults, validatePanel } from './panel';
 import { shelvingDefaults, validateShelving } from './shelving';
 import type { ShelvingConfig } from './shelving';
@@ -112,6 +115,7 @@ export const defaults: Config = {
     frontRotation: 0,
     cornerOpenSide: 'right',
     objectTransforms: {},
+    objectCopies: [],
     ...brandingDefaults,
     ...panelDefaults,
     ...showcaseDetailDefaults,
@@ -139,34 +143,12 @@ export const defaults: Config = {
     projectType: 'stand'
 };
 export function geometry(c: Config) {
-    const reception = receptionGeometry(c);
+    const base = structureLayout(c);
     return {
-        ledW: c.ledWidth,
-        ledH: c.ledHeight,
-        ledZ: 0.1 + c.ledBottom + c.ledHeight / 2,
-        counterW: c.counterWidth,
-        stageW: c.stageWidth,
-        stageD: c.stageDepth,
-        stageY: c.projectType === "palco"
-            ? c.depth / 2 - 0.7 - c.stageDepth / 2
-            : c.depth * 0.18,
-               counterY: reception
-            ? c.receptionRowY
-            : -c.depth * 0.28,
-
-        counterXs: reception
-            ? reception.counters.map(counter => counter.x)
-            : Array.from(
-                {
-                    length: Math.min(
-                        6,
-                        Math.max(0, c.counterCount || 0),
-                    ),
-                },
-                (_, i) =>
-                    (i - (c.counterCount - 1) / 2) *
-                    (c.counterWidth + 0.4),
-            ),
+        ledW: c.ledWidth, ledH: c.ledHeight, ledZ: .1 + c.ledBottom + c.ledHeight / 2,
+        counterW: c.counterWidth, stageW: c.stageWidth, stageD: c.stageDepth, stageY: base.stage.y,
+        counterY: c.projectType === 'reception' ? c.receptionRowY : -c.depth * .28,
+        counterXs: base.counters.map(t => t.x),
         totemXs: Array.from({ length: Math.min(6, Math.max(0, c.totemCount || 0)) }, (_, i) => (i - (c.totemCount - 1) / 2) *
             (c.totemWidth + 0.5)),
         totemY: -c.depth * 0.07,
@@ -183,6 +165,7 @@ export function geometry(c: Config) {
 function tableReservedAreas(
     c: Config,
     includeStorage = true,
+    includeMovableStructure = true,
 ): ReservedArea[] {    const g = geometry(c);
     const reserved: ReservedArea[] = [];
     function reserve(centerX: number, centerY: number, width: number, depth: number, clearance = 0.1) {
@@ -199,28 +182,26 @@ function tableReservedAreas(
     reserve(c.width / 2 - edgeMargin / 2, 0, edgeMargin, c.depth, 0);
     reserve(0, -c.depth / 2 + edgeMargin / 2, c.width, edgeMargin, 0);
     reserve(0, c.depth / 2 - edgeMargin / 2, c.width, edgeMargin, 0);
-    if (c.stage) {
-        reserve(0, g.stageY, c.stageWidth, c.stageDepth);
-    }
-    if (c.counter) {
-        for (const x of g.counterXs) {
-            reserve(x, g.counterY, c.counterWidth + 0.08, c.counterDepth + 0.08);
-        }
+    if (includeMovableStructure) {
+        const addStructure = (id: string, w: number, d: number) => {
+            const b = structureBounds(c, id, w, d);
+            reserve(b.centerX, b.centerY, b.width, b.depth);
+        };
+        if (c.stage) addStructure('stage:0', c.stageWidth, c.stageDepth);
+        if (c.counter) g.counterXs.forEach((_, i) => addStructure(`counter:${i}`, c.counterWidth + .08, c.counterDepth + .08));
     }
     if (c.totem) {
         for (const x of g.totemXs) {
             reserve(x, g.totemY, c.totemWidth + 0.15, c.totemDepth + 0.2);
         }
     }
-    if (c.led) {
-        const ledY = c.depth / 2 - 0.35;
-        // Projeção da moldura e da tela.
-        reserve(0, ledY, c.ledWidth + 0.12, 0.2);
-        // Bases dos suportes, quando não há parede de fundo.
-        if (!c.back) {
-            for (const sign of [-1, 1]) {
-                reserve(sign * c.ledWidth * 0.4, ledY, 0.45, 0.5);
-            }
+    if (c.led && includeMovableStructure) {
+        const unit = ledUnit(c);
+        for (const member of placedMembers(c, unit)) {
+            const a = member.rotation * Math.PI / 180;
+            reserve(member.x, member.y,
+                Math.abs(Math.cos(a)) * member.width + Math.abs(Math.sin(a)) * member.depth,
+                Math.abs(Math.sin(a)) * member.width + Math.abs(Math.cos(a)) * member.depth);
         }
     }
     if (c.spots) {
@@ -630,6 +611,9 @@ export function validate(c: Config) {
             throw new Error('As paredes não correspondem ao modelo do estande. Selecione o modelo novamente ou use Personalizado.');
     }
     checkTransforms(c.objectTransforms);
+    checkCopies(c.objectCopies);
+    if (c.objectCopies.length && (c.projectType === 'activation' || c.projectType === 'reception'))
+        throw new Error('Neste tipo de projeto, ajuste a quantidade nos parâmetros para recalcular as zonas e os percursos.');
     if (c.loungeMode !== 'free' && c.loungeMode !== 'set')
         throw new Error('Selecione um modo válido para o lounge.');
     if (!c.name.trim() || c.name.length > 80)
@@ -776,12 +760,6 @@ export function validate(c: Config) {
             );
         }
 
-        if (Object.keys(c.objectTransforms).length > 0) {
-            throw new Error(
-                'Os balcões da recepção ainda usam o ajuste da fileira. ' +
-                'Ajustes individuais não estão disponíveis nesta etapa.',
-            );
-        }
     }
     const g = geometry(c);
     const rects: {
@@ -792,10 +770,10 @@ export function validate(c: Config) {
         d: number;
     }[] = [];
     if (c.counter)
-        g.counterXs.forEach(x => rects.push({ label: 'balcão', x, y: g.counterY, w: c.counterWidth + .08, d: c.counterDepth + .08 }));
+        g.counterXs.forEach((x, i) => { if (!c.objectTransforms[`counter:${i}`]) rects.push({ label: 'balcão', x, y: g.counterY, w: c.counterWidth + .08, d: c.counterDepth + .08 }); });
     if (c.totem)
         g.totemXs.forEach(x => rects.push({ label: 'totem', x, y: g.totemY, w: c.totemWidth + .15, d: c.totemDepth + .2 }));
-    if (c.stage)
+    if (c.stage && !c.objectTransforms['stage:0'])
         rects.push({ label: 'palco', x: 0, y: g.stageY, w: c.stageWidth, d: c.stageDepth });
     for (const r of rects)
         if (Math.abs(r.x) + r.w / 2 > c.width / 2 - .2 || Math.abs(r.y) + r.d / 2 > c.depth / 2 - .5)
@@ -820,7 +798,15 @@ export function validate(c: Config) {
     coffeeTableGeometry(c);
     showcaseGeometry(c);
     extraObjectGeometry(c);
-    if (c.projectType !== 'activation' && Object.keys(c.objectTransforms).length) validateAssembly(c, assemblyGeometry(c), tableReservedAreas(c));
+    if (c.projectType !== 'activation' && (Object.keys(c.objectTransforms).length || c.objectCopies.length)) {
+        // Os limites de cada peça já são conferidos por validateAssembly.
+        const reserved = tableReservedAreas(c, true, false).slice(4);
+        const reception = receptionGeometry(c);
+        if (reception) reserved.push(...[...reception.zones, ...reception.details.footprints,
+            ...(reception.flow ? [reception.flow.queue, ...reception.flow.corridors] : [])]
+            .map(z => ({ centerX: z.x, centerY: z.y, width: z.width, depth: z.depth })));
+        validateAssembly(c, assemblyGeometry(c), reserved);
+    }
     validateFloorOccupancy(c);
     return c;
 }
@@ -870,10 +856,20 @@ function assemblyScript(c: Config): string {
     });
     const dining = { ...c, chairs: true, chairWidth: c.tableChairWidth, chairDepth: c.tableChairDepth,
         chairHeight: c.tableChairHeight, chairSeatHeight: c.tableChairSeatHeight };
-    return units.map(unit => {
+    return units.filter(unit => unit.sourceId || (!unit.id.startsWith('stage:') && !unit.id.startsWith('counter:') && unit.id !== 'led:0')).map(unit => {
         const roles = [...new Set(unit.members.map(m => m.role))];
         const code = roles.map(role => {
             const indices = unit.members.filter(m => m.role === role).map(m => m.index);
+            if (role === 'stage') return c.target === 'blender'
+                ? `palco_copia = caixa('Palco_Copia', (${c.stageWidth}, ${c.stageDepth}, ${c.stageHeight}), (${unit.x}, ${unit.y}, ${.1+c.stageHeight/2}), acabamento('${c.stageMat}'), .02)
+palco_copia['code_buddy_role'] = 'stage'`
+                : `local palcoCopia = cbCaixa "Palco_Copia" (${c.stageWidth}) (${c.stageDepth}) (${c.stageHeight}) (${unit.x}) (${unit.y}) (${.1+c.stageHeight/2}) (cbMaterial "${c.stageMat}")
+setUserProp palcoCopia "code_buddy_role" "stage"`;
+            if (role === 'counter') {
+                const template = { ...c, objectTransforms: { 'counter:0': { x: unit.x, y: unit.y, rotation: 0 } } };
+                return blender ? blenderCounters(template, [unit.x], unit.y) : maxCounters(template, [unit.x], unit.y);
+            }
+            if (role === 'led') return copiedLed(c, unit.x, unit.y);
             const layout = subset(scene[role], indices);
             // Os exportadores existentes precisam apenas das posições, rotação e contagem.
             const positions = { ...layout, generatedCount: indices.length, rows: 0 };
@@ -915,7 +911,7 @@ function assemblyScript(c: Config): string {
         const detailedShowcase = unit.id.startsWith('showcases:') && c.showcaseDetailed;
         const detailedShelf = unit.id.startsWith('shelving:') && c.shelfDetailed;
         return blender ? wrapBlenderUnit(unit, t, code) : wrapMaxUnit(unit, t, code, {
-            group: detailedShowcase || detailedShelf || (detailedPanel && c.projectType !== 'activation'),
+            group: !!unit.sourceId || detailedShowcase || detailedShelf || (detailedPanel && c.projectType !== 'activation'),
             preserveNames: detailedShowcase || detailedPanel || detailedShelf,
         });
     }).join('\n');
@@ -1205,6 +1201,7 @@ def tela_tv(largura, altura, y, z, mat):
     uv = mesh.uv_layers.new(name='UVMap')
     for i, valor in enumerate([(0,0), (1,0), (1,1), (0,1)]):
         uv.data[i].uv = valor
+    return obj
 
 def caixa(nome, dimensoes, posicao, mat, arredondar=0):
     bpy.ops.mesh.primitive_cube_add(size=1, location=posicao)
@@ -1253,7 +1250,18 @@ ${blenderFloor(c).split('\n').map(line => '    ' + line).join('\n')}
             caixa('Parede_' + nome, (0.15, PROFUNDIDADE, ALTURA), (sinal*(LARGURA/2 - 0.075), 0, ALTURA/2 + 0.1), acabamento(MATERIAL_PAREDES))
 
 def criar_elementos(branco, marca, escuro, tela):
-    if ADICIONAR_LED:
+${c.led && c.objectTransforms['led:0'] ? wrapBlenderUnit(ledUnit(c), structureTransform(c, 'led:0'), `largura_led = LED_LARGURA
+altura_led = LED_ALTURA
+y = PROFUNDIDADE/2 - 0.35
+z = 0.1 + LED_BASE + LED_ALTURA/2
+caixa('LED_Moldura', (largura_led + 0.12, 0.12, altura_led + 0.12), (0, y, z), escuro, 0.02)
+tela_tv(largura_led, altura_led, y - 0.075, z, tela)
+if ${ledHasSupports(c) ? 'True' : 'False'}:
+    for x in [-largura_led*0.4, largura_led*0.4]:
+        suporte_h = z - altura_led/2 - 0.1
+        caixa('LED_Suporte', (0.09, 0.09, suporte_h), (x, y, 0.1 + suporte_h/2), escuro)
+        caixa('LED_Base', (0.45, 0.5, 0.06), (x, y, 0.13), escuro)
+`).split('\n').map(line => '    ' + line).join('\n') : `    if ADICIONAR_LED:
         largura_led = LED_LARGURA
         altura_led = LED_ALTURA
         y = PROFUNDIDADE/2 - 0.35
@@ -1265,7 +1273,8 @@ def criar_elementos(branco, marca, escuro, tela):
                 suporte_h = z - altura_led/2 - 0.1
                 caixa('LED_Suporte', (0.09, 0.09, suporte_h), (x, y, 0.1 + suporte_h/2), escuro)
                 caixa('LED_Base', (0.45, 0.5, 0.06), (x, y, 0.13), escuro)
-${c.counterDetailed || c.counterArtEnabled ? blenderCounters(c, geometry(c).counterXs, geometry(c).counterY).split("\n").map(line => "    " + line).join("\n") : `    if ADICIONAR_BALCAO:
+`}
+${c.counterDetailed || c.counterArtEnabled || Object.keys(c.objectTransforms).some(id => id.startsWith('counter:')) ? blenderCounters(c, geometry(c).counterXs, geometry(c).counterY).split("\n").map(line => "    " + line).join("\n") : `    if ADICIONAR_BALCAO:
         for i in range(BALCOES):
             x = [${geometry(c).counterXs.join(', ')}][i]
             y = ${geometry(c).counterY}
@@ -1273,7 +1282,10 @@ ${c.counterDetailed || c.counterArtEnabled ? blenderCounters(c, geometry(c).coun
             caixa('Balcao_Tampo', (BALCAO_LARGURA+.08, BALCAO_PROFUNDIDADE+.08, .06), (x, y, .1+BALCAO_ALTURA-.03), branco, .02)
 `}
     if ADICIONAR_PALCO:
-        caixa('Palco', (PALCO_LARGURA, PALCO_PROFUNDIDADE, PALCO_ALTURA), (0, ${geometry(c).stageY}, .1+PALCO_ALTURA/2), acabamento(MATERIAL_PALCO), .02)
+        palco_obj = caixa('Palco', (PALCO_LARGURA, PALCO_PROFUNDIDADE, PALCO_ALTURA), (${structureTransform(c, 'stage:0').x}, ${structureTransform(c, 'stage:0').y}, .1+PALCO_ALTURA/2), acabamento(MATERIAL_PALCO), .02)
+        palco_obj.rotation_euler.z = ${structureTransform(c, 'stage:0').rotation * Math.PI / 180}
+        palco_obj['code_buddy_id'] = 'stage:0'
+        palco_obj['code_buddy_role'] = 'stage'
     if ADICIONAR_TOTEM:
         for i in range(TOTENS):
             x = (i - (TOTENS-1)/2)*(TOTEM_LARGURA + .5)

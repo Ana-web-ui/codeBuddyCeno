@@ -1,25 +1,28 @@
 import type { Config } from './generator';
+import { ledUnit } from './led-layout';
+import { structureLayout } from './structure-layout';
 import { activationGeometry } from './activation-geometry';
 import { extraObjectDefinitions, extraObjectSpec } from './library.js';
 import type { ReservedArea } from './library.js';
 
 export type ObjectTransform = { x: number; y: number; rotation: number };
-export type AssemblyConfig = { objectTransforms: Record<string, ObjectTransform> };
-export type AssemblyRole = 'samplingStations' | 'demoStations' | 'roundTables' | 'rectTables' | 'bistroTables' | 'tableChairs' | 'stools' | 'pedestals' | 'armchairs' | 'puffs' | 'coffeeTables' | 'showcases' | typeof extraObjectDefinitions[number]['id'];
+export type ObjectCopy = { id: number; sourceId: string };
+export type AssemblyConfig = { objectTransforms: Record<string, ObjectTransform>; objectCopies: ObjectCopy[] };
+export type AssemblyRole = 'led' | 'stage' | 'counter' | 'samplingStations' | 'demoStations' | 'roundTables' | 'rectTables' | 'bistroTables' | 'tableChairs' | 'stools' | 'pedestals' | 'armchairs' | 'puffs' | 'coffeeTables' | 'showcases' | typeof extraObjectDefinitions[number]['id'];
 export type AssemblyMember = {
     role: AssemblyRole; index: number; x: number; y: number; rotation: number;
     width: number; depth: number; circle: boolean; material: Config['floorMat'];
 };
 export type AssemblyUnit = {
-    rotation: number; id: string; label: string; x: number; y: number; floor: boolean; members: AssemblyMember[] 
+    sourceId?: string; rotation: number; id: string; label: string; x: number; y: number; floor: boolean; members: AssemblyMember[] 
 };
 type Layout = { positions: [number, number][]; rotations?: number[] };
-export type AssemblyScene = Record<AssemblyRole, Layout>;
+export type AssemblyScene = Record<Exclude<AssemblyRole, 'led' | 'stage' | 'counter'>, Layout>;
 
 /** Identidade por tipo e índice; conjuntos mantêm seus assentos vinculados à mesa. */
 export function buildAssembly(c: Config, scene: AssemblyScene): AssemblyUnit[] {
     const units: AssemblyUnit[] = [];
-    function member(role: AssemblyRole, index: number): AssemblyMember {
+    function member(role: Exclude<AssemblyRole, 'led' | 'stage' | 'counter'>, index: number): AssemblyMember {
         const [x, y] = scene[role].positions[index];
         const common = { role, index, x, y, rotation: (scene[role].rotations?.[index] ?? 0) * 180 / Math.PI };
         const shape = (width: number, depth: number, material: Config['floorMat'], circle = false): AssemblyMember => ({ ...common, width, depth, material, circle });
@@ -42,7 +45,7 @@ export function buildAssembly(c: Config, scene: AssemblyScene): AssemblyUnit[] {
             }
         }
     }
-    function add(role: AssemblyRole, label: string, children?: (i: number) => AssemblyMember[]) {
+    function add(role: Exclude<AssemblyRole, 'led' | 'stage' | 'counter'>, label: string, children?: (i: number) => AssemblyMember[]) {
         scene[role].positions.forEach(([x, y], i) => units.push({
             id: `${role}:${i}`, label: `${label} ${i + 1}`, x, y, floor: role === 'roundRugs', members: [member(role, i), ...(children?.(i) ?? [])],
             rotation: 0
@@ -78,6 +81,20 @@ export function buildAssembly(c: Config, scene: AssemblyScene): AssemblyUnit[] {
             if (station) { unit.rotation = station.rotation; unit.label = c.activationModel === 'sampling' ? 'Experimentação e amostras' : c.activationModel === 'demo' ? 'Demonstração de produto' : c.activationModel === 'photo' ? 'Espaço para fotos' : `Estação de interação ${Number(unit.id.split(':')[1]) + 1}`; }
         }
     }
+    const base = structureLayout(c);
+    const structural = (role: 'stage' | 'counter', label: string, index: number, x: number, y: number, width: number, depth: number, material: Config['floorMat']) => units.push({
+        id: `${role}:${index}`, label, x, y, rotation: 0, floor: false,
+        members: [{ role, index, x, y, rotation: 0, width, depth, circle: false, material }],
+    });
+    if (c.stage) structural('stage', 'Palco', 0, base.stage.x, base.stage.y, c.stageWidth, c.stageDepth, c.stageMat);
+    if (c.counter) base.counters.forEach((t, i) => structural('counter', `Balcão ${i + 1}`, i, t.x, t.y, c.counterWidth + .08, c.counterDepth + .08, c.counterMat));
+    if (c.led) units.push(ledUnit(c));
+    const originals = [...units];
+    for (const copy of c.objectCopies) {
+        const source = originals.find(unit => unit.id === copy.sourceId);
+        if (source) units.push({ ...source, id: `copy:${copy.id}`, sourceId: source.id,
+            label: `${source.label} · cópia ${copy.id}`, members: (source.id === 'led:0' ? ledUnit({ ...c, objectTransforms: { ...c.objectTransforms, 'led:0': { x: source.x, y: source.y, rotation: 0 } } }).members : source.members).map(m => ({ ...m })) });
+    }
     return units;
 }
 
@@ -102,6 +119,18 @@ export function checkTransforms(value: unknown): asserts value is AssemblyConfig
     }
 }
 
+export function checkCopies(value: unknown): asserts value is ObjectCopy[] {
+    if (!Array.isArray(value) || value.length > 100) throw new Error('Use até 100 cópias no projeto.');
+    const ids = new Set<number>();
+    for (const copy of value) {
+        if (!copy || typeof copy !== 'object' || Array.isArray(copy) || Object.keys(copy).length !== 2 ||
+            !Number.isInteger(copy.id) || copy.id < 1 || copy.id > 999 || ids.has(copy.id) ||
+            typeof copy.sourceId !== 'string' || !/^[A-Za-z]+:\d{1,3}$/.test(copy.sourceId) || copy.sourceId.startsWith('copy:'))
+            throw new Error('Os dados das cópias são inválidos.');
+        ids.add(copy.id);
+    }
+}
+
 type Point = [number, number];
 function corners(m: AssemblyMember): Point[] {
     const a = (m.circle ? 0 : m.rotation) * Math.PI / 180, cos = Math.cos(a), sin = Math.sin(a);
@@ -122,19 +151,30 @@ function intersects(a: AssemblyMember, b: AssemblyMember): boolean {
 
 export function validateAssembly(c: Config, units: AssemblyUnit[], reserved: ReservedArea[]): void {
     checkTransforms(c.objectTransforms);
+    checkCopies(c.objectCopies);
     const ids = new Set(units.map(u => u.id));
+    for (const copy of c.objectCopies) if (!ids.has(copy.sourceId) || !c.objectTransforms[`copy:${copy.id}`])
+        throw new Error('Uma cópia perdeu o objeto de origem ou sua posição. Restaure a distribuição.');
     for (const id of Object.keys(c.objectTransforms)) if (!ids.has(id)) throw new Error('Um objeto ajustado não existe mais. Restaure a distribuição automática.');
     if (!Object.keys(c.objectTransforms).length) return;
     const placed = units.map(u => placedMembers(c, u));
     const fixed: AssemblyMember[] = reserved.map(a => ({ role: 'pedestals', index: 0, x: a.centerX, y: a.centerY, width: a.width, depth: a.depth, rotation: 0, circle: false, material: 'white' }));
+    // Paredes continuam fixas, inclusive quando o LED ganha suportes próprios.
+    const wall = (x: number, y: number, width: number, depth: number) => fixed.push({
+        role: 'pedestals', index: 0, x, y, width, depth, rotation: 0, circle: false, material: 'white',
+    });
+    if (c.back) wall(0, c.depth / 2 - .075, c.width, .15);
+    if (c.left) wall(-c.width / 2 + .075, 0, .15, c.depth);
+    if (c.right) wall(c.width / 2 - .075, 0, .15, c.depth);
     units.forEach((unit, i) => {
         if (!Object.hasOwn(c.objectTransforms, unit.id)) return;
         for (const m of placed[i]) {
-            if (corners(m).some(([x, y]) => Math.abs(x) > c.width / 2 - .2 + 1e-8 || Math.abs(y) > c.depth / 2 - .2 + 1e-8)) {
-                throw new Error(`${unit.label}: o ajuste ultrapassa a área disponível e a margem de 20 cm.`);
+            const margin = unit.members[0]?.role === 'led' ? .1 : .2;
+            if (corners(m).some(([x, y]) => Math.abs(x) > c.width / 2 - margin + 1e-8 || Math.abs(y) > c.depth / 2 - margin + 1e-8)) {
+                throw new Error(`${unit.label}: o ajuste ultrapassa a área disponível e a margem de ${margin * 100} cm.`);
             }
             if (unit.floor) continue;
-            if (fixed.some(a => intersects(m, a))) throw new Error(`${unit.label}: essa posição ocupa uma área reservada ao palco, plateia ou estrutura fixa.`);
+            if (fixed.some(a => intersects(m, a))) throw new Error(`${unit.label}: essa posição ocupa uma área reservada à plateia, circulação ou estrutura fixa.`);
             units.forEach((other, j) => {
                 if (i === j || other.floor) return;
                 if (placed[j].some(b => intersects(m, b))) throw new Error(`${unit.label}: há sobreposição com ${other.label}.`);

@@ -1,3 +1,4 @@
+import type { AssemblyConfig } from './assembly';
 import { receptionFinishDefaults, receptionDetails, validateReceptionFinishFields } from './reception-finish';
 import type { ReceptionFinishConfig } from './reception-finish';
 
@@ -35,7 +36,7 @@ export const receptionDefaults: ReceptionConfig = {
     receptionSideAccessWidth: 1.2,
 };
 
-type ReceptionInput = ReceptionConfig & {
+type ReceptionInput = ReceptionConfig & Partial<AssemblyConfig> & {
     projectType: string;
     width: number;
     depth: number;
@@ -79,8 +80,8 @@ function receptionFlow(
     const sign = c.receptionExitSide === 'left' ? -1 : 1;
 
     // Fila e saída ocupam lados opostos da faixa pública.
-    const queueX = -sign * (rowWidth - width) / 2;
-    const exitX = sign * (rowWidth - width) / 2;
+    const queueX = service.x - sign * (rowWidth - width) / 2;
+    const exitX = service.x + sign * (rowWidth - width) / 2;
 
     const serviceFront = service.y - service.depth / 2;
     const distributionY = serviceFront + width / 2;
@@ -192,10 +193,6 @@ export function receptionGeometry(c: ReceptionInput) {
     const count = Math.min(6, Math.max(0, Math.trunc(c.counterCount)));
 
     const pitch = counterWidth + c.receptionCounterGap;
-    const rowWidth =
-        count * counterWidth +
-        Math.max(0, count - 1) * c.receptionCounterGap;
-
     const counters = Array.from({ length: count }, (_, index) => ({
         id: `receptionCounter:${index}`,
         name: `Balcão ${index + 1}`,
@@ -203,28 +200,29 @@ export function receptionGeometry(c: ReceptionInput) {
         y: c.receptionRowY,
         width: counterWidth,
         depth: counterDepth,
+        ...(c.objectTransforms?.[`counter:${index}`] ?? {}),
     }));
+    const minX = Math.min(...counters.map(b => b.x - b.width / 2));
+    const maxX = Math.max(...counters.map(b => b.x + b.width / 2));
+    const minY = Math.min(...counters.map(b => b.y - b.depth / 2));
+    const maxY = Math.max(...counters.map(b => b.y + b.depth / 2));
+    const centerX = (minX + maxX) / 2;
+    const occupiedWidth = maxX - minX;
 
     // No projeto, Y negativo aponta para a frente.
     const service: ReceptionZone = {
         name: 'Atendimento',
-        x: 0,
-        y:
-            c.receptionRowY -
-            counterDepth / 2 -
-            c.receptionServiceDepth / 2,
-        width: rowWidth,
+        x: centerX,
+        y: minY - c.receptionServiceDepth / 2,
+        width: occupiedWidth,
         depth: c.receptionServiceDepth,
     };
 
     const team: ReceptionZone = {
         name: 'Equipe',
-        x: 0,
-        y:
-            c.receptionRowY +
-            counterDepth / 2 +
-            c.receptionTeamDepth / 2,
-        width: rowWidth,
+        x: centerX,
+        y: maxY + c.receptionTeamDepth / 2,
+        width: occupiedWidth,
         depth: c.receptionTeamDepth,
     };
 
@@ -233,18 +231,18 @@ export function receptionGeometry(c: ReceptionInput) {
 
     const sideAccesses: ReceptionZone[] = [-1, 1].map(sign => ({
         name: sign < 0 ? 'Acesso esquerdo' : 'Acesso direito',
-        x: sign * (rowWidth / 2 + c.receptionSideAccessWidth / 2),
+        x: centerX + sign * (occupiedWidth / 2 + c.receptionSideAccessWidth / 2),
         y: (front + back) / 2,
         width: c.receptionSideAccessWidth,
         depth: back - front,
     }));
 
     const flow = c.receptionQueueEnabled
-        ? receptionFlow(c, rowWidth, service, counters) : null;
+        ? receptionFlow(c, occupiedWidth, service, counters) : null;
     const details = receptionDetails(c, { service, team, flow });
     return {
         counters,
-        rowWidth,
+        rowWidth: occupiedWidth,
         service,
         team,
         sideAccesses,
@@ -328,7 +326,17 @@ export function validateReception(c: ReceptionInput) {
             );
         }
     }
+    for (const [id, t] of Object.entries(c.objectTransforms ?? {})) {
+        if (id.startsWith('counter:') && Math.abs(t.rotation) > 1e-7)
+            throw new Error('Na recepção, mantenha a rotação dos balcões em 0° para preservar atendimento, equipe e fila.');
+    }
     const layout = receptionGeometry(c)!;
+    for (let i = 0; i < layout.counters.length; i++) for (let j = i + 1; j < layout.counters.length; j++) {
+        const a = layout.counters[i], b = layout.counters[j];
+        if (Math.abs(a.x - b.x) < (a.width + b.width) / 2 + .1 - 1e-7 &&
+            Math.abs(a.y - b.y) < (a.depth + b.depth) / 2 + .1 - 1e-7)
+            throw new Error(`${a.name}: mantenha pelo menos 10 cm de distância dos outros balcões.`);
+    }
     const margin = 0.5;
     const epsilon = 1e-7;
 

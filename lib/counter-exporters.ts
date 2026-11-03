@@ -1,3 +1,4 @@
+import { structureTransform } from './structure-layout';
 import { blenderArtwork, maxArtwork } from './branding-exporters';
 import type { Config } from './generator';
 import { counterParts } from './counter';
@@ -8,6 +9,7 @@ export function blenderCounters(c: Config, xs: number[], y: number): string {
     const parts = counterParts(c);
     return xs.map((x, index) => {
         const prefix = `Balcao_${String(index + 1).padStart(2, '0')}`;
+        const t = structureTransform(c, `counter:${index}`);
         return `
 raiz_balcao = organizar(bpy.data.objects.new(colecao.name + '_${prefix}', None))
 raiz_balcao.location = (${x}, ${y}, .1)
@@ -24,6 +26,9 @@ matriz_balcao = peca_balcao.matrix_world.copy()
 peca_balcao.parent = raiz_balcao
 peca_balcao.matrix_world = matriz_balcao
 ${p.role === 'counter_body' ? blenderArtwork(c, 'counterArt', 'peca_balcao') : ''}`).join('\n')}
+bpy.context.view_layer.update()
+raiz_balcao.location = (${t.x}, ${t.y}, .1)
+raiz_balcao.rotation_euler.z = ${t.rotation * Math.PI / 180}
 `;
     }).join('\n');
 }
@@ -33,6 +38,7 @@ export function maxCounters(c: Config, xs: number[], y: number): string {
     const parts = counterParts(c);
     return xs.map((x, index) => {
         const prefix = `Balcao_${String(index + 1).padStart(2, '0')}`;
+        const t = structureTransform(c, `counter:${index}`);
         return `
 (
     local raizBalcao = cbRegistrar (Dummy name:(nomeGeracao+"_${prefix}") pos:[${x}*METRO,${y}*METRO,.1*METRO])
@@ -44,6 +50,8 @@ ${parts.map(p => `    local pecaBalcao = cbCaixa "${prefix}_${p.name}" ${p.size.
     setUserProp pecaBalcao "code_buddy_role" "${p.role}"
     pecaBalcao.parent = raizBalcao
 ${p.role === 'counter_body' ? maxArtwork(c, 'counterArt', 'pecaBalcao') : ''}`).join('\n')}
+    raizBalcao.rotation = angleaxis ${t.rotation} [0,0,1]
+    raizBalcao.pos = [${t.x}*METRO,${t.y}*METRO,.1*METRO]
 )
 `;
     }).join('\n');

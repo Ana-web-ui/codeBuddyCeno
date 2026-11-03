@@ -80,7 +80,7 @@ export function receptionDetails(c: ReceptionFinishConfig, layout: Layout) {
     }
 
     const sign = c.receptionSignEnabled ? {
-        name: 'Sinalização', x: 0,
+        name: 'Sinalização', x: layout.team.x,
         y: layout.team.y + layout.team.depth / 2 + .15 + .225,
         width: Math.max(.5, c.receptionSignWidth), depth: .45,
         text: c.receptionSignText,
@@ -88,11 +88,11 @@ export function receptionDetails(c: ReceptionFinishConfig, layout: Layout) {
     } : null;
     if (sign) {
         footprints.push(sign);
-        add('placa_base', 'reception_sign_base', 'sign', [.5, .45, .06], [0, sign.y, .13], c.receptionBarrierMat);
+        add('placa_base', 'reception_sign_base', 'sign', [.5, .45, .06], [sign.x, sign.y, .13], c.receptionBarrierMat);
         add('placa_suporte', 'reception_sign_support', 'sign', [.08, .08, c.receptionSignHeight - .51],
-            [0, sign.y, .16 + (c.receptionSignHeight - .51) / 2], c.receptionBarrierMat);
+            [sign.x, sign.y, .16 + (c.receptionSignHeight - .51) / 2], c.receptionBarrierMat);
         add('placa_painel', 'reception_sign_panel', 'sign', [c.receptionSignWidth, .06, .45],
-            [0, sign.y, sign.z], c.receptionSignMat);
+            [sign.x, sign.y, sign.z], c.receptionSignMat);
     }
     return { parts, footprints, posts, belts, sign };
 }

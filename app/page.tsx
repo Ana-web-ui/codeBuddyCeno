@@ -1,4 +1,9 @@
 'use client';
+import FreeSceneEditor from '@/components/free-scene-editor';
+import { duplicateObject, deleteCopy } from '@/lib/editor-operations';
+import { useProjectHistory } from '@/components/use-project-history';
+import { EditorToolbar } from '@/components/editor-toolbar';
+import type { EditorTool } from '@/components/editor-toolbar';
 import { floorOutline, floorArea } from '@/lib/presentation';
 import { BrandingControls } from '@/components/branding-controls';
 import { PresentationControls } from '@/components/presentation-controls';
@@ -333,13 +338,15 @@ function dragPosition(x: number, y: number, rotation: number, snap: boolean): Ob
 function release(session: PlanDragSession) {
     if (session.svg.hasPointerCapture(session.pointerId)) session.svg.releasePointerCapture(session.pointerId);
 }
-function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
+function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop, tool='move', zoom=1, pan={x:0,y:0}, onPan }: {
+    tool?: EditorTool; zoom?: number; pan?: {x:number;y:number}; onPan?: (pan:{x:number;y:number})=>void;
     c: Config; selectedId?: string | null; onSelect?: (id: string) => void; snap?: boolean;
     onDragPreview?: (preview: DragPreview | null) => void;
     onDrop?: (id: string, transform: ObjectTransform) => void;
 }) {
     const [drag, setDrag] = useState<DragPreview | null>(null);
     const dragSession = useRef<PlanDragSession | null>(null);
+    const panSession = useRef<{pointerId:number;x:number;y:number;pan:{x:number;y:number};a:number;c:number;b:number;d:number}|null>(null);
     // Use current callbacks when a session ends during effect cleanup.
     const dragCallback = useRef(onDragPreview);
     useLayoutEffect(() => { dragCallback.current = onDragPreview; }, [onDragPreview]);
@@ -352,8 +359,8 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
     }, []);
     useEffect(() => {
         const session = dragSession.current;
-        if (session && (session.config !== c || (selectedId != null && selectedId !== session.id))) cancelDrag();
-    }, [c, selectedId, cancelDrag]);
+        if (session && (tool !== 'move' || session.config !== c || (selectedId != null && selectedId !== session.id))) cancelDrag();
+    }, [c, selectedId, tool, cancelDrag]);
     useEffect(() => () => {
         const session = dragSession.current;
         dragSession.current = null;
@@ -368,6 +375,8 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
         return planPoint(c, local.x, local.y);
     }
     function startDrag(event: ReactPointerEvent<SVGGElement>, id: string, original: ObjectTransform) {
+        if (tool === 'hand') return;
+        if (tool === 'select') { event.preventDefault(); event.stopPropagation(); onSelect?.(id); return; }
         if (!onDrop || event.button !== 0 || !event.isPrimary || dragSession.current) return;
         const svg = event.currentTarget.ownerSVGElement;
         if (!svg) return;
@@ -421,9 +430,9 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
         const t = drag?.id === unit.id ? drag.transform : unitTransform(c, unit), selected = selectedId === unit.id;
         const stroke = drag?.id === unit.id && drag.error ? '#ff6575' : selected ? '#ffce57' : '#dce6ff';
         return <g key={unit.id} role="button" tabIndex={0} aria-label={`Selecionar ${unit.label}`} aria-pressed={selected}
-          onClick={() => onSelect?.(unit.id)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect?.(unit.id); } }}
+          onClick={() => { if(tool!=='hand') onSelect?.(unit.id); }} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect?.(unit.id); } }}
           onPointerDown={event => startDrag(event, unit.id, unitTransform(c, unit))}
-          style={{ cursor: drag?.id === unit.id ? 'grabbing' : 'grab', touchAction: 'none' }} transform={`translate(${px(t.x)} ${py(t.y)}) rotate(${-t.rotation})`}>
+          style={{ cursor: tool === 'hand' ? 'grab' : tool === 'select' ? 'pointer' : drag?.id === unit.id ? 'grabbing' : 'grab', touchAction: 'none' }} transform={`translate(${px(t.x)} ${py(t.y)}) rotate(${-t.rotation})`}>
           <title>{`${unit.label} — arraste para mover ou clique para ajustar`}</title>
           {unit.members.map(m => {
               const mx = (m.x - unit.x) * s, my = -(m.y - unit.y) * s;
@@ -447,7 +456,7 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
                 {!m.circle && <path d={`M ${-m.width * s / 3} ${-m.depth * s / 2} H ${m.width * s / 3}`} stroke="#fff" strokeWidth="2" />}
               </g>;
           })}
-          <PlanText counterRotation={t.rotation} x="0" y={unit.id.startsWith('samplingStations:') ? -(c.samplingCounterDepth+.08)*s/2-5 : unit.id.startsWith('demoStations:') ? -(c.demoBenchDepth+.08)*s/2-5 : 3} textAnchor="middle" fontSize="9" fill={selected ? '#ffce57' : (unit.id.startsWith('demoStations:')||unit.id.startsWith('samplingStations:')||(unit.id.startsWith('backdrops:')&&c.backdropDetailed)) ? '#e5edf9' : '#101827'} stroke={selected || (unit.id.startsWith('backdrops:')&&c.backdropDetailed) ? '#101827' : 'none'} strokeWidth="1.5" paintOrder="stroke">{c.projectType === 'activation' && c.activationModel === 'sampling' ? 'ENTREGA' : c.projectType === 'activation' && c.activationModel === 'demo' ? 'DEMO' : c.projectType === 'activation' && c.activationModel === 'photo' ? 'FOTO' : unit.label.replace(/ [0-9]+$/, '').slice(0, 2).toUpperCase() + (Number(unit.id.split(':')[1]) + 1)}</PlanText>
+          <PlanText counterRotation={t.rotation} x="0" y={unit.id.startsWith('samplingStations:') ? -(c.samplingCounterDepth+.08)*s/2-5 : unit.id.startsWith('demoStations:') ? -(c.demoBenchDepth+.08)*s/2-5 : 3} textAnchor="middle" fontSize="9" fill={selected ? '#ffce57' : (unit.id.startsWith('demoStations:')||unit.id.startsWith('samplingStations:')||(unit.id.startsWith('backdrops:')&&c.backdropDetailed)) ? '#e5edf9' : '#101827'} stroke={selected || (unit.id.startsWith('backdrops:')&&c.backdropDetailed) ? '#101827' : 'none'} strokeWidth="1.5" paintOrder="stroke">{c.projectType === 'activation' && c.activationModel === 'sampling' ? 'ENTREGA' : c.projectType === 'activation' && c.activationModel === 'demo' ? 'DEMO' : c.projectType === 'activation' && c.activationModel === 'photo' ? 'FOTO' : unit.sourceId ? `${unit.label.split(' · ')[0].slice(0, 9)}′` : unit.id === 'led:0' ? 'LED' : unit.id === 'stage:0' ? 'Palco' : unit.id.startsWith('counter:') ? `B${Number(unit.id.split(':')[1]) + 1}` : unit.label.replace(/ [0-9]+$/, '').slice(0, 2).toUpperCase() + (Number(unit.id.split(':')[1]) + 1)}</PlanText>
         </g>;
     });
     const g = geometry(c);
@@ -541,10 +550,22 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
         x: Math.max(5, Math.min(390, 300 + labelX * Math.cos(angle) + labelY * Math.sin(angle) + 12)),
         y: Math.max(20, Math.min(398, 195 - labelX * Math.sin(angle) + labelY * Math.cos(angle) - 16)),
     };
-    return <svg viewBox="0 0 600 430" role="group" tabIndex={0}
-      onPointerMove={moveDrag} onPointerUp={endDrag}
-      onPointerCancel={event => { if (dragSession.current?.pointerId === event.pointerId) cancelDrag(); }}
-      onLostPointerCapture={event => { if (dragSession.current?.pointerId === event.pointerId) cancelDrag(); }}
+    return <svg viewBox={`${300-300/zoom+pan.x} ${215-215/zoom+pan.y} ${600/zoom} ${430/zoom}`} role="group" tabIndex={0}
+      onPointerDown={event=>{
+        if(tool!=='hand' || event.button!==0) return;
+        const inverse=event.currentTarget.getScreenCTM()?.inverse(); if(!inverse) return;
+        event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId);
+        panSession.current={pointerId:event.pointerId,x:event.clientX,y:event.clientY,pan:{...pan},a:inverse.a,b:inverse.b,c:inverse.c,d:inverse.d};
+      }}
+      onPointerMove={event=>{
+        const session=panSession.current;
+        if(session && session.pointerId===event.pointerId) {
+          const dx=event.clientX-session.x,dy=event.clientY-session.y;
+          onPan?.({x:session.pan.x-dx*session.a-dy*session.c,y:session.pan.y-dx*session.b-dy*session.d});
+        } else moveDrag(event);
+      }} onPointerUp={event=>{ if(panSession.current) {panSession.current=null; if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);} else endDrag(event); }}
+      onPointerCancel={event => { panSession.current=null; if (dragSession.current?.pointerId === event.pointerId) cancelDrag(); }}
+      onLostPointerCapture={event => { panSession.current=null; if (dragSession.current?.pointerId === event.pointerId) cancelDrag(); }}
       onKeyDown={event => { if (event.key === 'Escape' && dragSession.current) { event.preventDefault(); cancelDrag(); } }}
       style={{ userSelect: 'none' }} aria-label={`Planta esquemática da área de montagem de ${num(c.width)} por ${num(c.depth)} metros`}>
       <defs><pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M 20 0 L 0 0 0 20" fill="none" stroke="#252d40" strokeWidth=".5"/></pattern></defs>
@@ -601,8 +622,6 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
     {c.back && <rect x={x} y={y} width={w} height={Math.max(5, .15 * s)} fill={c.wallMat === 'brand' ? c.color : materials.find(m => m.value === c.wallMat)?.color}/>}
     {c.left && <rect x={x} y={y} width={Math.max(5, .15 * s)} height={h} fill={c.wallMat === 'brand' ? c.color : materials.find(m => m.value === c.wallMat)?.color}/>}
     {c.right && <rect x={x + w - Math.max(5, .15 * s)} y={y} width={Math.max(5, .15 * s)} height={h} fill={c.wallMat === 'brand' ? c.color : materials.find(m => m.value === c.wallMat)?.color}/>}
-    {c.led && <g><rect x={px(-g.ledW / 2)} y={py(c.depth / 2 - .35) - 4} width={g.ledW * s} height="8" rx="2" fill={c.color}/><PlanText x="300" y={y + 32} textAnchor="middle" fill="#cdd7ec" fontSize="13">LED</PlanText></g>}
-    {c.stage && <g><rect x={px(-g.stageW / 2)} y={py(g.stageY + g.stageD / 2)} width={g.stageW * s} height={g.stageD * s} rx="2" fill={c.stageMat === 'brand' ? c.color : materials.find(m => m.value === c.stageMat)?.color} stroke="#78859d"/><PlanText x="300" y={py(g.stageY) + 5} textAnchor="middle" fill="#d0daee" fontSize="13">Palco</PlanText></g>}
     {c.chairs && (<g aria-label={`${seating.positions.length} cadeiras`}>
     {seating.positions.map(([cx, cy], index) => (<rect key={index} x={px(cx - c.chairWidth / 2)} y={py(cy + c.chairDepth / 2)} width={c.chairWidth * s} height={c.chairDepth * s} fill={c.color} stroke="#dce6ff" strokeWidth="0.5"/>))}
   </g>)}
@@ -757,7 +776,6 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
             <PlanText counterRotation={model.rotation} x="0" y="3" textAnchor="middle" fontSize="9" fill="#e5edf9" stroke="#101827" strokeWidth="2" paintOrder="stroke">{`3D${model.id}`}</PlanText>
         </g>;
     })}
-    {c.counter && g.counterXs.map((cx, i) => <g key={i}><title>{"Balcão " + (i + 1)}</title><rect x={px(cx - (g.counterW + .08) / 2)} y={py(g.counterY + (c.counterDepth + .08) / 2)} width={(g.counterW + .08) * s} height={(c.counterDepth + .08) * s} rx="3" fill={c.counterMat === 'brand' ? c.color : materials.find(m => m.value === c.counterMat)?.color}/><PlanText x={px(cx)} y={py(g.counterY) + 4} textAnchor="middle" fill="white" fontSize={c.projectType === 'reception' ? '10' : '12'}>{c.projectType === 'reception' ? `B${i + 1}` : 'Balcão'}</PlanText></g>)}
     {c.totem && g.totemXs.map((tx, i) => <g key={i}><rect x={px(tx - (c.totemWidth + .15) / 2)} y={py(g.totemY + (c.totemDepth + .2) / 2)} width={(c.totemWidth + .15) * s} height={(c.totemDepth + .2) * s} rx="2" fill={c.totemMat === 'brand' ? c.color : materials.find(m => m.value === c.totemMat)?.color}/><PlanText x={px(tx)} y={py(g.totemY) + 27} textAnchor="middle" fill="#cdd7ec" fontSize="12">Totem</PlanText></g>)}
     {c.spots && [-1, 1].map(sign => <g key={sign}><path d={`M ${px(sign * (c.width / 2 - .35))} ${py(c.depth / 2 - .25)} V ${py(-c.depth / 2 + .25)}`} stroke="#b49a67" strokeWidth="2"/>{g.spotYs.map((sy, i) => <circle key={i} cx={px(sign * (c.width / 2 - .35))} cy={py(sy)} r="4" fill="#f0ca85"/>)}</g>)}
     {reception && <g pointerEvents="none" aria-label="Rótulos da recepção">
@@ -776,9 +794,19 @@ function Plan({ c, selectedId, onSelect, snap = true, onDragPreview, onDrop }: {
   </svg>;
 }
 export default function Home() {
+    const [mode,setMode]=useState<'free'|'guided'>('free');
+    const [guidedStarted,setGuidedStarted]=useState(false);
+    return <><div hidden={mode!=='free'}><FreeSceneEditor onGuided={()=>{setGuidedStarted(true);setMode('guided');}}/></div>
+      {guidedStarted && <div hidden={mode!=='guided'}><GuidedEditor active={mode==='guided'} onFree={()=>setMode('free')}/></div>}</>;
+}
+function GuidedEditor({onFree,active}:{onFree:()=>void;active:boolean}) {
     const [confirmedPartial, setConfirmedPartial] = useState<{ config: Config; key: string } | null>(null);
     const confirmedPartialRef = useRef<string | null>(null);
-    const [c, setC] = useState<Config>(() => createProjectConfig("stand"));
+    const { config: c, setConfig: setC, undo, redo, canUndo, canRedo } = useProjectHistory(() => createProjectConfig('stand'));
+    const [tool, setTool] = useState<EditorTool>('move');
+    const [inspector, setInspector] = useState<'project' | 'object' | 'layers'>('project');
+    const [zoom, setZoom] = useState(1);
+    const [pan, setPan] = useState({x:0,y:0});
     const projectDrafts = useRef<Record<ProjectType, Config>>({
         stand: createProjectConfig('stand'),
         palco: createProjectConfig('palco'),
@@ -841,12 +869,13 @@ export default function Home() {
             : { x: '', y: '', rotation: '' };
     function selectUnit(id: string | null) {
         setSelectedId(id);
+        if (id) setInspector('object');
         setEditedTransform(null);
         setAssemblyError('');
     }
     function commitTransforms(transforms: Config['objectTransforms']) {
         try {
-            const next = { ...c, objectTransforms: transforms };
+            const next = { ...c, objectCopies: Object.keys(transforms).length ? c.objectCopies : [], objectTransforms: transforms };
             validate(next);
             setC(next);
             setAssemblyError(''); setError('');
@@ -872,6 +901,41 @@ export default function Home() {
     function resetSelectedTransform() {
         if (!selectedUnit) return;
         const next = { ...c.objectTransforms }; delete next[selectedUnit.id]; commitTransforms(next);
+    }
+    const duplicateReason = !selectedUnit ? 'Selecione um objeto na planta.'
+        : c.projectType === 'activation' || c.projectType === 'reception'
+            ? 'Neste projeto, altere a quantidade nos parâmetros para recalcular as zonas e os percursos.' : '';
+    function duplicateSelected() {
+        if (!selectedUnit || dragPreview) return;
+        try {
+            const result = duplicateObject(c, selectedUnit.id); setC(result.config); selectUnit(result.id);
+            setTool('move'); setNotice('Cópia criada em uma posição livre. Arraste para ajustar.');
+        } catch(e) { setAssemblyError(e instanceof Error ? e.message : 'Não foi possível duplicar.'); }
+    }
+    function removeSelectedCopy() {
+        if (!selectedUnit?.sourceId || dragPreview) return;
+        try { setC(deleteCopy(c, selectedUnit.id)); selectUnit(null); setNotice('Cópia removida. Você pode desfazer esta ação.'); }
+        catch(e) { setAssemblyError(e instanceof Error ? e.message : 'Não foi possível excluir a cópia.'); }
+    }
+    function historyAction(action: ()=>void) {
+        if (dragPreview) return;
+        imageRequest.current += 1; projectRequest.current += 1; setOpeningProject(false);
+        action(); setEditedTransform(null); setAssemblyError(''); setError('');
+        setNotice('Histórico atualizado. Gere novamente o script para exportar a montagem atual.');
+    }
+    function fitPlan() { setZoom(1); setPan({x:0,y:0}); }
+    function editorKeys(event: React.KeyboardEvent<HTMLDivElement>) {
+        if ((event.target as HTMLElement).closest('input, textarea, select, [contenteditable="true"]')) return;
+        const key=event.key.toLowerCase(), modifier=event.ctrlKey || event.metaKey;
+        if (modifier && key==='z') { event.preventDefault(); historyAction(event.shiftKey ? redo : undo); }
+        else if (modifier && key==='y') { event.preventDefault(); historyAction(redo); }
+        else if (modifier && key==='d') { event.preventDefault(); duplicateSelected(); }
+        else if (!modifier && key==='v') setTool('move');
+        else if (!modifier && key==='m') setTool('select');
+        else if (!modifier && key==='h') setTool('hand');
+        else if (!modifier && key==='0') fitPlan();
+        else if (!modifier && key==='delete') { event.preventDefault(); removeSelectedCopy(); }
+        else if (key==='escape' && !dragPreview) selectUnit(null);
     }
     const display = c;
     const dirty = output && JSON.stringify(output.config) !== JSON.stringify(c);
@@ -907,6 +971,7 @@ export default function Home() {
             const next: Config = {
                 ...prev,
                 [key]: value,
+                objectCopies: preservesLayout ? prev.objectCopies : [],
                 objectTransforms: preservesLayout
                     ? prev.objectTransforms
                     : {},
@@ -1128,6 +1193,7 @@ export default function Home() {
         }
     }
     useEffect(() => {
+        if (!active) return;
         const context = (document as unknown as {
             modelContext?: {
                 registerTool: (tool: unknown, options: unknown) => Promise<void> | void;
@@ -1154,7 +1220,7 @@ export default function Home() {
         }
         catch { }
         return () => controller.abort();
-    }, []);
+    }, [active]);
     const availableElements = elements.filter((element) => libraryCatalog.some((item) => item.id === element.key &&
         item.projectTypes.some((type) => type === c.projectType)) && (c.projectType !== 'activation' || (!['demo','sampling'].includes(c.activationModel) && element.key === (c.activationModel === 'photo' ? 'backdrops' : 'touchScreens'))));
     function changeProjectType(type: ProjectType) {
@@ -1184,16 +1250,72 @@ export default function Home() {
         setNotice("");
         setCopied(false);
     }
-    return <div className="app-shell">
-    <header className="topbar"><Link href="/" className="brand"><span className="brand-mark"><Box size={24}/></span><span>code<span className="brand-light">buddy</span><small>CENOGRAFIA</small></span></Link><div className="topbar-right"><span className="version">V3 · Blender + Max</span><span className="group-name">GRUPO <b>TV1</b></span></div></header>
-    <main><div className="page-heading"><div><div className="eyebrow">SEU ESTÚDIO DE CENOGRAFIA</div><h1>Da ideia ao primeiro projeto<span>.</span></h1><p>Defina as medidas. Escolha os elementos. Leve para o Blender ou 3ds Max.</p></div><div className="format"><Code2 size={20}/><span>SAÍDA DO PROJETO<strong>{c.target === 'max' ? 'MaxScript para 3ds Max' : 'Python para Blender'}</strong></span></div></div>
-    <div className="workspace"><section className="config-panel" aria-label="Configuração do projeto"><div className="section-title"><span className="step">01</span><h2>Configure seu projeto</h2></div>
-      <div className="project-file-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '12px 0' }}>
+    return <div className="app-shell editor-shell" onKeyDown={editorKeys}>
+    <header className="topbar"><Link href="/" className="brand"><span className="brand-mark"><Box size={24}/></span><span>code<span className="brand-light">buddy</span><small>CENOGRAFIA</small></span></Link><div className="editor-filebar"><button type="button" className="editor-return-free" onClick={onFree}>Cena livre 3D</button>      <div className="project-file-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '12px 0' }}>
         <button type="button" className="generate-button" onClick={saveProject} disabled={openingProject} style={{ flex: 1 }}>Salvar projeto JSON</button>
         <button type="button" className="generate-button" onClick={() => projectInput.current?.click()} disabled={openingProject} style={{ flex: 1 }}>{openingProject ? 'Abrindo projeto…' : 'Abrir projeto JSON'}</button>
         <input ref={projectInput} type="file" accept=".json,application/json" aria-label="Arquivo de projeto Code Buddy" onChange={openProject} hidden />
       </div>
-      <p className="tab-help">O JSON guarda este projeto para editar depois, incluindo a imagem da tela. Abrir um arquivo substitui o projeto exibido; salve o atual antes, se quiser guardá-lo.</p>
+<button type="button" className="editor-export" aria-label="Gerar exportação" onClick={build} disabled={!valid || openingProject || !!dragPreview || (needsPartialConfirmation && !partialConfirmed)}><Code2 size={15}/>Gerar {c.target==='max' ? 'MaxScript' : 'Blender'}</button></div></header>
+    <main className="editor-main"><div className="editor-documentbar"><div><span className="document-dot"/><strong>{c.name || 'Projeto sem título'}</strong><span>{projectTypes.find(type=>type.value===c.projectType)?.label}</span></div><span>{selectedUnit ? selectedUnit.label : 'Selecione uma peça na planta para editar'}</span></div>
+    <div className="workspace editor-workspace">
+    <EditorToolbar tool={tool} setTool={setTool} duplicate={duplicateSelected} remove={removeSelectedCopy}
+      undo={()=>historyAction(undo)} redo={()=>historyAction(redo)} canUndo={canUndo} canRedo={canRedo}
+      canDuplicate={valid && !!selectedUnit && !duplicateReason} canRemove={!!selectedUnit?.sourceId}
+      duplicateReason={duplicateReason} zoom={zoom} setZoom={setZoom} fit={fitPlan} busy={!!dragPreview || openingProject}/>
+    <section className="result-panel" aria-label="Visualização e script">
+      <Tabs value={tab} onValueChange={setTab}><div className="result-header"><TabsList className="view-tabs"><TabsTrigger value="plan"><Square size={16}/>Planta</TabsTrigger><TabsTrigger value="code"><Code2 size={17}/>{c.target === 'max' ? 'MaxScript' : 'Script Python'}</TabsTrigger></TabsList><span className="plan-scale">{valid ? `${num(c.width)} × ${num(c.depth)} m` : 'Confira as medidas'}</span></div>
+      <TabsContent value="plan"><div className="plan-title"><span>VISTA SUPERIOR</span><small>Planta esquemática · sem perspectiva</small></div><div className="drawing editor-canvas" data-tool={tool}>{valid ? <Plan c={display} selectedId={selectedUnit?.id ?? null} onSelect={selectUnit} snap={snapToGrid} onDragPreview={previewDrag} onDrop={dropObject} tool={tool} zoom={zoom} pan={pan} onPan={setPan}/> : <div className="empty"><Ruler size={32}/><p>{validationMessage}</p></div>}</div><div className="legend">{(c.back || c.left || c.right) && <span><i className="legend-wall"/>Parede</span>}<span><i style={{ background: c.color }}/>Elementos</span>{c.projectType === 'activation' ? <><span><i style={{background:'#fbbf24'}}/>Espera</span><span><i style={{background:'#34d399'}}/>Participação</span><span><i style={{background:'#60a5fa'}}/>Circulação</span>{c.activationModel === 'photo' && <span><i style={{background:'#c084fc'}}/>Captura / câmera</span>}{c.activationModel === 'demo' && <span><i style={{background:'#fb923c'}}/>Demonstrador</span>}{c.activationModel === 'sampling' && <><span><i style={{background:'#fb923c'}}/>Equipe</span>{c.samplingWasteEnabled&&<span><i style={{background:'#f87171'}}/>Descarte</span>}</>}</> : c.projectType === 'reception' ? <><span><i style={{background:'#60a5fa'}}/>Atendimento</span><span><i style={{background:'#fb923c'}}/>Equipe</span><span><i style={{background:'#4ade80'}}/>Acessos</span>{c.receptionQueueEnabled && <span><i style={{background:'#c084fc'}}/>Fila</span>}</> : <span><i className="legend-light"/>Spots</span>}</div><div className="model-info"><div><span>ÁREA TOTAL</span><strong>{valid ? num(floorArea(c)) : '—'} <small>m²</small></strong></div><div><span>ALTURA DE MONTAGEM</span><strong>{valid ? num(c.height) : '—'} <small>m</small></strong></div><div><span>{c.target === 'max' ? 'EXPORTAÇÃO' : 'RENDER'}</span><strong>{c.target === 'max' ? '3ds Max' : 'Cycles'} <small>{c.target === 'max' ? '.ms' : '64 samples'}</small></strong></div></div></TabsContent>
+      <TabsContent value="code"><div className="code-toolbar"><span>{output ? filename(output.config) : 'Seu script aparecerá aqui'}</span><div><button onClick={copy} disabled={!output || !!dirty} aria-label="Copiar script">{copied ? <Check size={16}/> : <Copy size={16}/>} {copied ? 'Copiado' : 'Copiar'}</button><button onClick={download} disabled={!output || !!dirty}><Download size={16}/>Baixar {output?.config.target === 'max' ? '.ms' : '.py'}</button></div></div>{dirty && <div className="stale" role="status">Você alterou o projeto. Clique em “Gerar script” para atualizar o arquivo.</div>}{output ? <pre className="code"><code>{output.code.replace(/data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+/g, '[imagem incorporada — baixe ou copie o script completo]').replace(/local IMAGEM_TV = "[A-Za-z0-9+/=]+"/g, 'local IMAGEM_TV = "[imagem incorporada — baixe ou copie o script completo]"')}</code></pre> : <div className="empty"><Code2 size={38}/><h3>Seu projeto, em código.</h3><p>Escolha os elementos ao lado e clique em<br />“Gerar script”.</p></div>}</TabsContent>
+    </Tabs>{error && inspector!=='project' && <p role="alert" className="error">{error}</p>}<p className="notice" role="status" aria-live="polite">{notice}</p>
+      <details className="editor-help"><summary>Como exportar para {c.target === 'max' ? '3ds Max' : 'Blender'}</summary><div className="blender-guide"><div className="guide-icon"><Box size={22}/></div><div><h3>Como abrir no {c.target === 'max' ? '3ds Max' : 'Blender'}</h3>{c.target === 'max' ? <ol><li><b>1</b>Baixe o arquivo <strong>.ms</strong>.</li><li><b>2</b>Abra o 3ds Max e entre em <strong>Scripting → Run Script</strong>.</li><li><b>3</b>Escolha o arquivo. {c.presentationCameras ? 'A câmera de apresentação escolhida fica ativa.' : <>Use <strong>CB_Camera_Frontal</strong> para visualizar.</>}</li></ol> : <ol><li><b>1</b>Comece com uma cena vazia e entre em <strong>Scripting</strong>.</li><li><b>2</b>Em <strong>Open</strong>, abra o arquivo .py baixado.</li><li><b>3</b>Clique em <strong>Run Script</strong>. Use <strong>F12</strong> para renderizar.</li></ol>}</div></div>
+      </details><div className="scope-note"><span className="step small-step">i</span><p>Esta versão cria um modelo conceitual. Texturas, artes e detalhes de acabamento podem ser ajustados no programa escolhido. A aparência final depende do renderizador.</p></div>
+    </section>
+    <aside className="editor-inspector" aria-label="Propriedades e objetos">
+      <div className="inspector-nav" role="group" aria-label="Painel lateral">
+        <button type="button" aria-pressed={inspector==='project'} onClick={()=>setInspector('project')}>Projeto</button>
+        <button type="button" aria-pressed={inspector==='object'} onClick={()=>setInspector('object')}>Seleção</button>
+        <button type="button" aria-pressed={inspector==='layers'} onClick={()=>setInspector('layers')}>Objetos <small>{assemblyUnits.length}</small></button>
+      </div>
+      <div hidden={inspector!=='object'}>      <div className="object-inspector">
+        <h3>{selectedUnit?.label ?? 'Seleção'}</h3>
+        <p className="tab-help">Escolha uma peça na planta ou na lista para editar.</p>
+        <label className="field">Objeto ou conjunto
+          <select aria-label="Selecionar objeto da montagem" value={selectedUnit?.id ?? ''} onChange={event => selectUnit(event.target.value || null)} style={{ width: '100%', padding: 10, marginTop: 8, background: '#0e1524', color: '#edf1fc', border: '1px solid #34405a', borderRadius: 6 }}>
+            <option value="">Selecione um objeto</option>
+            {assemblyUnits.map(unit => <option key={unit.id} value={unit.id}>{unit.label}{Object.hasOwn(c.objectTransforms, unit.id) ? ' · ajustado' : ''}</option>)}
+          </select>
+        </label>
+        {selectedUnit?.id === 'led:0' && <p className="tab-help">Ao mover o LED, tela, moldura e suportes se movem juntos. O painel ajustado recebe suportes de piso próprios.</p>}
+        {c.projectType === 'reception' && <p className="tab-help">Os balcões podem ser reposicionados em X/Y. Mantenha-os voltados para a frente (rotação 0°) para preservar atendimento, equipe e fila.</p>}
+        {selectedUnit && <>
+
+          <div className="dimensions">
+            {(['x', 'y', 'rotation'] as const).map(key => <label className="field" key={key}>{key === 'rotation' ? 'Rotação (°)' : `${key.toUpperCase()} (m)`}
+              <input aria-label={key === 'rotation' ? 'Rotação do objeto' : `Posição ${key.toUpperCase()} do objeto`} type="number" min={key === 'rotation' ? -360 : -30} max={key === 'rotation' ? 360 : 30} step={key === 'rotation' ? 5 : .1} disabled={c.projectType === 'reception' && key === 'rotation'} readOnly={!!dragPreview} value={dragPreview?.id === selectedId ? String(Number(dragPreview.transform[key].toFixed(6))) : transformDraft[key]} onChange={event => setEditedTransform({ config: c, id: selectedUnit.id, values: { ...transformDraft, [key]: event.target.value } })} />
+            </label>)}
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+            <button type="button" className="generate-button" onClick={applySelectedTransform}>Aplicar ajuste</button>
+            <button type="button" className="generate-button" disabled={!!selectedUnit.sourceId} onClick={resetSelectedTransform}>Restaurar objeto</button>
+          </div>
+        </>}
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+          <input type="checkbox" checked={snapToGrid} disabled={!!dragPreview} onChange={event => setSnapToGrid(event.target.checked)} />
+          Encaixar a cada 10 cm
+        </label>
+        <details className="position-help"><summary>Posicionamento e distribuição</summary>
+          <p className="tab-help">X: esquerda (−) / direita (+). Y: frente (−) / fundo (+). As medidas partem do centro da peça. Vermelho indica uma posição inválida. Pressione Esc para cancelar o arraste.</p>
+          <p className="tab-help">Alterar medidas, quantidades ou distribuição restaura os ajustes e remove as cópias. Materiais e artes preservam as posições.</p>
+        {Object.keys(c.objectTransforms).length > 0 && <button type="button" className="generate-button" onClick={() => commitTransforms({})}>Restaurar toda a distribuição</button>}        </details>
+        {(dragPreview?.error || assemblyError) && <p role="alert" className="error">{dragPreview?.error || assemblyError}</p>}
+      </div>
+</div>
+      <div className="editor-layers" hidden={inspector!=='layers'}>
+        <h3>Objetos da montagem</h3><p className="tab-help">Selecione uma peça para ajustar. Paredes, plateia e zonas continuam nos controles do projeto.</p>
+        {assemblyUnits.map(unit=><button type="button" key={unit.id} aria-pressed={selectedId===unit.id} onClick={()=>selectUnit(unit.id)}><Layers size={16}/><span>{unit.label}</span><small>{unit.sourceId ? 'CÓPIA' : Object.hasOwn(c.objectTransforms,unit.id) ? 'AJUSTADO' : ''}</small></button>)}
+      </div>
+      <div hidden={inspector!=='project'}><section className="config-panel" aria-label="Configuração do projeto"><div className="section-title"><span className="step">01</span><h2>Configure seu projeto</h2></div>
       <div className="field engine-label">
         <span>Tipo de projeto</span>
         <Select value={c.projectType} onValueChange={(value) => changeProjectType(value as ProjectType)}>
@@ -1676,7 +1798,7 @@ export default function Home() {
     <Select value={c.stoolDistribution} onValueChange={value => {
                     if (value !== 'free' && value !== 'bistro')
                         return;
-                    setC(prev => ({ ...prev, stoolDistribution: value,
+                    setC(prev => ({ ...prev, stoolDistribution: value, objectCopies: [],
                         bistroTables: value === 'bistro' ? true : prev.bistroTables,
                         objectTransforms: {} }));
                     setSelectedId(null);
@@ -1710,7 +1832,7 @@ export default function Home() {
     <Select value={c.loungeMode} onValueChange={value => {
                     if (value !== 'free' && value !== 'set')
                         return;
-                    setC(prev => ({ ...prev, loungeMode: value,
+                    setC(prev => ({ ...prev, loungeMode: value, objectCopies: [],
                         coffeeTables: value === 'set' ? true : prev.coffeeTables,
                         armchairs: value === 'set' && prev.loungeArmchairsPerTable > 0 ? true : prev.armchairs,
                         puffs: value === 'set' && prev.loungePuffsPerTable > 0 ? true : prev.puffs,
@@ -1811,44 +1933,7 @@ export default function Home() {
     <button className="generate-button" onClick={build} disabled={!valid ||
             (needsPartialConfirmation &&
                 !partialConfirmed)}><Sparkles size={18}/>Gerar {c.target === 'max' ? 'MaxScript' : 'script Blender'}</button><p className="generation-note">Piso, iluminação e câmera de apresentação incluídos.</p>{error && <p role="alert" className="error">{error}</p>}
-    </section>
-    <section className="result-panel" aria-label="Visualização e script">
-      <div className="config-panel" style={{ marginBottom: 16, padding: 16 }}>
-        <h3 style={{ marginTop: 0 }}>Ajustar montagem</h3>
-        <p className="tab-help">Arraste um móvel na planta ou escolha abaixo para ajustar pelos campos. Mesas e seus assentos vinculados se movem juntos. Palco, estrutura e plateia continuam automáticos.</p>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-          <input type="checkbox" checked={snapToGrid} disabled={!!dragPreview} onChange={event => setSnapToGrid(event.target.checked)} />
-          Encaixar a cada 10 cm
-        </label>
-        <p className="tab-help">Arraste e solte para aplicar. Vermelho indica uma posição inválida; ao soltar, o objeto volta. Pressione Esc para cancelar.</p>
-        <label className="field">Objeto ou conjunto
-          <select aria-label="Selecionar objeto da montagem" value={selectedUnit?.id ?? ''} onChange={event => selectUnit(event.target.value || null)} style={{ width: '100%', padding: 10, marginTop: 8, background: '#0e1524', color: '#edf1fc', border: '1px solid #34405a', borderRadius: 6 }}>
-            <option value="">Selecione um objeto</option>
-            {assemblyUnits.map(unit => <option key={unit.id} value={unit.id}>{unit.label}{Object.hasOwn(c.objectTransforms, unit.id) ? ' · ajustado' : ''}</option>)}
-          </select>
-        </label>
-        {selectedUnit && <>
-          <p className="tab-help">X: esquerda (−) / direita (+). Y: frente (−) / fundo (+). Posição medida no centro; rotação da unidade em torno do eixo Z da planta.</p>
-          <div className="dimensions">
-            {(['x', 'y', 'rotation'] as const).map(key => <label className="field" key={key}>{key === 'rotation' ? 'Rotação (°)' : `${key.toUpperCase()} (m)`}
-              <input aria-label={key === 'rotation' ? 'Rotação do objeto' : `Posição ${key.toUpperCase()} do objeto`} type="number" min={key === 'rotation' ? -360 : -30} max={key === 'rotation' ? 360 : 30} step={key === 'rotation' ? 5 : .1} readOnly={!!dragPreview} value={dragPreview?.id === selectedId ? String(Number(dragPreview.transform[key].toFixed(6))) : transformDraft[key]} onChange={event => setEditedTransform({ config: c, id: selectedUnit.id, values: { ...transformDraft, [key]: event.target.value } })} />
-            </label>)}
-          </div>
-          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-            <button type="button" className="generate-button" onClick={applySelectedTransform}>Aplicar ajuste</button>
-            <button type="button" className="generate-button" onClick={resetSelectedTransform}>Restaurar objeto</button>
-          </div>
-        </>}
-        {Object.keys(c.objectTransforms).length > 0 && <button type="button" className="generate-button" onClick={() => commitTransforms({})}>Restaurar toda a distribuição</button>}
-        <p className="tab-help">{c.projectType === 'activation' && c.activationModel === 'sampling' ? 'Medidas que alteram a ocupação no piso restauram a distribuição. Amostras, armazenamento, alturas e materiais preservam a posição da estação.' : c.projectType === 'activation' && c.activationModel === 'demo' ? 'Medidas que alteram a ocupação no piso restauram a distribuição. Produto, altura da bancada, materiais e cores preservam a posição da estação.' : 'Alterar medidas, quantidades ou distribuição restaura os ajustes individuais. Materiais e cores preservam as posições.'}</p>
-        {(dragPreview?.error || assemblyError) && <p role="alert" className="error">{dragPreview?.error || assemblyError}</p>}
-      </div>
-      <Tabs value={tab} onValueChange={setTab}><div className="result-header"><TabsList className="view-tabs"><TabsTrigger value="plan"><Square size={16}/>Planta</TabsTrigger><TabsTrigger value="code"><Code2 size={17}/>{c.target === 'max' ? 'MaxScript' : 'Script Python'}</TabsTrigger></TabsList><span className="plan-scale">{valid ? `${num(c.width)} × ${num(c.depth)} m` : 'Confira as medidas'}</span></div>
-      <TabsContent value="plan"><div className="plan-title"><span>VISTA SUPERIOR</span><small>Planta esquemática · sem perspectiva</small></div><div className="drawing">{valid ? <Plan c={display} selectedId={selectedUnit?.id ?? null} onSelect={selectUnit} snap={snapToGrid} onDragPreview={previewDrag} onDrop={dropObject}/> : <div className="empty"><Ruler size={32}/><p>{validationMessage}</p></div>}</div><div className="legend">{(c.back || c.left || c.right) && <span><i className="legend-wall"/>Parede</span>}<span><i style={{ background: c.color }}/>Elementos</span>{c.projectType === 'activation' ? <><span><i style={{background:'#fbbf24'}}/>Espera</span><span><i style={{background:'#34d399'}}/>Participação</span><span><i style={{background:'#60a5fa'}}/>Circulação</span>{c.activationModel === 'photo' && <span><i style={{background:'#c084fc'}}/>Captura / câmera</span>}{c.activationModel === 'demo' && <span><i style={{background:'#fb923c'}}/>Demonstrador</span>}{c.activationModel === 'sampling' && <><span><i style={{background:'#fb923c'}}/>Equipe</span>{c.samplingWasteEnabled&&<span><i style={{background:'#f87171'}}/>Descarte</span>}</>}</> : c.projectType === 'reception' ? <><span><i style={{background:'#60a5fa'}}/>Atendimento</span><span><i style={{background:'#fb923c'}}/>Equipe</span><span><i style={{background:'#4ade80'}}/>Acessos</span>{c.receptionQueueEnabled && <span><i style={{background:'#c084fc'}}/>Fila</span>}</> : <span><i className="legend-light"/>Spots</span>}</div><div className="model-info"><div><span>ÁREA TOTAL</span><strong>{valid ? num(floorArea(c)) : '—'} <small>m²</small></strong></div><div><span>ALTURA DE MONTAGEM</span><strong>{valid ? num(c.height) : '—'} <small>m</small></strong></div><div><span>{c.target === 'max' ? 'EXPORTAÇÃO' : 'RENDER'}</span><strong>{c.target === 'max' ? '3ds Max' : 'Cycles'} <small>{c.target === 'max' ? '.ms' : '64 samples'}</small></strong></div></div></TabsContent>
-      <TabsContent value="code"><div className="code-toolbar"><span>{output ? filename(output.config) : 'Seu script aparecerá aqui'}</span><div><button onClick={copy} disabled={!output || !!dirty} aria-label="Copiar script">{copied ? <Check size={16}/> : <Copy size={16}/>} {copied ? 'Copiado' : 'Copiar'}</button><button onClick={download} disabled={!output || !!dirty}><Download size={16}/>Baixar {output?.config.target === 'max' ? '.ms' : '.py'}</button></div></div>{dirty && <div className="stale" role="status">Você alterou o projeto. Clique em “Gerar script” para atualizar o arquivo.</div>}{output ? <pre className="code"><code>{output.code.replace(/data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+/g, '[imagem incorporada — baixe ou copie o script completo]').replace(/local IMAGEM_TV = "[A-Za-z0-9+/=]+"/g, 'local IMAGEM_TV = "[imagem incorporada — baixe ou copie o script completo]"')}</code></pre> : <div className="empty"><Code2 size={38}/><h3>Seu projeto, em código.</h3><p>Escolha os elementos ao lado e clique em<br />“Gerar script”.</p></div>}</TabsContent>
-    </Tabs><p className="notice" role="status" aria-live="polite">{notice}</p>
-      <div className="blender-guide"><div className="guide-icon"><Box size={22}/></div><div><h3>Como abrir no {c.target === 'max' ? '3ds Max' : 'Blender'}</h3>{c.target === 'max' ? <ol><li><b>1</b>Baixe o arquivo <strong>.ms</strong>.</li><li><b>2</b>Abra o 3ds Max e entre em <strong>Scripting → Run Script</strong>.</li><li><b>3</b>Escolha o arquivo. {c.presentationCameras ? 'A câmera de apresentação escolhida fica ativa.' : <>Use <strong>CB_Camera_Frontal</strong> para visualizar.</>}</li></ol> : <ol><li><b>1</b>Comece com uma cena vazia e entre em <strong>Scripting</strong>.</li><li><b>2</b>Em <strong>Open</strong>, abra o arquivo .py baixado.</li><li><b>3</b>Clique em <strong>Run Script</strong>. Use <strong>F12</strong> para renderizar.</li></ol>}</div></div>
-      <div className="scope-note"><span className="step small-step">i</span><p>Esta versão cria um modelo conceitual. Texturas, artes e detalhes de acabamento podem ser ajustados no programa escolhido. A aparência final depende do renderizador.</p></div>
-    </section></div><footer><span>CODE BUDDY / CENOGRAFIA</span><span>Uma base para a sua próxima ideia.</span></footer></main>
+    </section></div></aside>
+</div><footer><span>CODE BUDDY / CENOGRAFIA</span><span>Uma base para a sua próxima ideia.</span></footer></main>
   </div>;
 }

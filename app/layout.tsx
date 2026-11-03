@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Code Buddy · Cenografia",
-  description: "Crie stands com medidas, materiais e texturas e gere scripts para Blender ou 3ds Max.",
+  description: "Crie cenografias em uma cena 3D livre, desenhe paredes, insira peças e textos e exporte para Blender ou 3ds Max.",
   other: {
     "codex-preview": "development",
   },
