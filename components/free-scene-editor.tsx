@@ -137,7 +137,7 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
           <button aria-label="Aproximar cena" title="Aproximar" disabled={isBusy} onClick={()=>api.current?.zoom(1.25)}><ZoomIn size={19}/></button><button aria-label="Afastar cena" title="Afastar" disabled={isBusy} onClick={()=>api.current?.zoom(.8)}><ZoomOut size={19}/></button><button aria-label="Enquadrar cena" title="Enquadrar todas as peças (0)" disabled={isBusy} onClick={()=>api.current?.fit()}><Maximize size={18}/></button>
         </nav>
         <section className="free-stage" aria-label="Editor da cena livre">
-          <FreeSceneViewport data={data} selectedId={selectedId} tool={tool} view={view} snap={snap} apiRef={api} onSelect={select} onTransform={transform} onWall={addWall} onBusy={setBusy}/>
+          <FreeSceneViewport data={data} selectedId={selectedId} tool={tool} view={view} snap={snap} apiRef={api} onSelectAction={select} onTransformAction={transform} onWallAction={addWall} onBusyAction={setBusy}/>
           <div className="free-canvas-controls"><label><input type="checkbox" checked={data.grid} disabled={isBusy} onChange={event=>commit({...data,grid:event.target.checked})}/><Grid2X2 size={13}/>Grade</label><label><input type="checkbox" checked={snap} disabled={isBusy} onChange={event=>setSnap(event.target.checked)}/>Encaixar 10 cm / 15°</label></div>
           <div className="free-stage-help">{tool==='wall'?'Arraste no chão para desenhar a parede. Esc cancela.':view==='plan'?'Planta: mova no plano ou use os eixos. Role para aproximar.':'3D: arraste o fundo para orbitar · botão direito para navegar · role para aproximar'}</div>
         </section>

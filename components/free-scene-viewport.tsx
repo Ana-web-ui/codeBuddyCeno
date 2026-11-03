@@ -10,8 +10,8 @@ export type FreeTool='select'|'move'|'rotate'|'scale'|'hand'|'wall';
 export type FreePose={position:V3;rotation:V3;size:V3};
 export type FreeViewportApi={fit:()=>void;zoom:(factor:number)=>void;center:()=>V3;cancel:()=>void};
 type Props={data:FreeScene;selectedId:number|null;tool:FreeTool;view:'3d'|'plan';snap:boolean;
-    apiRef:MutableRefObject<FreeViewportApi|null>;onSelect:(id:number|null)=>void;
-    onTransform:(id:number,pose:FreePose)=>boolean;onWall:(a:V3,b:V3)=>void;onBusy:(busy:boolean)=>void};
+    apiRef:MutableRefObject<FreeViewportApi|null>;onSelectAction:(id:number|null)=>void;
+    onTransformAction:(id:number,pose:FreePose)=>boolean;onWallAction:(a:V3,b:V3)=>void;onBusyAction:(busy:boolean)=>void};
 function disposeTree(root:THREE.Object3D) {
     root.traverse(obj=>{ if(obj instanceof THREE.Mesh || obj instanceof THREE.LineSegments) {
         obj.geometry.dispose(); const materials=Array.isArray(obj.material)?obj.material:[obj.material];
@@ -80,7 +80,7 @@ export function FreeSceneViewport(props:Props) {
         let wallStart:THREE.Vector3|null=null,wallEnd:THREE.Vector3|null=null;
         let down:{x:number;y:number;gizmo:boolean}|null=null;
         let busy=false,ignoreGizmoCommit=false;
-        const markBusy=(value:boolean)=>{busy=value;latest.current.onBusy(value);};
+        const markBusy=(value:boolean)=>{busy=value;latest.current.onBusyAction(value);};
         function resize() {
             const w=container.clientWidth,h=container.clientHeight;if(!w || !h || (w===lastW && h===lastH))return;
             lastW=w;lastH=h;renderer.setSize(w,h,false);perspective.aspect=w/h;perspective.updateProjectionMatrix();
@@ -135,7 +135,7 @@ export function FreeSceneViewport(props:Props) {
         function commitNode(node:THREE.Group) {
             const o=node.userData.config as FreeObject;
             const pose:FreePose={position:node.position.toArray() as V3,rotation:[node.rotation.x,node.rotation.y,node.rotation.z].map(THREE.MathUtils.radToDeg) as V3,size:o.size.map((v,i)=>v*node.scale.toArray()[i]) as V3};
-            if(!latest.current.onTransform(o.id,pose))resetNode(node);
+            if(!latest.current.onTransformAction(o.id,pose))resetNode(node);
         }
         function pointerDown(event:PointerEvent) {
             if(event.button!==0)return;renderer.domElement.focus();down={x:event.clientX,y:event.clientY,gizmo:!!transform.axis && !!transform.object};
@@ -145,7 +145,7 @@ export function FreeSceneViewport(props:Props) {
             const node=hitObject(event);
             if(node && p.tool==='move' && !(node.userData.config as FreeObject).locked){
                 const point=ground(event,node.position.z);if(!point)return;
-                p.onSelect(node.userData.freeId);direct={id:node.userData.freeId,start:point,position:node.position.toArray() as V3};
+                p.onSelectAction(node.userData.freeId);direct={id:node.userData.freeId,start:point,position:node.position.toArray() as V3};
                 controls.enabled=false;renderer.domElement.setPointerCapture(event.pointerId);markBusy(true);event.preventDefault();
             }
         }
@@ -156,9 +156,9 @@ export function FreeSceneViewport(props:Props) {
         function pointerUp(event:PointerEvent) {
             if(event.button!==0)return;
             const hadWall=!!wallStart,hadDirect=!!direct;
-            if(wallStart && wallEnd){const a=wallStart.toArray() as V3,b=wallEnd.toArray() as V3;wallStart=null;wallEnd=null;draft.visible=false;markBusy(false);if(Math.hypot(b[0]-a[0],b[1]-a[1])>=.05)latest.current.onWall(a,b);}
+            if(wallStart && wallEnd){const a=wallStart.toArray() as V3,b=wallEnd.toArray() as V3;wallStart=null;wallEnd=null;draft.visible=false;markBusy(false);if(Math.hypot(b[0]-a[0],b[1]-a[1])>=.05)latest.current.onWallAction(a,b);}
             if(direct){const node=nodes.get(direct.id);direct=null;markBusy(false);if(node)commitNode(node);}
-            if(!hadWall && !hadDirect && down && !down.gizmo && Math.hypot(event.clientX-down.x,event.clientY-down.y)<4 && latest.current.tool!=='hand')latest.current.onSelect(hitObject(event)?.userData.freeId ?? null);
+            if(!hadWall && !hadDirect && down && !down.gizmo && Math.hypot(event.clientX-down.x,event.clientY-down.y)<4 && latest.current.tool!=='hand')latest.current.onSelectAction(hitObject(event)?.userData.freeId ?? null);
             if((hadWall || hadDirect) && renderer.domElement.hasPointerCapture(event.pointerId))renderer.domElement.releasePointerCapture(event.pointerId);
             down=null;configure();
         }
