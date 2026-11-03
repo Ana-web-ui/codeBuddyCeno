@@ -102,3 +102,74 @@
 @media(max-width:1050px){.free-workspace{grid-template-columns:48px minmax(0,1fr) 280px}.free-topbar{padding:0 12px;gap:10px}.free-brand{min-width:125px}.free-brand strong{font-size:18px}.free-file-actions .free-guided{margin-left:0;font-size:10px}.free-file-actions button{padding:8px;font-size:11px}.free-panel{padding:16px 12px}.free-canvas-controls{gap:9px;left:9px;font-size:9px}}
 @media(max-width:760px){.free-editor{height:auto;min-height:100dvh;overflow:visible}.free-topbar{height:auto;min-height:60px;flex-wrap:wrap;padding:10px;gap:8px}.free-brand{min-width:100px;flex:1}.free-file-actions{order:3;width:100%;flex:none;justify-content:space-between}.free-file-actions button{flex:1;justify-content:center;font-size:10px}.free-file-actions .free-guided{flex:1.2}.free-export-actions button,.free-export-actions select{font-size:10px;padding:7px}.free-documentbar{height:35px;min-height:35px;padding:0 10px;gap:8px}.free-documentbar>span:nth-child(2){display:none}.free-view-switch{margin-left:auto}.free-view-switch button{padding:5px 12px}.free-workspace{grid-template-columns:45px minmax(0,1fr);grid-template-rows:570px auto}.free-tools{padding:7px 3px;gap:1px}.free-tools button{width:34px;height:32px;min-height:32px}.free-inspector{grid-column:1/-1;max-height:65vh;min-height:300px;border-top:1px solid #34445f;border-left:0}.free-canvas-controls{left:8px;top:9px;padding:7px;font-size:9px;flex-wrap:wrap;gap:7px;max-width:95%}.free-blank-hint{padding:12px;white-space:normal;width:90%;text-align:center}.free-blank-hint strong{font-size:20px}.free-blank-hint span{font-size:11px;line-height:1.5}.free-stage-help{font-size:9px}.free-catalog{grid-template-columns:repeat(3,1fr)}.free-status{height:auto;min-height:28px}.free-status>span:last-child{display:none}.editor-filebar .editor-return-free{font-size:9px;padding:6px}}
 .free-obj-options{display:grid;grid-template-columns:1.3fr 1fr;gap:8px;margin-top:18px}.free-obj-options label{font-size:10px;color:#97afd3}.free-obj-options select{display:block;width:100%;margin-top:6px;padding:8px 5px;background:#111d30;border:1px solid #3d5478;border-radius:5px;color:#c5d6f1;font-size:10px}
+
+.free-help-card {
+  position: fixed;
+  z-index: 30;
+  inset: auto auto 36px 65px;
+  width: min(350px, calc(100vw - 82px));
+  max-height: min(70vh, 570px);
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid #7188d9;
+  border-radius: 10px;
+  background: #15213a;
+  color: #edf2ff;
+  box-shadow: 0 12px 30px #07101c66;
+}
+.free-help-heading, .free-help-actions, .free-help-keys {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.free-help-heading { justify-content: space-between; }
+.free-help-heading h2 { font-size: 16px; font-weight: 600; }
+.free-help-heading button { flex: none; }
+.free-help-card small { display: block; margin-top: 6px; color: #b3c6fa; }
+.free-help-card p { margin: 10px 0; color: #d2dff7; font-size: 13px; line-height: 1.5; }
+.free-help-card button {
+  padding: 6px 9px;
+  border: 1px solid #54698c;
+  border-radius: 5px;
+  background: #202f4e;
+  color: inherit;
+  font-size: 12px;
+}
+.free-help-card button:hover:not(:disabled) { background: #344773; }
+.free-help-card button:disabled { opacity: .45; }
+.free-help-card button.free-primary { background: #5268c8; border-color: #8497e7; }
+.free-help-actions { justify-content: flex-end; flex-wrap: wrap; margin-top: 12px; }
+.free-help-card kbd {
+  display: inline-block;
+  padding: 2px 5px;
+  border: 1px solid #50678d;
+  border-radius: 4px;
+  background: #0d172a;
+  color: #e6edff;
+  font-size: 11px;
+}
+.free-help-shortcuts > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 5px 0;
+  border-bottom: 1px solid #304367;
+  font-size: 12px;
+}
+.free-editor[data-free-tour="insert"] [data-tour-anchor="insert"],
+.free-editor[data-free-tour="move"] [data-tour-anchor="move"],
+.free-editor[data-free-tour="draw"] [data-tour-anchor="draw"],
+.free-editor[data-free-tour="adjust"] [data-tour-anchor="adjust"],
+.free-editor[data-free-tour="environment"] [data-tour-anchor="environment"],
+.free-editor[data-free-tour="save"] [data-tour-anchor="save"] {
+  outline: 2px solid #a2b2ff;
+  outline-offset: 2px;
+}
+@media (max-width: 760px) {
+  .free-help-card {
+    inset: auto 10px 10px auto;
+    width: min(350px, calc(100vw - 20px));
+    max-height: 42dvh;
+  }
+}
