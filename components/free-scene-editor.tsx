@@ -7,7 +7,7 @@ import { FreeSceneHelp, freeTourStorageKey, tourSteps } from './free-scene-help'
 import type { FreeHelpMode } from './free-scene-help';
 import { FreeSceneViewport } from './free-scene-viewport';
 import type { FreeTool, FreeViewportApi, FreePose } from './free-scene-viewport';
-import { emptyFreeScene, freeCatalog, freeEnvironments, newFreeObject, stringifyFreeScene, parseFreeScene, sceneFilename, wallBetween, rectangleBetween, MAX_FREE_SCENE_BYTES } from '@/lib/free-scene';
+import { createStandBase, emptyFreeScene, freeCatalog, freeEnvironments, newFreeObject, stringifyFreeScene, parseFreeScene, sceneFilename, wallBetween, rectangleBetween, MAX_FREE_SCENE_BYTES } from '@/lib/free-scene';
 import type { FreeEnvironment, FreeScene, FreeKind, FreeObject, V3 } from '@/lib/free-scene';
 import { exportFreeBlender, exportFreeMax } from '@/lib/free-scene-exporters';
 import { exportFreePackage } from '@/lib/free-scene-package';
@@ -28,6 +28,15 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
     const data=history.present,current=useRef(data),epoch=useRef(0);
     const [selectedId,setSelectedId]=useState<number|null>(null),[tool,setTool]=useState<FreeTool>('move'),[view,setView]=useState<'3d'|'plan'>('3d');
     const [panel,setPanel]=useState<'insert'|'object'|'layers'|'scene'>('insert'),[snap,setSnap]=useState(false),[busy,setBusy]=useState(false),[loading,setLoading]=useState(false);
+    const [showStart, setShowStart] = useState(true);
+    const startDialog = useRef<HTMLDialogElement>(null);
+    useLayoutEffect(() => {
+        const dialog = startDialog.current;
+        if (showStart && dialog && !dialog.open) dialog.showModal();
+        return () => { if (dialog?.open) dialog.close(); };
+    }, [showStart]);
+
+    const [showObjImport, setShowObjImport] = useState(false);
     const [objUnit,setObjUnit]=useState<'m'|'cm'|'mm'>('m'),[objAxis,setObjAxis]=useState<'z'|'y'>('z');
     const [notice,setNotice]=useState('Cena vazia. Insira uma peça ou desenhe uma parede.'),[error,setError]=useState(''),[target,setTarget]=useState<'blender'|'max'>('blender');
     const api=useRef<FreeViewportApi|null>(null),fileInput=useRef<HTMLInputElement>(null),objInput=useRef<HTMLInputElement>(null),imageInput=useRef<HTMLInputElement>(null),fileRequest=useRef(0);
@@ -57,7 +66,7 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
         if (commit({ ...scene, objects: [...scene.objects, block] })) {
             select(block.id);
             setTool('move');
-            setNotice('Bloco criado. Ajuste a altura no painel Peça.');
+            setNotice('Bloco criado. Ajuste a altura em Propriedades.');
         }
     }
 
@@ -100,7 +109,19 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
             return direction==='undo'?{past:previous.past.slice(0,-1),present,future:[previous.present,...previous.future].slice(0,40)}:{past:[...previous.past,previous.present].slice(-40),present,future:previous.future.slice(1)};
         });setError('');setNotice(direction==='undo'?'Edição desfeita.':'Edição refeita.');
     }
-    function clearScene() {if(busy || loading)return;if(commit(emptyFreeScene())){select(null);setView('3d');setPanel('insert');setTool('move');requestAnimationFrame(()=>api.current?.fit());setNotice('Nova cena vazia. Desfazer recupera a cena anterior.');}}
+    function startScene(scene: FreeScene) {
+        if (busy || loading || !commit(scene)) return;
+        setShowStart(false);
+        setShowObjImport(false);
+        select(null);
+        setView('3d');
+        setPanel('insert');
+        setTool('move');
+        requestAnimationFrame(()=>api.current?.fit());
+        setNotice(scene.objects.length
+            ? 'Stand-base criado. Você pode mover, redimensionar e excluir as peças.'
+            : 'Nova cena vazia. Adicione uma peça ou desenhe na área de criação.');
+    }
     function save() {try{downloadFile(stringifyFreeScene({...current.current,view}),sceneFilename(data,'json'),'application/json');setNotice('Cena livre salva em JSON, com peças, textos, artes e objetos 3D.');setError('');}catch(e){setError(e instanceof Error?e.message:'Não foi possível salvar.');}}
     async function open(event:ChangeEvent<HTMLInputElement>) {
         const file=event.target.files?.[0];event.target.value='';if(!file)return;
@@ -108,7 +129,7 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
         try {
             if(!/\.json$/i.test(file.name) || file.size>MAX_FREE_SCENE_BYTES)throw new Error('Abra uma cena JSON de até 10 MB.');
             const loaded=parseFreeScene(await file.text());if(request!==fileRequest.current || start!==epoch.current)throw new Error('A cena foi alterada durante a leitura. Abra o arquivo novamente.');
-            if(commit(loaded)){select(null);setView(loaded.view);setTool('move');setPanel('layers');requestAnimationFrame(()=>api.current?.fit());setNotice('Cena livre aberta. Todas as peças foram restauradas.');}
+            if(commit(loaded)){setShowStart(false);select(null);setView(loaded.view);setTool('move');setPanel('layers');requestAnimationFrame(()=>api.current?.fit());setNotice('Cena livre aberta. Todas as peças foram restauradas.');}
         }catch(e){setError(e instanceof Error?e.message:'Não foi possível abrir.');}finally{if(request===fileRequest.current)setLoading(false);}
     }
     async function uploadObj(event:ChangeEvent<HTMLInputElement>) {
@@ -119,7 +140,7 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
             const source=await file.text();if(start!==epoch.current)throw new Error('A cena mudou. Importe o OBJ novamente.');
             const item=newFreeObject('obj',nextId());item.name=file.name.slice(0,100);item.source=source;item.objUnit=objUnit;item.upAxis=objAxis;item.position=api.current?.center() ?? [0,0,0];
             const geometry=modelGeometry({id:1,name:item.name,source,unit:objUnit,upAxis:objAxis,scale:1,x:0,y:0,z:0,rotation:0,material:'white'});item.size=geometry.size.map(n=>Math.max(.01,n)) as V3;
-            if(commit({...current.current,objects:[...current.current.objects,item]})){select(item.id);setTool('move');requestAnimationFrame(()=>api.current?.fit());setNotice('OBJ importado. Ajuste as medidas e a orientação nas propriedades.');}
+            if(commit({...current.current,objects:[...current.current.objects,item]})){setShowObjImport(false);select(item.id);setTool('move');requestAnimationFrame(()=>api.current?.fit());setNotice('OBJ importado. Ajuste as medidas e a orientação nas propriedades.');}
         }catch(e){setError(e instanceof Error?e.message:'Não foi possível importar.');}finally{setLoading(false);}
     }
     async function uploadArt(event:ChangeEvent<HTMLInputElement>) {
@@ -149,10 +170,11 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
     const helpButton = useRef<HTMLButtonElement>(null);
 
     useEffect(() => {
+        if (showStart) return;
         try { if (localStorage.getItem(freeTourStorageKey)) return; } catch {}
         const frame = requestAnimationFrame(() => setHelpMode(mode => mode ?? 'welcome'));
         return () => cancelAnimationFrame(frame);
-    }, []);
+    }, [showStart]);
 
     function rememberTour() {
         try { localStorage.setItem(freeTourStorageKey, '1'); } catch {}
@@ -174,7 +196,7 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
     }
 
     function keys(event:KeyboardEvent<HTMLDivElement>) {
-        if((event.target as HTMLElement).closest('[data-free-help],input,textarea,select,[contenteditable="true"]'))return;
+        if(showStart || (event.target as HTMLElement).closest('[data-free-help],input,textarea,select,[contenteditable="true"]'))return;
         const key=event.key.toLowerCase(),modifier=event.ctrlKey || event.metaKey;
         if (!loading && tool === 'rectangle' && !modifier && (key === 'v' || key === 'escape')) {
             event.preventDefault();
@@ -199,14 +221,34 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
     const isBusy=busy || loading;
     return <div className="free-editor" onKeyDown={keys} data-free-tour={helpMode === 'tour' ? tourSteps[tourStep].id : undefined}>
       <header className="free-topbar"><div className="free-brand"><Box size={23}/><strong>codebuddy<small>CENA LIVRE 3D</small></strong></div>
-        <div className="free-file-actions"><button onClick={clearScene} disabled={isBusy} title="Nova cena vazia"><Plus size={15}/><span>Novo</span></button><button data-tour-anchor="save" onClick={save} disabled={isBusy}><Save size={15}/><span>Salvar cena</span></button><button onClick={()=>fileInput.current?.click()} disabled={isBusy}><FolderOpen size={15}/><span>Abrir cena</span></button><button onClick={onGuided} disabled={isBusy} className="free-guided">Projetos guiados</button></div>
+        <div className="free-file-actions"><button onClick={()=>{setError('');setShowStart(true);}} disabled={isBusy} title="Opções de nova cena"><Plus size={15}/><span>Novo</span></button><button data-tour-anchor="save" onClick={save} disabled={isBusy}><Save size={15}/><span>Salvar cena</span></button><button onClick={()=>fileInput.current?.click()} disabled={isBusy}><FolderOpen size={15}/><span>Abrir cena</span></button><button onClick={onGuided} disabled={isBusy} className="free-guided">Projetos guiados</button></div>
         <div className="free-export-actions">
             <button ref={helpButton} type="button" title="Ajuda e atalhos" aria-label="Ajuda e atalhos"
                 aria-expanded={helpMode !== null} aria-haspopup="dialog"
                 onClick={()=>{ if (helpMode) closeHelp(); else setHelpMode('menu'); }}>?</button>
             <select aria-label="Destino da exportação livre" value={target} onChange={event=>setTarget(event.target.value as 'blender'|'max')}><option value="blender">Blender</option><option value="max">3ds Max</option></select><button data-tour-anchor="save" className="free-primary" onClick={exportScene} disabled={isBusy}><Download size={15}/>Exportar</button></div>
       </header>
-      {helpMode && <FreeSceneHelp mode={helpMode} step={tourStep} onStep={openTourStep}
+      {showStart && <dialog ref={startDialog} className="free-start-dialog" aria-labelledby="free-start-title"
+          onCancel={event=>{event.preventDefault();if(!isBusy)setShowStart(false);}}>
+          <h2 id="free-start-title">Começar com um stand-base</h2>
+          <p>Escolha uma medida. A cena vem com piso, parede de fundo e balcão. Todas as peças são editáveis.</p>
+          <div className="free-start-options">
+              <button type="button" disabled={isBusy} onClick={()=>startScene(createStandBase(3))}>
+                  <strong>Stand 3 × 3 m</strong><span>9 m²</span>
+              </button>
+              <button type="button" disabled={isBusy} onClick={()=>startScene(createStandBase(6))}>
+                  <strong>Stand 3 × 6 m</strong><span>18 m²</span>
+              </button>
+          </div>
+          <div className="free-start-actions">
+              <button type="button" disabled={isBusy} onClick={()=>startScene(emptyFreeScene())}>Criar do zero</button>
+              <button type="button" disabled={isBusy} onClick={()=>fileInput.current?.click()}>Abrir cena JSON</button>
+              {data.objects.length > 0 && <button type="button" disabled={isBusy} onClick={()=>setShowStart(false)}>Voltar à cena</button>}
+          </div>
+          {loading && <p role="status">Lendo arquivo…</p>}
+          {error && <p role="alert">{error}</p>}
+      </dialog>}
+      {!showStart && helpMode && <FreeSceneHelp mode={helpMode} step={tourStep} onStep={openTourStep}
           onClose={closeHelp} onShortcuts={()=>setHelpMode('shortcuts')}/>}
       <div className="free-documentbar"><span><i/>{data.name}</span><span>{selected?.name ?? `${data.objects.length} peças · metros`}</span><div className="free-view-switch" role="group" aria-label="Vista da cena"><button aria-pressed={view==='3d'} onClick={()=>setView('3d')} disabled={isBusy}>3D</button><button data-tour-anchor="draw" aria-pressed={view==='plan'} onClick={()=>setView('plan')} disabled={isBusy}>Planta</button></div></div>
       <main className="free-workspace">
@@ -223,8 +265,32 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
           <div className="free-stage-help">{tool==='rectangle'?'Arraste no chão de um canto ao outro. V ou Esc volta para Mover.':tool==='wall'?'Arraste no chão para desenhar a parede. Esc cancela.':view==='plan'?'Planta: mova no plano ou use os eixos. Role para aproximar.':'3D: arraste o fundo para orbitar · botão direito para navegar · role para aproximar'}</div>
         </section>
         <aside className="free-inspector" aria-label="Criação e propriedades da cena livre">
-          <nav className="free-panel-tabs" aria-label="Painel da cena livre">{([{id:'insert',label:'Inserir'},{id:'object',label:'Peça'},{id:'layers',label:'Objetos'},{id:'scene',label:'Cena'}] as const).map(item=><button key={item.id} aria-pressed={panel===item.id} onClick={()=>setPanel(item.id)}>{item.label}</button>)}</nav>
-          {panel==='insert' && <div className="free-panel"><h2>Construa sua cena</h2><p>Nenhuma peça vem pronta. Insira uma de cada vez e edite como quiser.</p><div className="free-catalog">{freeCatalog.map(item=><button key={item.kind} data-tour-anchor={item.kind==='box' ? 'insert' : undefined} onClick={()=>add(item.kind)} disabled={isBusy}><span>{item.kind==='text'?<Type size={18}/>:item.kind==='wall'?<BrickWall size={18}/>:<Box size={18}/>}</span>{item.label}<Plus size={13}/></button>)}</div><button className="free-secondary" onClick={()=>{setTool('wall');setNotice('Arraste no chão para desenhar uma parede.');}} disabled={isBusy}><BrickWall size={16}/>Desenhar parede com o mouse</button><div className="free-obj-options"><label>Unidade do OBJ<select aria-label="Unidade do OBJ a importar" value={objUnit} onChange={event=>setObjUnit(event.target.value as 'm'|'cm'|'mm')}><option value="m">Metros</option><option value="cm">Centímetros</option><option value="mm">Milímetros</option></select></label><label>Eixo vertical<select aria-label="Eixo vertical do OBJ a importar" value={objAxis} onChange={event=>setObjAxis(event.target.value as 'z'|'y')}><option value="z">Z</option><option value="y">Y</option></select></label></div><button className="free-secondary" onClick={()=>objInput.current?.click()} disabled={isBusy}><Upload size={16}/>Importar objeto OBJ</button><p className="free-small">OBJ de até 2 MB, sem MTL. Até cinco objetos personalizados por cena.</p></div>}
+          <nav className="free-panel-tabs" aria-label="Painel da cena livre">{([{id:'insert',label:'Adicionar'},{id:'object',label:'Propriedades'},{id:'layers',label:'Lista de peças'},{id:'scene',label:'Ambiente e grade'}] as const).map(item=><button key={item.id} aria-pressed={panel===item.id} onClick={()=>setPanel(item.id)}>{item.label}</button>)}</nav>
+          {panel==='insert' && <div className="free-panel"><h2>Construa sua cena</h2><p>Nenhuma peça vem pronta. Insira uma de cada vez e edite como quiser.</p><div className="free-catalog">{freeCatalog.map(item=><button key={item.kind} data-tour-anchor={item.kind==='box' ? 'insert' : undefined} onClick={()=>add(item.kind)} disabled={isBusy}><span>{item.kind==='text'?<Type size={18}/>:item.kind==='wall'?<BrickWall size={18}/>:<Box size={18}/>}</span>{item.label}<Plus size={13}/></button>)}</div><button className="free-secondary" onClick={()=>{setTool('wall');setNotice('Arraste no chão para desenhar uma parede.');}} disabled={isBusy}><BrickWall size={16}/>Desenhar parede com o mouse</button>
+              <button type="button" className="free-secondary" aria-expanded={showObjImport}
+                aria-controls="free-obj-import" onClick={()=>setShowObjImport(open=>!open)} disabled={isBusy}>
+                  <Upload size={16}/>Importar objeto OBJ
+              </button>
+              <section id="free-obj-import" aria-label="Configuração da importação OBJ" hidden={!showObjImport}>
+                  <div className="free-obj-options">
+                      <label>Unidade do modelo
+                          <select value={objUnit} disabled={isBusy} onChange={event=>setObjUnit(event.target.value as FreeObject['objUnit'])}>
+                              <option value="m">Metros</option><option value="cm">Centímetros</option><option value="mm">Milímetros</option>
+                          </select>
+                      </label>
+                      <label>Eixo vertical
+                          <select value={objAxis} disabled={isBusy} onChange={event=>setObjAxis(event.target.value as FreeObject['upAxis'])}>
+                              <option value="z">Z</option><option value="y">Y</option>
+                          </select>
+                      </label>
+                  </div>
+                  <p className="free-small">Se o tamanho ou a orientação ficarem incorretos, você pode ajustá-los em Propriedades após importar.</p>
+                  <p className="free-small">OBJ de até 2 MB, sem MTL. Até cinco modelos personalizados por cena.</p>
+                  <button type="button" className="free-secondary" onClick={()=>objInput.current?.click()} disabled={isBusy}>
+                      <FolderOpen size={16}/>Escolher arquivo OBJ
+                  </button>
+              </section>
+          </div>}
           {panel==='object' && <div className="free-panel">
             {selected ? <><h2>{selected.name}</h2><label className="free-field">Nome<input aria-label="Nome da peça" value={selected.name} maxLength={100} disabled={!canEdit} onChange={event=>patch(selected.id,{name:event.target.value})}/></label>
               <div className="free-state-row"><button aria-pressed={selected.visible} disabled={isBusy} onClick={()=>patch(selected.id,{visible:!selected.visible})}>{selected.visible?<Eye size={15}/>:<EyeOff size={15}/>} {selected.visible?'Visível':'Oculta'}</button><button aria-pressed={selected.locked} disabled={isBusy} onClick={()=>patch(selected.id,{locked:!selected.locked})}>{selected.locked?<Lock size={15}/>:<Unlock size={15}/>} {selected.locked?'Bloqueada':'Livre'}</button></div>
@@ -238,10 +304,10 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
               <div className="free-vector two"><NumberField label="Rugosidade" value={selected.roughness} min={0} max={1} step={.05} disabled={!canEdit} change={n=>patch(selected.id,{roughness:n})}/><NumberField label="Opacidade" value={selected.opacity} min={.05} max={1} step={.05} disabled={!canEdit} change={n=>patch(selected.id,{opacity:n})}/></div>
               {!['text','obj'].includes(selected.kind) && <><button className="free-secondary" onClick={()=>imageInput.current?.click()} disabled={!canEdit}><Upload size={15}/>{selected.image?'Trocar arte frontal':'Aplicar arte / logo'}</button>{selected.image && <div className="free-art-preview"><ImagePreview src={selected.image} alt="Arte frontal da peça" width={320} height={180} unoptimized/><button onClick={()=>patch(selected.id,{image:''})} disabled={!canEdit}>Remover arte</button></div>}</>}
               <div className="free-object-actions"><button onClick={duplicate} disabled={isBusy}><CopyPlus size={15}/>Duplicar</button><button onClick={remove} disabled={!canEdit}><Trash2 size={15}/>Excluir</button></div>
-            </>:<><h2>Selecione uma peça</h2><p>Clique na cena ou abra a lista de objetos. Cada peça tem propriedades independentes.</p><button className="free-secondary" onClick={()=>setPanel('insert')}>Inserir peça</button></>}
+            </>:<><h2>Selecione uma peça</h2><p>Clique na cena ou abra a Lista de peças. Cada peça tem propriedades independentes.</p><button className="free-secondary" onClick={()=>setPanel('insert')}>Adicionar peça</button></>}
           </div>}
           {panel==='layers' && <div className="free-panel"><h2>Objetos · {data.objects.length}</h2>{!data.objects.length && <p>A cena está vazia. Comece inserindo uma peça.</p>}<div className="free-object-list">{[...data.objects].reverse().map(o=><div key={o.id} className={selectedId===o.id?'selected':''}><button aria-label={`Selecionar ${o.name} ${o.id}`} onClick={()=>select(o.id)}><Layers size={15}/><span>{o.name}</span></button><button title={o.visible?'Ocultar':'Mostrar'} aria-label={`${o.visible?'Ocultar':'Mostrar'} peça ${o.id}`} disabled={isBusy} onClick={()=>patch(o.id,{visible:!o.visible})}>{o.visible?<Eye size={14}/>:<EyeOff size={14}/>}</button><button title={o.locked?'Desbloquear':'Bloquear'} aria-label={`${o.locked?'Desbloquear':'Bloquear'} peça ${o.id}`} disabled={isBusy} onClick={()=>patch(o.id,{locked:!o.locked})}>{o.locked?<Lock size={14}/>:<Unlock size={14}/>}</button></div>)}</div></div>}
-          {panel==='scene' && <div className="free-panel"><h2>Cena livre</h2>
+          {panel==='scene' && <div className="free-panel"><h2>Ambiente e grade</h2>
               <label className="free-field">
                   Cenário
                   <select className="mt-2 block w-full rounded border border-slate-600 bg-slate-900 p-2 text-slate-100" data-tour-anchor="environment" aria-label="Cenário" value={data.environment ?? 'white'} disabled={isBusy}

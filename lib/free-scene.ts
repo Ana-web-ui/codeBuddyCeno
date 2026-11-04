@@ -36,6 +36,22 @@ export const freeCatalog: {kind: FreeKind; label: string; size: V3; color: strin
     {kind:'coffeeTable',label:'Mesa de centro',size:[1,.6,.42],color:'#bc9875'},
 ];
 export function emptyFreeScene(): FreeScene { return {name:'Cena sem título',grid:true,gridSize:20,environment:'white',view:'3d',objects:[]}; }
+/** A stand-base uses ordinary pieces, so it can be edited and exported like any free scene. */
+export function createStandBase(depth: 3 | 6): FreeScene {
+    const width = 3;
+    const floor = newFreeObject('floor', 1);
+    floor.size = [width, depth, floor.size[2]];
+
+    const wall = newFreeObject('wall', 2);
+    wall.size[0] = width;
+    wall.position[1] = (depth - wall.size[1]) / 2;
+
+    const counter = newFreeObject('counter', 3);
+    counter.position[1] = -depth / 2 + 0.85;
+
+    return { ...emptyFreeScene(), name: `Stand ${width} × ${depth} m`, objects: [floor, wall, counter] };
+}
+
 export function newFreeObject(kind: FreeKind, id: number): FreeObject {
     const item=freeCatalog.find(item=>item.kind===kind);
     if (!item && kind!=='obj') throw new Error('Tipo de peça inválido.');
