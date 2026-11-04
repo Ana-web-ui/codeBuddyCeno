@@ -7,8 +7,14 @@ type ArtworkPaths = ReadonlyMap<string, string>;
 export function exportFreeBlender(scene:FreeScene, artwork?:ArtworkPaths):string {
     validateFreeScene(scene);
     const data=scene.objects.map(o=>({
-        ...o,
-        image: artwork?.get(o.image) ?? o.image,
+        id: o.id,
+        kind: o.kind,
+        name: o.name,
+        position: o.position,
+        rotation: o.rotation,
+        roughness: o.roughness,
+        visible: o.visible,
+        locked: o.locked,
         parts: freeParts(o).map(part=>part.image ? {...part,image:artwork?.get(part.image) ?? part.image} : part),
     }));
     const preflight = artwork?.size ? `arquivo_script = globals().get('__file__', '')

@@ -207,3 +207,13 @@
 .free-start-dialog button:hover:not(:disabled) { background: #435cae; }
 .free-start-dialog button:disabled { opacity: .5; }
 .free-start-dialog [role="alert"] { color: #ffb5b5; }
+
+.free-export-actions .free-copy-export { background: transparent; }
+.free-export-actions .free-copy-export:hover:not(:disabled) { background: #2b3a56; }
+@media (max-width: 960px) {
+  .free-topbar { height: auto; min-height: 60px; flex-wrap: wrap; }
+  .free-export-actions { flex-wrap: wrap; margin-left: auto; }
+}
+@media (max-width: 420px) {
+  .free-export-actions { width: 100%; }
+}

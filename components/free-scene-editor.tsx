@@ -149,6 +149,33 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
         try{const image=await readArtworkFile(file);if(start!==epoch.current)throw new Error('A cena mudou. Escolha a arte novamente.');if(patch(id,{image}))setNotice('Arte aplicada à frente da peça e incorporada ao JSON.');}
         catch(e){setError(e instanceof Error?e.message:'Não foi possível aplicar a arte.');}finally{setLoading(false);}
     }
+    const exportDestination = target === 'blender' ? 'Blender' : '3ds Max';
+    const exportExtension = target === 'blender' ? 'py' : 'ms';
+    const hasArtwork = data.objects.some(item => item.image);
+    const downloadLabel = hasArtwork ? 'Baixar ZIP com materiais' : `Baixar .${exportExtension} para ${exportDestination}`;
+
+    function createExportScript(scene: FreeScene) {
+        return target === 'blender' ? exportFreeBlender(scene) : exportFreeMax(scene);
+    }
+
+    async function copyExportScript() {
+        try {
+            if (!navigator.clipboard?.writeText) {
+                throw new Error('A cópia não está disponível neste navegador. Use o botão Baixar.');
+            }
+            const script = createExportScript(current.current);
+            try {
+                await navigator.clipboard.writeText(script);
+            } catch {
+                throw new Error('O navegador não permitiu copiar. Use o botão Baixar.');
+            }
+            setError('');
+            setNotice(`Script para ${exportDestination} copiado.`);
+        } catch (error) {
+            setError(error instanceof Error ? error.message : 'Não foi possível copiar o script.');
+        }
+    }
+
     function exportScene() {
         try {
             const scene = current.current;
@@ -157,8 +184,8 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
                 downloadFile(new Uint8Array(archive), sceneFilename(scene, 'zip'), 'application/zip');
                 setNotice('ZIP exportado com o script e a pasta materiais. Extraia tudo antes de abrir o script.');
             } else {
-                const script = target === 'blender' ? exportFreeBlender(scene) : exportFreeMax(scene);
-                downloadFile(script, sceneFilename(scene, target === 'blender' ? 'py' : 'ms'), 'text/plain');
+                const script = createExportScript(scene);
+                downloadFile(script, sceneFilename(scene, exportExtension), 'text/plain');
                 setNotice('Script exportado com peças independentes e texto editável.');
             }
             setError('');
@@ -226,7 +253,15 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
             <button ref={helpButton} type="button" title="Ajuda e atalhos" aria-label="Ajuda e atalhos"
                 aria-expanded={helpMode !== null} aria-haspopup="dialog"
                 onClick={()=>{ if (helpMode) closeHelp(); else setHelpMode('menu'); }}>?</button>
-            <select aria-label="Destino da exportação livre" value={target} onChange={event=>setTarget(event.target.value as 'blender'|'max')}><option value="blender">Blender</option><option value="max">3ds Max</option></select><button data-tour-anchor="save" className="free-primary" onClick={exportScene} disabled={isBusy}><Download size={15}/>Exportar</button></div>
+            <select aria-label="Destino da exportação livre" value={target} onChange={event=>setTarget(event.target.value as 'blender'|'max')}>
+                <option value="blender">Blender</option><option value="max">3ds Max</option>
+            </select>
+            <button type="button" className="free-copy-export" onClick={copyExportScript} disabled={isBusy}>Copiar script</button>
+            <button type="button" data-tour-anchor="save" className="free-primary" onClick={exportScene} disabled={isBusy}
+                title={hasArtwork ? `Inclui o arquivo .${exportExtension} para ${exportDestination} e a pasta materiais` : undefined}>
+                <Download size={15}/>{downloadLabel}
+            </button>
+        </div>
       </header>
       {showStart && <dialog ref={startDialog} className="free-start-dialog" aria-labelledby="free-start-title"
           onCancel={event=>{event.preventDefault();if(!isBusy)setShowStart(false);}}>
