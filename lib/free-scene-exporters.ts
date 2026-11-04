@@ -29,8 +29,8 @@ for caminho_relativo in ${JSON.stringify([...artwork.values()])}:
 ` : '';
     return `# CODE BUDDY — CENA LIVRE 3D
 # Blender: Scripting > Open > Run Script. Cada execução preserva as anteriores.
-import bpy, math, json, uuid, base64, os, tempfile
-from mathutils import Vector, Euler
+import bpy, bmesh, math, json, uuid, base64, os, tempfile
+from mathutils import Vector, Euler, Matrix
 objetos = json.loads(${JSON.stringify(JSON.stringify(data))})
 nome = ${JSON.stringify(scene.name)}
 ${preflight}colecao = bpy.data.collections.new('CB_Livre_' + uuid.uuid4().hex[:8])
@@ -90,14 +90,21 @@ for item in objetos:
     raiz.hide_select = item['locked']
     for parte in item['parts']:
         tamanho = parte['size']; tipo = parte['shape']
-        if tipo == 'box':
-            bpy.ops.mesh.primitive_cube_add(size=1)
-            obj = vincular(bpy.context.object); obj.scale = tamanho
-            bpy.ops.object.transform_apply(location=False,rotation=False,scale=True)
-        elif tipo == 'cylinder':
-            bpy.ops.mesh.primitive_cylinder_add(vertices=32,radius=.5,depth=1)
-            obj = vincular(bpy.context.object); obj.scale = tamanho
-            bpy.ops.object.transform_apply(location=False,rotation=False,scale=True)
+        if tipo in ('box', 'cylinder'):
+            mesh = bpy.data.meshes.new(parte['name'])
+            geometria = bmesh.new()
+            try:
+                geometria.loops.layers.uv.verify()
+                if tipo == 'box':
+                    bmesh.ops.create_cube(geometria, size=1, calc_uvs=True)
+                else:
+                    bmesh.ops.create_cone(geometria, cap_ends=True, segments=32, radius1=.5, radius2=.5, depth=1, calc_uvs=True)
+                geometria.to_mesh(mesh)
+            finally:
+                geometria.free()
+            mesh.transform(Matrix.Diagonal((*tamanho, 1)))
+            mesh.update()
+            obj = vincular(bpy.data.objects.new(parte['name'], mesh))
         elif tipo == 'mesh':
             mesh = bpy.data.meshes.new(parte['name']); mesh.from_pydata(parte['vertices'],[],parte['faces']); mesh.update()
             obj = vincular(bpy.data.objects.new(parte['name'],mesh))

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Code Buddy · Cenografia",
+  title: "CenoLab · Cenografia",
   description: "Crie cenografias em uma cena 3D livre, desenhe paredes, insira peças e textos e exporte para Blender ou 3ds Max.",
   other: {
     "codex-preview": "development",
