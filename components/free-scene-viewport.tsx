@@ -36,6 +36,13 @@ function buildObject(o:FreeObject,textures:Map<string,THREE.Texture>):THREE.Grou
     for(const part of freeParts(o)) {
         let geometry:THREE.BufferGeometry;
         if(part.shape==='cylinder')geometry=new THREE.CylinderGeometry(.5,.5,1,32).rotateX(Math.PI/2);
+        else if(part.shape==='image' && part.vertices) {
+            geometry=new THREE.BufferGeometry();
+            geometry.setAttribute('position',new THREE.Float32BufferAttribute(part.vertices.flat(),3));
+            geometry.setIndex([0,1,2,0,2,3]);
+            geometry.setAttribute('uv',new THREE.Float32BufferAttribute([0,0,1,0,1,1,0,1],2));
+            geometry.computeVertexNormals();
+        }
         else if(part.shape==='image' || part.shape==='text')geometry=new THREE.PlaneGeometry(part.size[0],part.size[2]).rotateX(Math.PI/2);
         else if(part.shape==='mesh') {
             geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(part.vertices!.flat(),3));geometry.setIndex(part.faces!.flat());geometry.computeVertexNormals();
@@ -81,7 +88,7 @@ export function FreeSceneViewport(props:Props) {
         const ray=new THREE.Raycaster(),pointer=new THREE.Vector2();
         let grid:THREE.GridHelper|null=null,gridSize=0,currentView:'3d'|'plan'='3d';let lastW=0,lastH=0,disposed=false;
         const nodes=new Map<number,THREE.Group>(),textures=new Map<string,THREE.Texture>();
-        let direct:{id:number;start:THREE.Vector3;position:V3}|null=null;
+        let direct:{id:number;start:THREE.Vector3;position:V3;axis:'x'|'y'|null}|null=null;
         let wallStart:THREE.Vector3|null=null,wallEnd:THREE.Vector3|null=null;
         let down:{x:number;y:number;gizmo:boolean}|null=null;
         let busy=false,ignoreGizmoCommit=false;
@@ -173,7 +180,7 @@ if (selected && data?.visible && !data.locked && showManipulator) {
             const node=hitObject(event);
             if(node && p.tool==='move' && !(node.userData.config as FreeObject).locked){
                 const point=ground(event,node.position.z);if(!point)return;
-                p.onSelectAction(node.userData.freeId);direct={id:node.userData.freeId,start:point,position:node.position.toArray() as V3};
+                p.onSelectAction(node.userData.freeId);direct={id:node.userData.freeId,start:point,position:node.position.toArray() as V3,axis:null};
                 controls.enabled=false;renderer.domElement.setPointerCapture(event.pointerId);markBusy(true);event.preventDefault();
             }
         }
@@ -203,7 +210,24 @@ if (selected && data?.visible && !data.locked && showManipulator) {
                     }
                 }
             }
-            if(direct){const node=nodes.get(direct.id),point=ground(event,direct.position[2]);if(node && point){node.position.set(direct.position[0]+point.x-direct.start.x,direct.position[1]+point.y-direct.start.y,direct.position[2]);}}
+            if (direct) {
+                const node = nodes.get(direct.id);
+                const point = ground(event, direct.position[2]);
+                if (node && point) {
+                    let dx = point.x - direct.start.x;
+                    let dy = point.y - direct.start.y;
+                    if (event.shiftKey) {
+                        if (!direct.axis && Math.hypot(dx, dy) >= .01) {
+                            direct.axis = Math.abs(dx) >= Math.abs(dy) ? 'x' : 'y';
+                        }
+                        if (direct.axis !== 'x') dx = 0;
+                        if (direct.axis !== 'y') dy = 0;
+                    } else {
+                        direct.axis = null;
+                    }
+                    node.position.set(direct.position[0] + dx, direct.position[1] + dy, direct.position[2]);
+                }
+            }
         }
         function pointerUp(event:PointerEvent) {
             if(event.button!==0)return;
@@ -226,7 +250,7 @@ if (selected && data?.visible && !data.locked && showManipulator) {
                     latest.current.onWallAction(a, b);
                 }
             }
-            if(direct){const node=nodes.get(direct.id);direct=null;markBusy(false);if(node)commitNode(node);}
+            if(direct){pointerMove(event);const node=nodes.get(direct.id);direct=null;markBusy(false);if(node)commitNode(node);}
             if(!hadWall && !hadDirect && down && !down.gizmo && Math.hypot(event.clientX-down.x,event.clientY-down.y)<4 && latest.current.tool!=='hand')latest.current.onSelectAction(hitObject(event)?.userData.freeId ?? null);
             if((hadWall || hadDirect) && renderer.domElement.hasPointerCapture(event.pointerId))renderer.domElement.releasePointerCapture(event.pointerId);
             down=null;configure();

@@ -1,3 +1,4 @@
+import { getSupplierProduct } from './supplier-products';
 import { validateFreeScene } from './free-scene';
 import type { FreeScene, FreeObject } from './free-scene';
 import { freeParts } from './free-scene-geometry';
@@ -9,6 +10,11 @@ export function exportFreeBlender(scene:FreeScene, artwork?:ArtworkPaths):string
     const data=scene.objects.map(o=>({
         id: o.id,
         kind: o.kind,
+        productId: o.productId ?? '',
+        mount: o.mount ?? '',
+        screenOrientation: o.screenOrientation ?? '',
+        supplier: getSupplierProduct(o.productId)?.supplier ?? '',
+        model: getSupplierProduct(o.productId)?.model ?? '',
         name: o.name,
         position: o.position,
         rotation: o.rotation,
@@ -86,6 +92,12 @@ for item in objetos:
     raiz.rotation_euler = Euler(tuple(math.radians(v) for v in item['rotation']),'XYZ')
     raiz['code_buddy_id'] = 'free:' + str(item['id'])
     raiz['code_buddy_role'] = item['kind']
+    if item.get('productId'):
+        raiz['code_buddy_product_id'] = item['productId']
+        raiz['code_buddy_supplier'] = item['supplier']
+        raiz['code_buddy_model'] = item['model']
+        if item.get('mount'): raiz['code_buddy_mount'] = item['mount']
+        if item.get('screenOrientation'): raiz['code_buddy_screen_orientation'] = item['screenOrientation']
     raiz['code_buddy_locked'] = item['locked']
     raiz.hide_select = item['locked']
     for parte in item['parts']:
@@ -114,7 +126,7 @@ for item in objetos:
             obj = vincular(bpy.data.objects.new(parte['name'],curva))
         else:
             mesh = bpy.data.meshes.new(parte['name'])
-            mesh.from_pydata([(-tamanho[0]/2,0,-tamanho[2]/2),(tamanho[0]/2,0,-tamanho[2]/2),(tamanho[0]/2,0,tamanho[2]/2),(-tamanho[0]/2,0,tamanho[2]/2)],[],[(0,1,2,3)])
+            mesh.from_pydata(parte.get('vertices', [(-tamanho[0]/2,0,-tamanho[2]/2),(tamanho[0]/2,0,-tamanho[2]/2),(tamanho[0]/2,0,tamanho[2]/2),(-tamanho[0]/2,0,tamanho[2]/2)]),[],[(0,1,2,3)])
             mesh.update(); uv=mesh.uv_layers.new()
             for i,valor in enumerate([(0,0),(1,0),(1,1),(0,1)]): uv.data[i].uv=valor
             obj=vincular(bpy.data.objects.new(parte['name'],mesh))
@@ -188,12 +200,18 @@ format "Code Buddy: cena livre criada.\\n"
 `;
 }
 function maxObject(o:FreeObject, artwork?:ArtworkPaths):string {
+    const product = getSupplierProduct(o.productId);
     const color=(hex:string)=>'(color '+[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16)).join(' ')+')';
     return `(
 local raiz=registrar (Dummy name:${ms(o.name)} pos:[0,0,0])
 local pecas=#(raiz)
 setUserProp raiz "code_buddy_id" "free:${o.id}"
 setUserProp raiz "code_buddy_role" ${ms(o.kind)}
+${product ? `setUserProp raiz "code_buddy_product_id" ${ms(product.id)}
+setUserProp raiz "code_buddy_supplier" ${ms(product.supplier)}
+setUserProp raiz "code_buddy_model" ${ms(product.model)}` : ''}
+${o.mount ? `setUserProp raiz "code_buddy_mount" ${ms(o.mount)}` : ''}
+${o.screenOrientation ? `setUserProp raiz "code_buddy_screen_orientation" ${ms(o.screenOrientation)}` : ''}
 ${freeParts(o).map((part,i)=>{
     const [w,d,h]=part.size,c=part.center,mat=`materialLivre ${ms(o.name+'_'+part.name)} ${color(part.color)} (${part.opacity}) (${o.roughness})`;
     const artworkPath = part.image ? artwork?.get(part.image) : undefined;
@@ -202,7 +220,7 @@ ${freeParts(o).map((part,i)=>{
     else if(part.shape==='cylinder') code=`local obj=registrar (cylinder radius:(${w/2}*METRO) height:(${h}*METRO) sides:32 pos:${vec([c[0],c[1],c[2]-h/2])})\nobj.scale=[1,${d/w},1]`;
     else if(part.shape==='mesh') code=`local obj=registrar (mesh vertices:#(${part.vertices!.map(vec).join(',')}) faces:#(${part.faces!.map(f=>'['+f.map(n=>n+1).join(',')+']').join(',')}))`;
     else if(part.shape==='text') code=`local obj=registrar (text text:${ms(part.text!)} size:METRO font:"Arial" alignment:2)\nlocal limites=nodeGetBoundingBox obj obj.transform\nlocal centro=(limites[1]+limites[2])/2\nlocal escalaX=(${w}*METRO)/(amax #(.001*METRO,limites[2].x-limites[1].x))\nlocal escalaY=(${h}*METRO)/(amax #(.001*METRO,limites[2].y-limites[1].y))\nobj.transform=(transMatrix (-centro))*(scaleMatrix [escalaX,escalaY,1])*(rotateXMatrix 90)*(transMatrix ${vec(c)})`;
-    else code=`local obj=registrar (mesh vertices:#(${[[-w/2,0,-h/2],[w/2,0,-h/2],[w/2,0,h/2],[-w/2,0,h/2]].map(v=>vec(v.map((n,k)=>n+c[k]))).join(',')}) faces:#([1,2,3],[1,3,4]))\nsetNumTVerts obj 4\nsetTVert obj 1 [0,0,0];setTVert obj 2 [1,0,0];setTVert obj 3 [1,1,0];setTVert obj 4 [0,1,0]\nbuildTVFaces obj;setTVFace obj 1 [1,2,3];setTVFace obj 2 [1,3,4]`;
+    else code=`local obj=registrar (mesh vertices:#(${(part.vertices ?? [[-w/2,0,-h/2],[w/2,0,-h/2],[w/2,0,h/2],[-w/2,0,h/2]]).map(v=>vec(v.map((n,k)=>n+c[k]))).join(',')}) faces:#([1,2,3],[1,3,4]))\nsetNumTVerts obj 4\nsetTVert obj 1 [0,0,0];setTVert obj 2 [1,0,0];setTVert obj 3 [1,1,0];setTVert obj 4 [0,1,0]\nbuildTVFaces obj;setTVFace obj 1 [1,2,3];setTVFace obj 2 [1,3,4]`;
     return `(
 ${code}
 obj.name=${ms(o.name+'_'+part.name+'_'+i)}

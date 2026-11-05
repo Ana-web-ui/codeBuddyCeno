@@ -4,7 +4,7 @@ import { useEffect, useRef } from 'react';
 
 export const tourSteps = [
     { id: 'insert', title: 'Crie sua primeira peça', description: 'Em Adicionar, clique em Bloco para adicionar uma peça. Você também pode pressionar T para inserir texto.', keys: ['T'] },
-    { id: 'move', title: 'Selecione e mova uma peça', description: 'Clique em uma peça. Arraste uma seta colorida para mover em um eixo ou use V e arraste a própria peça.', keys: ['M', 'V'] },
+    { id: 'move', title: 'Selecione e mova uma peça', description: 'Clique em uma peça. Arraste uma seta colorida para mover em um eixo ou use V e arraste a própria peça. Segure Shift durante o arraste para travar em X ou Y.', keys: ['M', 'V', 'Shift'] },
     { id: 'draw', title: 'Desenhe na planta', description: 'Abra Planta. Pressione R e arraste entre dois cantos para criar um bloco. Use B para desenhar uma parede. Esc cancela o desenho.', keys: ['R', 'B', 'Esc'] },
     { id: 'adjust', title: 'Ajuste e duplique', description: 'Com uma peça selecionada, pressione G para girar, S para redimensionar ou Ctrl + D para duplicar. Use Ctrl + C para copiar a peça e Ctrl + V para colar uma cópia.', keys: ['G', 'S', 'Ctrl + D', 'Ctrl + C', 'Ctrl + V'] },
     { id: 'environment', title: 'Escolha um cenário', description: 'Abra Ambiente e grade → Cenário para escolher o fundo branco, a área com grama, o hall de hotel ou o pavilhão cinza.', keys: [] },
@@ -13,6 +13,7 @@ export const tourSteps = [
 
 const shortcuts = [
     ['M', 'Selecionar'], ['V', 'Mover'], ['G', 'Girar'], ['S', 'Redimensionar'],
+    ['Shift + arrastar a peça', 'Mover em uma direção horizontal (X ou Y)'],
     ['H', 'Navegar'], ['R', 'Desenhar retângulo'], ['B', 'Desenhar parede'],
     ['T', 'Inserir texto'], ['0', 'Enquadrar a cena'],
     ['Ctrl + D', 'Duplicar a peça'], ['Ctrl + C', 'Copiar a peça selecionada'], ['Ctrl + V', 'Colar a peça copiada'], ['Delete ou Backspace', 'Excluir a peça'],

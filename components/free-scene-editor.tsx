@@ -12,6 +12,8 @@ import type { FreeEnvironment, FreeScene, FreeKind, FreeObject, V3 } from '@/lib
 import { exportFreeBlender, exportFreeMax } from '@/lib/free-scene-exporters';
 import { exportFreePackage } from '@/lib/free-scene-package';
 import { readArtworkFile } from '@/lib/branding-upload';
+import type { SupplierMount, ScreenOrientation } from '@/lib/supplier-products';
+import { supplierProducts, getSupplierProduct, supplierObjectSize } from '@/lib/supplier-products';
 import { modelGeometry, MAX_MODEL_BYTES } from '@/lib/imported-models';
 
 function downloadFile(content:BlobPart,name:string,type:string) {
@@ -43,6 +45,7 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
     const api=useRef<FreeViewportApi|null>(null),fileInput=useRef<HTMLInputElement>(null),objInput=useRef<HTMLInputElement>(null),imageInput=useRef<HTMLInputElement>(null),fileRequest=useRef(0);
     useLayoutEffect(()=>{current.current=data;},[data]);
     const selected=data.objects.find(o=>o.id===selectedId),canEdit=!!selected && !selected.locked && !busy && !loading;
+    const selectedProduct = getSupplierProduct(selected?.productId);
     const nextId=()=>Math.max(0,...current.current.objects.map(o=>o.id))+1;
     const commit=useCallback((next:FreeScene):boolean=>{
         try {
@@ -78,8 +81,8 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
         }
     }
 
-    function add(kind:FreeKind) {
-        if(busy || loading)return;const item=newFreeObject(kind,nextId());
+    function add(kind:FreeKind, productId?:string) {
+        if(busy || loading)return;const item=newFreeObject(kind,nextId(),productId);
         const [x,y]=api.current?.center() ?? [0,0,0];
         item.position=[x,y,item.position[2]];
         if(commit({...current.current,objects:[...current.current.objects,item]})){select(item.id);setTool('move');setNotice(`${item.name} adicionado. Arraste ou ajuste as propriedades.`);}
@@ -88,6 +91,12 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
         const scene=current.current,item=scene.objects.find(o=>o.id===id);if(!item)return false;
         if(item.locked && Object.keys(change).some(key=>key!=='locked' && key!=='visible')){setError('Desbloqueie a peça para editar.');return false;}
         return commit({...scene,objects:scene.objects.map(o=>o.id===id?{...o,...change}:o)});
+    }
+    function supplierLayout(change: { mount?: SupplierMount; screenOrientation?: ScreenOrientation }) {
+        if (!selected || !selectedProduct?.display) return;
+        const mount = change.mount ?? selected.mount ?? selectedProduct.display.defaultMount;
+        const orientation = change.screenOrientation ?? selected.screenOrientation ?? 'horizontal';
+        patch(selected.id, { mount, screenOrientation: orientation, size: supplierObjectSize(selectedProduct, mount, orientation) });
     }
     function modelSettings(item:FreeObject,settings:Partial<Pick<FreeObject,'objUnit'|'upAxis'>>):boolean {
         try{const next={...item,...settings};const g=modelGeometry({id:1,name:next.name,source:next.source,unit:next.objUnit,upAxis:next.upAxis,scale:1,x:0,y:0,z:0,rotation:0,material:'white'});return patch(item.id,{...settings,size:g.size.map(n=>Math.max(.01,n)) as V3});}
@@ -160,7 +169,7 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
         try {
             if(!/\.obj$/i.test(file.name) || file.size>MAX_MODEL_BYTES)throw new Error('Escolha um OBJ de até 2 MB.');
             const source=await file.text();if(start!==epoch.current)throw new Error('A cena mudou. Importe o OBJ novamente.');
-            const item=newFreeObject('obj',nextId());item.name=file.name.slice(0,100);item.source=source;item.objUnit=objUnit;item.upAxis=objAxis;item.position=api.current?.center() ?? [0,0,0];
+            const item=newFreeObject('obj',nextId());item.name=file.name.slice(0,100);item.source=source;item.objUnit=objUnit;item.upAxis=objAxis;const [x,y]=api.current?.center() ?? [0,0,0];item.position=[x,y,0];
             const geometry=modelGeometry({id:1,name:item.name,source,unit:objUnit,upAxis:objAxis,scale:1,x:0,y:0,z:0,rotation:0,material:'white'});item.size=geometry.size.map(n=>Math.max(.01,n)) as V3;
             if(commit({...current.current,objects:[...current.current.objects,item]})){setShowObjImport(false);select(item.id);setTool('move');requestAnimationFrame(()=>api.current?.fit());setNotice('OBJ importado. Ajuste as medidas e a orientação nas propriedades.');}
         }catch(e){setError(e instanceof Error?e.message:'Não foi possível importar.');}finally{setLoading(false);}
@@ -326,6 +335,18 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
         <aside className="free-inspector" aria-label="Criação e propriedades da cena livre">
           <nav className="free-panel-tabs" aria-label="Painel da cena livre">{([{id:'insert',label:'Adicionar'},{id:'object',label:'Propriedades'},{id:'layers',label:'Lista de peças'},{id:'scene',label:'Ambiente e grade'}] as const).map(item=><button key={item.id} aria-pressed={panel===item.id} onClick={()=>setPanel(item.id)}>{item.label}</button>)}</nav>
           {panel==='insert' && <div className="free-panel"><h2>Construa sua cena</h2><p>Nenhuma peça vem pronta. Insira uma de cada vez e edite como quiser.</p><div className="free-catalog">{freeCatalog.map(item=><button key={item.kind} data-tour-anchor={item.kind==='box' ? 'insert' : undefined} onClick={()=>add(item.kind)} disabled={isBusy}><span>{item.kind==='text'?<Type size={18}/>:item.kind==='wall'?<BrickWall size={18}/>:<Box size={18}/>}</span>{item.label}<Plus size={13}/></button>)}</div><button className="free-secondary" onClick={()=>{setTool('wall');setNotice('Arraste no chão para desenhar uma parede.');}} disabled={isBusy}><BrickWall size={16}/>Desenhar parede com o mouse</button>
+              <h3>Peças de fornecedores</h3>
+              {Array.from(new Set(supplierProducts.map(product=>product.supplier))).map(supplier=>
+                  <section key={supplier} aria-label={'Peças de ' + supplier}>
+                      <h3>{supplier}</h3>
+                      <div className="free-catalog">
+                          {supplierProducts.filter(product=>product.supplier===supplier).map(product=>
+                              <button key={product.id} onClick={()=>add('supplierTotem',product.id)} disabled={isBusy}
+                                title={(product.display ? 'Tela ' : 'Totem ') + product.supplier + ' ' + product.model}>
+                                  <Box size={18}/><span>{product.display ? 'Tela' : 'Totem'} {product.model}</span>
+                              </button>)}
+                      </div>
+                  </section>)}
               <button type="button" className="free-secondary" aria-expanded={showObjImport}
                 aria-controls="free-obj-import" onClick={()=>setShowObjImport(open=>!open)} disabled={isBusy}>
                   <Upload size={16}/>Importar objeto OBJ
@@ -352,10 +373,38 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
           </div>}
           {panel==='object' && <div className="free-panel">
             {selected ? <><h2>{selected.name}</h2><label className="free-field">Nome<input aria-label="Nome da peça" value={selected.name} maxLength={100} disabled={!canEdit} onChange={event=>patch(selected.id,{name:event.target.value})}/></label>
+              {selectedProduct && <div className="free-field">
+                  <p>Fornecedor <strong>{selectedProduct.supplier}</strong></p>
+                  <p>Modelo <strong>{selectedProduct.model}</strong></p>
+                  {selectedProduct.display ? <>
+                      <p className="free-small">Gabinete sem suporte (L × A × P) {([0,2,1] as const).map(axis=>
+                          (selectedProduct.display!.size[axis]*100).toLocaleString('pt-BR',{maximumFractionDigits:1})).join(' × ')} cm</p>
+                      <label className="free-field">Instalação
+                          <select aria-label="Instalação da tela" className="mt-2 block w-full rounded border border-slate-600 bg-slate-900 p-2 text-slate-100" disabled={!canEdit}
+                            value={selected.mount ?? selectedProduct.display.defaultMount}
+                            onChange={event=>supplierLayout({mount:event.target.value as SupplierMount})}>
+                              <option value="pedestal">Com pedestal</option>
+                              <option value="wall">Na parede</option>
+                          </select>
+                      </label>
+                      <label className="free-field">Orientação da tela
+                          <select aria-label="Orientação da tela" className="mt-2 block w-full rounded border border-slate-600 bg-slate-900 p-2 text-slate-100" disabled={!canEdit}
+                            value={selected.screenOrientation ?? 'horizontal'}
+                            onChange={event=>supplierLayout({screenOrientation:event.target.value as ScreenOrientation})}>
+                              <option value="horizontal">Horizontal (deitada)</option>
+                              <option value="vertical">Vertical (em pé)</option>
+                          </select>
+                      </label>
+                      <p className="free-small">{(selected.mount ?? selectedProduct.display.defaultMount)==='wall'
+                          ? 'Ajuste Posição Z para escolher a altura na parede. A parede é uma peça separada.'
+                          : 'Tela inclinada no pedestal para interação.'}</p>
+                      <p className="free-small">Gabinete conforme o fornecedor. Pedestal, suporte e área útil da tela aproximados. Ao trocar as opções, as medidas voltam ao padrão do modelo.</p>
+                  </> : <p className="free-small">Totem integrado vertical. Tela e rodízios aproximados. A arte é aplicada na tela.</p>}
+              </div>}
               <div className="free-state-row"><button aria-pressed={selected.visible} disabled={isBusy} onClick={()=>patch(selected.id,{visible:!selected.visible})}>{selected.visible?<Eye size={15}/>:<EyeOff size={15}/>} {selected.visible?'Visível':'Oculta'}</button><button aria-pressed={selected.locked} disabled={isBusy} onClick={()=>patch(selected.id,{locked:!selected.locked})}>{selected.locked?<Lock size={15}/>:<Unlock size={15}/>} {selected.locked?'Bloqueada':'Livre'}</button></div>
               <h3>Posição · m</h3><div className="free-vector">{(['X','Y','Z'] as const).map((axis,i)=><NumberField key={axis} label={`Posição ${axis}`} value={selected.position[i]} disabled={!canEdit} change={n=>{const position=[...selected.position] as V3;position[i]=n;return patch(selected.id,{position});}}/>)}</div>
               <h3>Rotação · graus</h3><div className="free-vector">{(['X','Y','Z'] as const).map((axis,i)=><NumberField key={axis} label={`Rotação ${axis}`} value={selected.rotation[i]} step={1} disabled={!canEdit} change={n=>{const rotation=[...selected.rotation] as V3;rotation[i]=n;return patch(selected.id,{rotation});}}/>)}</div>
-              <h3>Medidas · m</h3><div className="free-vector">{(['Largura','Profundidade','Altura'] as const).map((label,i)=><NumberField key={label} label={label} value={selected.size[i]} min={.01} max={1000} disabled={!canEdit} change={n=>{const size=[...selected.size] as V3;size[i]=n;return patch(selected.id,{size});}}/>)}</div>
+              <h3>{selectedProduct?.display ? "Medidas com suporte · m" : "Medidas · m"}</h3><div className="free-vector">{(['Largura','Profundidade','Altura'] as const).map((label,i)=><NumberField key={label} label={label} value={selected.size[i]} min={.01} max={1000} disabled={!canEdit} change={n=>{const size=[...selected.size] as V3;size[i]=n;return patch(selected.id,{size});}}/>)}</div>
               {selected.kind==='text' && <label className="free-field">Texto<textarea aria-label="Conteúdo do texto" maxLength={1000} rows={4} value={selected.text} disabled={!canEdit} onChange={event=>patch(selected.id,{text:event.target.value})}/></label>}
               {['shelf','showcase'].includes(selected.kind) && <NumberField label="Prateleiras internas" value={selected.shelves} min={0} max={10} step={1} disabled={!canEdit} change={n=>patch(selected.id,{shelves:n})}/>}
               {selected.kind==='obj' && <div className="free-obj-options"><label>Unidade<select aria-label="Unidade do objeto importado" disabled={!canEdit} value={selected.objUnit} onChange={event=>modelSettings(selected,{objUnit:event.target.value as 'm'|'cm'|'mm'})}><option value="m">Metros</option><option value="cm">Centímetros</option><option value="mm">Milímetros</option></select></label><label>Eixo vertical<select aria-label="Eixo vertical do objeto importado" disabled={!canEdit} value={selected.upAxis} onChange={event=>modelSettings(selected,{upAxis:event.target.value as 'z'|'y'})}><option value="z">Z</option><option value="y">Y</option></select></label></div>}

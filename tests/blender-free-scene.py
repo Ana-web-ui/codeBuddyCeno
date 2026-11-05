@@ -16,6 +16,13 @@ for item in items:
     col=next(c for c in bpy.data.collections if c.get('code_buddy_free_scene'))
     config=item['scene']['objects'][0]
     root=next(o for o in col.objects if o.type=='EMPTY' and o.get('code_buddy_id')=='free:1')
+    if config.get('productId') == 'touk-wt55v-slim':
+        assert root.get('code_buddy_product_id') == config['productId']
+        assert root.get('code_buddy_supplier') == 'Touk'
+        assert root.get('code_buddy_model') == 'WT55V Vertical Slim'
+    if config.get('mount'):
+        assert root.get('code_buddy_mount') == config['mount']
+        assert root.get('code_buddy_screen_orientation') == config['screenOrientation']
     expected=Matrix.Translation(Vector(config['position'])) @ Euler(tuple(math.radians(v) for v in config['rotation']),'XYZ').to_matrix().to_4x4()
     assert max(abs(root.matrix_world[i][j]-expected[i][j]) for i in range(4) for j in range(4))<1e-5, item['id']
     children=[o for o in col.objects if o.parent==root]
@@ -23,7 +30,7 @@ for item in items:
     remaining=list(children)
     for part in item['parts']:
         local=Vector(part['center'])
-        if part['shape']=='mesh': local+=Vector(tuple((min(v[i] for v in part['vertices'])+max(v[i] for v in part['vertices']))/2 for i in range(3)))
+        if part.get('vertices'): local+=Vector(tuple((min(v[i] for v in part['vertices'])+max(v[i] for v in part['vertices']))/2 for i in range(3)))
         target=expected @ local
         matches=[o for o in remaining if o.get('code_buddy_role')==part['name']]
         assert matches,(item['id'],part['name'])

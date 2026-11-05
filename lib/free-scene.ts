@@ -1,8 +1,13 @@
+import type { SupplierMount, ScreenOrientation } from './supplier-products';
+import { getSupplierProduct, supplierObjectSize } from './supplier-products';
 import { artworkImageSize } from './branding-image';
 import { parseObj } from './imported-models';
 export type V3 = [number, number, number];
-export type FreeKind = 'wall' | 'box' | 'cylinder' | 'floor' | 'counter' | 'stage' | 'led' | 'text' | 'shelf' | 'showcase' | 'roundTable' | 'bistro' | 'chair' | 'armchair' | 'puff' | 'coffeeTable' | 'backdrop' | 'obj';
+export type FreeKind = 'wall' | 'box' | 'cylinder' | 'floor' | 'counter' | 'stage' | 'led' | 'text' | 'shelf' | 'showcase' | 'roundTable' | 'bistro' | 'chair' | 'armchair' | 'puff' | 'coffeeTable' | 'backdrop' | 'obj' | 'supplierTotem';
 export type FreeObject = {
+    productId?: string;
+    mount?: SupplierMount;
+    screenOrientation?: ScreenOrientation;
     id: number; kind: FreeKind; name: string; position: V3; rotation: V3; size: V3;
     color: string; visible: boolean; locked: boolean; text: string; image: string;
     source: string; objUnit: 'm'|'cm'|'mm'; upAxis: 'z'|'y'; shelves: number; roughness: number; opacity: number;
@@ -41,6 +46,7 @@ export function createStandBase(depth: 3 | 6): FreeScene {
     const width = 3;
     const floor = newFreeObject('floor', 1);
     floor.size = [width, depth, floor.size[2]];
+    floor.position[2] = -floor.size[2];
 
     const wall = newFreeObject('wall', 2);
     wall.size[0] = width;
@@ -52,10 +58,23 @@ export function createStandBase(depth: 3 | 6): FreeScene {
     return { ...emptyFreeScene(), name: `Stand ${width} × ${depth} m`, objects: [floor, wall, counter] };
 }
 
-export function newFreeObject(kind: FreeKind, id: number): FreeObject {
+export function newFreeObject(kind: FreeKind, id: number, productId?: string): FreeObject {
     const item=freeCatalog.find(item=>item.kind===kind);
+    if (kind === 'supplierTotem') {
+        const product = getSupplierProduct(productId);
+        if (!product) throw new Error('Modelo de fornecedor desconhecido.');
+        return {
+            ...newFreeObject('box', id),
+            kind,
+            productId: product.id,
+            name: (product.display ? 'Tela ' : 'Totem ') + product.supplier + ' ' + product.model,
+            ...(product.display ? { mount: product.display.defaultMount, screenOrientation: 'horizontal' as const } : {}),
+            size: supplierObjectSize(product),
+            color: '#202124',
+        };
+    }
     if (!item && kind!=='obj') throw new Error('Tipo de peça inválido.');
-    return {id,kind,name:item?.label ?? 'Objeto 3D',position:[0,0,kind==='floor' ? -(item?.size[2] ?? 0) : 0],rotation:[0,0,0],size:[...(item?.size ?? [1,1,1])],
+    return {id,kind,name:item?.label ?? 'Objeto 3D',position:[0,0,kind==='led' ? -(item?.size[2] ?? 0)*.35 : 0],rotation:[0,0,0],size:[...(item?.size ?? [1,1,1])],
         color:item?.color ?? '#8f9cb2',visible:true,locked:false,text:kind==='text'?'Sua marca':'',image:'',source:'',objUnit:'m',upAxis:'z',shelves:3,roughness:.55,opacity:1};
 }
 const objectKeys=Object.keys(newFreeObject('box',1)).sort().join(',');
@@ -71,9 +90,21 @@ export function validateFreeScene(value: unknown): asserts value is FreeScene {
     if(!Array.isArray(value.objects) || value.objects.length>200) throw new Error('Use até 200 peças na cena.');
     const ids=new Set<number>();let objCount=0,artPixels=0;const arts=new Set<string>();
     for(const item of value.objects) {
-        if(!isRecord(item) || Object.keys(item).sort().join(',')!==objectKeys || !Number.isInteger(item.id) || (item.id as number)<1 || (item.id as number)>1000000 || ids.has(item.id as number)) throw new Error('Uma peça tem dados ou identificador inválidos.');
+        if(!isRecord(item) || Object.keys(item).filter(key=>!['productId','mount','screenOrientation'].includes(key)).sort().join(',')!==objectKeys || !Number.isInteger(item.id) || (item.id as number)<1 || (item.id as number)>1000000 || ids.has(item.id as number)) throw new Error('Uma peça tem dados ou identificador inválidos.');
         ids.add(item.id as number);
-        if(!freeCatalog.some(entry=>entry.kind===item.kind) && item.kind!=='obj') throw new Error('Tipo de peça desconhecido.');
+        if(!freeCatalog.some(entry=>entry.kind===item.kind) && item.kind!=='obj' && item.kind!=='supplierTotem') throw new Error('Tipo de peça desconhecido.');
+        if (item.kind === 'supplierTotem') {
+            const product = getSupplierProduct(item.productId);
+            if (!product) throw new Error('Modelo de fornecedor desconhecido.');
+            if (product.display) {
+                if ('mount' in item && !['pedestal','wall'].includes(item.mount as string)) throw new Error('Escolha pedestal ou parede.');
+                if ('screenOrientation' in item && !['horizontal','vertical'].includes(item.screenOrientation as string)) throw new Error('Escolha tela horizontal ou vertical.');
+            } else if ('mount' in item || 'screenOrientation' in item) {
+                throw new Error('O totem integrado tem instalação e orientação fixas.');
+            }
+        } else if (['productId','mount','screenOrientation'].some(key=>key in item)) {
+            throw new Error('A identificação do fornecedor pertence a uma peça de fornecedor.');
+        }
         if(typeof item.name!=='string' || /[\u0000-\u001f]/.test(item.name) || item.name.length>100 || typeof item.text!=='string' || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(item.text) || item.text.length>1000 || typeof item.visible!=='boolean' || typeof item.locked!=='boolean' ||
             typeof item.color!=='string' || !/^#[0-9a-fA-F]{6}$/.test(item.color)) throw new Error('Confira o nome, texto e cor da peça.');
         for(const key of ['position','rotation','size']) {

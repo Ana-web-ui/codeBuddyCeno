@@ -1,3 +1,5 @@
+import { supplierDisplayParts } from './supplier-display-geometry';
+import { getSupplierProduct } from './supplier-products';
 import type { FreeObject, V3 } from './free-scene';
 import { modelGeometry } from './imported-models';
 export type FreePart = {name:string;shape:'box'|'cylinder'|'text'|'image'|'mesh';size:V3;center:V3;color:string;opacity:number;text?:string;image?:string;vertices?:V3[];faces?:[number,number,number][]};
@@ -8,6 +10,34 @@ export function freeParts(o:FreeObject):FreePart[] {
     const cyl=(name:string,size:V3,center:V3,color=o.color)=>parts.push({name,shape:'cylinder',size:size.map(n=>Math.max(.001,n)) as V3,center,color,opacity:o.opacity});
     const board=Math.min(.035,w/8,d/8,h/12), white='#f1f1ed',dark='#374256';
     switch(o.kind) {
+        case 'supplierTotem': {
+            const product = getSupplierProduct(o.productId);
+            if (!product) throw new Error('Modelo de fornecedor desconhecido.');
+            if (product.display) {
+                parts.push(...supplierDisplayParts(o, product));
+                break;
+            }
+            const bodyWidth = w * product.cabinetWidth! / product.size[0];
+            const bodyDepth = d * product.cabinetDepth! / product.size[1];
+            const wheelHeight = h * .04 / product.size[2];
+            const baseHeight = h * .02 / product.size[2];
+            const bodyBottom = wheelHeight + baseHeight;
+            for (const x of [-1, 1]) for (const y of [-1, 1]) {
+                box('Rodizio_' + x + '_' + y, [w * .05, d * .12, wheelHeight],
+                    [x * w * .4, y * d * .35, wheelHeight / 2], '#252525');
+            }
+            box('Base', [w, d, baseHeight], [0, 0, wheelHeight + baseHeight / 2]);
+            box('Gabinete', [bodyWidth, bodyDepth, h - bodyBottom], [0, 0, (h + bodyBottom) / 2]);
+            const screenSize: V3 = [bodyWidth * .84, .002, h * .63];
+            const screenCenter: V3 = [0, -bodyDepth / 2 - .002, h * .65];
+            box('Tela', screenSize, screenCenter, '#101b29');
+            if (o.image) parts.push({
+                name: 'Arte_Tela', shape: 'image', size: screenSize,
+                center: [0, screenCenter[1] - .002, screenCenter[2]],
+                color: '#ffffff', opacity: o.opacity, image: o.image,
+            });
+            break;
+        }
         case 'text': parts.push({name:'Texto',shape:'text',size:[w,.001,h],center:[0,0,h/2],color:o.color,opacity:o.opacity,text:o.text});break;
         case 'obj': {
             const g=modelGeometry({id:1,name:o.name,source:o.source,unit:o.objUnit,upAxis:o.upAxis,scale:1,x:0,y:0,z:0,rotation:0,material:'white'});
@@ -58,7 +88,7 @@ export function freeParts(o:FreeObject):FreePart[] {
         case 'puff':box('Puff',[w,d,h],[0,0,h/2]);break;
         default:box(o.kind==='wall'?'Parede':o.kind==='floor'?'Piso':o.kind==='stage'?'Palco':'Bloco',[w,d,h],[0,0,h/2]);
     }
-    if(o.image && o.kind!=='obj' && o.kind!=='text') {
+    if(o.image && o.kind!=='obj' && o.kind!=='text' && o.kind!=='supplierTotem') {
         const led=o.kind==='led';
         parts.push({name:'Arte',shape:'image',size:[Math.max(.01,led?w-.08:w*.94),.001,Math.max(.01,led?h*.65-.08:h*.85)],center:[0,led?-.075:-d/2-.002,led?h-h*.65/2:h/2],color:'#ffffff',opacity:o.opacity,image:o.image});
     }
