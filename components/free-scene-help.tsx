@@ -6,7 +6,7 @@ export const tourSteps = [
     { id: 'insert', title: 'Crie sua primeira peça', description: 'Em Adicionar, clique em Bloco para adicionar uma peça. Você também pode pressionar T para inserir texto.', keys: ['T'] },
     { id: 'move', title: 'Selecione e mova uma peça', description: 'Clique em uma peça. Arraste uma seta colorida para mover em um eixo ou use V e arraste a própria peça.', keys: ['M', 'V'] },
     { id: 'draw', title: 'Desenhe na planta', description: 'Abra Planta. Pressione R e arraste entre dois cantos para criar um bloco. Use B para desenhar uma parede. Esc cancela o desenho.', keys: ['R', 'B', 'Esc'] },
-    { id: 'adjust', title: 'Ajuste e duplique', description: 'Com uma peça selecionada, pressione G para girar, S para redimensionar ou Ctrl + D para duplicar.', keys: ['G', 'S', 'Ctrl + D'] },
+    { id: 'adjust', title: 'Ajuste e duplique', description: 'Com uma peça selecionada, pressione G para girar, S para redimensionar ou Ctrl + D para duplicar. Use Ctrl + C para copiar a peça e Ctrl + V para colar uma cópia.', keys: ['G', 'S', 'Ctrl + D', 'Ctrl + C', 'Ctrl + V'] },
     { id: 'environment', title: 'Escolha um cenário', description: 'Abra Ambiente e grade → Cenário para escolher o fundo branco, a área com grama, o hall de hotel ou o pavilhão cinza.', keys: [] },
     { id: 'save', title: 'Salve ou exporte', description: 'Salve em JSON para editar depois. Escolha Blender ou 3ds Max. Use Baixar para obter o arquivo indicado ou Copiar script para copiar o conteúdo. Cenas com fotos ou logos baixam em ZIP com a pasta materiais.', keys: ['Ctrl + Z', 'Ctrl + S'] },
 ] as const;
@@ -15,7 +15,7 @@ const shortcuts = [
     ['M', 'Selecionar'], ['V', 'Mover'], ['G', 'Girar'], ['S', 'Redimensionar'],
     ['H', 'Navegar'], ['R', 'Desenhar retângulo'], ['B', 'Desenhar parede'],
     ['T', 'Inserir texto'], ['0', 'Enquadrar a cena'],
-    ['Ctrl + D', 'Duplicar a peça'], ['Delete ou Backspace', 'Excluir a peça'],
+    ['Ctrl + D', 'Duplicar a peça'], ['Ctrl + C', 'Copiar a peça selecionada'], ['Ctrl + V', 'Colar a peça copiada'], ['Delete ou Backspace', 'Excluir a peça'],
     ['Ctrl + Z', 'Desfazer'], ['Ctrl + Shift + Z ou Ctrl + Y', 'Refazer'],
     ['Ctrl + S', 'Salvar a cena em JSON'], ['Esc', 'Cancelar o gesto ou limpar a seleção'],
 ] as const;

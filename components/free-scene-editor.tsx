@@ -26,6 +26,7 @@ const toolItems=[{id:'select',label:'Selecionar (M)',Icon:MousePointer2},{id:'mo
 export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
     const [history,setHistory]=useState(()=>({past:[] as FreeScene[],present:emptyFreeScene(),future:[] as FreeScene[]}));
     const data=history.present,current=useRef(data),epoch=useRef(0);
+    const copiedObject = useRef<FreeObject | null>(null);
     const [selectedId,setSelectedId]=useState<number|null>(null),[tool,setTool]=useState<FreeTool>('move'),[view,setView]=useState<'3d'|'plan'>('3d');
     const [panel,setPanel]=useState<'insert'|'object'|'layers'|'scene'>('insert'),[snap,setSnap]=useState(false),[busy,setBusy]=useState(false),[loading,setLoading]=useState(false);
     const [showStart, setShowStart] = useState(true);
@@ -92,10 +93,31 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
         try{const next={...item,...settings};const g=modelGeometry({id:1,name:next.name,source:next.source,unit:next.objUnit,upAxis:next.upAxis,scale:1,x:0,y:0,z:0,rotation:0,material:'white'});return patch(item.id,{...settings,size:g.size.map(n=>Math.max(.01,n)) as V3});}
         catch(e){setError(e instanceof Error?e.message:'Modelo inválido.');return false;}
     }
+    function insertCopy(source: FreeObject) {
+        if (busy || loading) return;
+        const copy: FreeObject = {
+            ...structuredClone(source),
+            id: nextId(),
+            name: (source.name + ' · cópia').slice(0, 100),
+            position: [source.position[0] + Math.max(.3, source.size[0] * .25), source.position[1] + .3, source.position[2]],
+            locked: false,
+        };
+        if (commit({ ...current.current, objects: [...current.current.objects, copy] })) {
+            select(copy.id);
+            setTool('move');
+            setNotice('Peça duplicada. A cópia tem propriedades independentes.');
+        }
+    }
     function duplicate() {
-        if(!selected || busy || loading)return;
-        const copy:FreeObject={...selected,id:nextId(),name:(selected.name+' · cópia').slice(0,100),position:[selected.position[0]+Math.max(.3,selected.size[0]*.25),selected.position[1]+.3,selected.position[2]],rotation:[...selected.rotation],size:[...selected.size],locked:false};
-        if(commit({...current.current,objects:[...current.current.objects,copy]})){select(copy.id);setTool('move');setNotice('Peça duplicada. A cópia tem propriedades independentes.');}
+        if (selected) insertCopy(selected);
+    }
+    function copySelected() {
+        if (!selected || busy || loading) return;
+        copiedObject.current = structuredClone(selected);
+        setNotice('Peça copiada. Use Ctrl+V para colar uma cópia.');
+    }
+    function pasteCopied() {
+        if (copiedObject.current) insertCopy(copiedObject.current);
     }
     function remove() {
         if(!selected || selected.locked || busy || loading)return;
@@ -241,6 +263,8 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
         if(modifier && key==='z'){event.preventDefault();travel(event.shiftKey?'redo':'undo');}
         else if(modifier && key==='y'){event.preventDefault();travel('redo');}
         else if(modifier && key==='d'){event.preventDefault();duplicate();}
+        else if(modifier && key==='c' && selected){event.preventDefault();copySelected();}
+        else if(modifier && key==='v' && copiedObject.current){event.preventDefault();pasteCopied();}
         else if(modifier && key==='s'){event.preventDefault();save();}
         else if(key==='delete' || key==='backspace'){event.preventDefault();remove();}
         else if(!modifier){const modes:Record<string,FreeTool>={m:'select',v:'move',r:'rectangle',g:'rotate',s:'scale',h:'hand',b:'wall'};if(modes[key])activateTool(modes[key]);else if(key==='t')add('text');else if(key==='0')api.current?.fit();}
@@ -290,7 +314,7 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
         <nav className="free-tools" aria-label="Ferramentas da cena livre">
           {toolItems.map(({id,label,Icon})=><button key={id} data-tour-anchor={id==='move' ? 'move' : id==='rotate' || id==='scale' ? 'adjust' : id==='rectangle' || id==='wall' ? 'draw' : undefined} title={label} aria-label={label} aria-pressed={tool===id} disabled={isBusy} onClick={()=>activateTool(id)}><Icon size={19}/></button>)}
           <button title="Adicionar texto (T)" aria-label="Adicionar texto" disabled={isBusy} onClick={()=>add('text')}><Type size={20}/></button><span/>
-          <button title="Duplicar (Ctrl+D)" aria-label="Duplicar peça" disabled={!selected || isBusy} onClick={duplicate}><CopyPlus size={19}/></button><button title="Excluir (Delete)" aria-label="Excluir peça" disabled={!canEdit} onClick={remove}><Trash2 size={18}/></button><span/>
+          <button title="Duplicar (Ctrl+D ou Ctrl+C e Ctrl+V)" aria-label="Duplicar peça" disabled={!selected || isBusy} onClick={duplicate}><CopyPlus size={19}/></button><button title="Excluir (Delete)" aria-label="Excluir peça" disabled={!canEdit} onClick={remove}><Trash2 size={18}/></button><span/>
           <button title="Desfazer (Ctrl+Z)" aria-label="Desfazer cena" disabled={!history.past.length || isBusy} onClick={()=>travel('undo')}><Undo2 size={19}/></button><button title="Refazer (Ctrl+Shift+Z)" aria-label="Refazer cena" disabled={!history.future.length || isBusy} onClick={()=>travel('redo')}><Redo2 size={19}/></button><span/>
           <button aria-label="Aproximar cena" title="Aproximar" disabled={isBusy} onClick={()=>api.current?.zoom(1.25)}><ZoomIn size={19}/></button><button aria-label="Afastar cena" title="Afastar" disabled={isBusy} onClick={()=>api.current?.zoom(.8)}><ZoomOut size={19}/></button><button aria-label="Enquadrar cena" title="Enquadrar todas as peças (0)" disabled={isBusy} onClick={()=>api.current?.fit()}><Maximize size={18}/></button>
         </nav>
