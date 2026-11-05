@@ -33,7 +33,7 @@ for caminho_relativo in ${JSON.stringify([...artwork.values()])}:
     if not os.path.isfile(os.path.join(pasta_script, caminho_relativo)):
         raise FileNotFoundError('Extraia todo o ZIP e mantenha a pasta materiais ao lado do script: ' + caminho_relativo)
 ` : '';
-    return `# CODE BUDDY — CENA LIVRE 3D
+    return `# CenoLab — CENA LIVRE 3D
 # Blender: Scripting > Open > Run Script. Cada execução preserva as anteriores.
 import bpy, bmesh, math, json, uuid, base64, os, tempfile
 from mathutils import Vector, Euler, Matrix
@@ -168,14 +168,14 @@ mundo.node_tree.nodes['Background'].inputs[1].default_value=.5
 bpy.context.scene.world=mundo
 bpy.context.scene.render.engine='CYCLES'; bpy.context.scene.cycles.samples=32
 bpy.context.scene.render.resolution_x=1920; bpy.context.scene.render.resolution_y=1080; bpy.context.scene.render.resolution_percentage=100
-print('Code Buddy: cena livre criada, com objetos independentes e texto editável.')
+print('CenoLab: cena livre criada, com objetos independentes e texto editável.')
 `;
 }
 const ms=(value:string)=>JSON.stringify(value).replace(/\\u([0-9a-f]{4})/gi,(_,h:string)=>String.fromCharCode(parseInt(h,16)));
 const vec=(v:number[])=>'['+v.map(n=>`(${n})*METRO`).join(',')+']';
 export function exportFreeMax(scene:FreeScene, artwork?:ArtworkPaths):string {
     validateFreeScene(scene);
-    return `-- CODE BUDDY — CENA LIVRE 3D
+    return `-- CenoLab — CENA LIVRE 3D
 -- Scripting > Run Script. Objetos anteriores sao preservados.
 -- Mantenha a pasta materiais junto ao script ao executar um pacote ZIP.
 (
@@ -195,7 +195,7 @@ fn materialLivre nome rgb opacidade aspereza =
     mat
 )
 ${scene.objects.map(o=>maxObject(o,artwork)).join('\n')}
-format "Code Buddy: cena livre criada.\\n"
+format "CenoLab: cena livre criada.\\n"
 )
 `;
 }

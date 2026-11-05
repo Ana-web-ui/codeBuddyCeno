@@ -59,7 +59,7 @@ function checkedConfig(
         throw new Error('Tipo de projeto inválido.');
     }
     if (Object.keys(value).some(key => !Object.hasOwn(defaults, key))) {
-        throw new Error('O projeto contém campos desconhecidos. Confira se foi salvo nesta versão do Code Buddy.');
+        throw new Error('O projeto contém campos desconhecidos. Confira se foi salvo nesta versão do CenoLab.');
     }
     const initial = createProjectConfig(value.projectType);
     const clean: Record<string, unknown> = {};
@@ -193,7 +193,7 @@ export function parseProject(text: string): Config {
     catch { throw new Error('Não foi possível abrir: o arquivo não é um JSON válido.'); }
     if (!object(document)) throw new Error('O arquivo de projeto é inválido.');
     if (Object.hasOwn(document, 'format') || Object.hasOwn(document, 'version')) {
-        if (document.format !== FORMAT) throw new Error('Escolha um projeto JSON salvo pelo Code Buddy.');
+        if (document.format !== FORMAT) throw new Error('Escolha um projeto JSON salvo pelo CenoLab.');
                   if (
             document.version !== 1 &&
             document.version !== 2 &&
@@ -218,7 +218,7 @@ export function parseProject(text: string): Config {
             document.version !== VERSION
         ) {
             throw new Error(
-                'A versão deste arquivo de projeto não é compatível com este Code Buddy.',
+                'A versão deste arquivo de projeto não é compatível com este CenoLab.',
             );
         
         }

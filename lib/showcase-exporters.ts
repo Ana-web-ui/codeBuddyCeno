@@ -52,7 +52,7 @@ export function maxShowcases(c: ShowcaseConfig & ShowcaseDetailConfig, layout: S
     const pieces = '#(' + parts(c).map(p => '#(' + p.join(',') + ')').join(',') + ')';
     return `
 -- BIBLIOTECA: VITRINES EXPOSITORAS
-undo "Adicionar vitrines Code Buddy" on
+undo "Adicionar vitrines CenoLab" on
 (
     local posicoesVitrines = ${pos}
     local pecasVitrines = ${pieces}

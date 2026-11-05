@@ -22,7 +22,7 @@ export function exportFreePackage(scene: FreeScene, target: 'blender' | 'max'): 
     const script = target === 'blender' ? exportFreeBlender(scene, artwork) : exportFreeMax(scene, artwork);
     files[scriptName] = strToU8(script);
     files['LEIA-ME.txt'] = strToU8([
-        'Code Buddy - Cena Livre 3D',
+        'CenoLab - Cena Livre 3D',
         '',
         '1. Extraia todo o ZIP para uma pasta.',
         '2. Mantenha a pasta materiais ao lado do script ' + scriptName + '.',

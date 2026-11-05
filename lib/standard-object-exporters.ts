@@ -134,7 +134,7 @@ export function maxStandardObjects(c: StandardSceneConfig, layouts: ExtraObjectL
     const data = '#(' + groups.map(([name, positions, parts]) => '#("' + name + '",' + array(positions) + ',' + array(parts) + ')').join(',') + ')';
     return `
 -- BIBLIOTECA: OBJETOS PADRAO
-undo "Adicionar objetos padrao Code Buddy" on
+undo "Adicionar objetos padrao CenoLab" on
 (
     local gruposPadrao = ${data}
     local materiaisPadrao = #(${materials.map(m => 'cbMaterial "' + m + '"').join(',')})

@@ -314,7 +314,7 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
     }
     const isBusy=busy || loading;
     return <div className="free-editor" onKeyDown={keys} data-free-tour={helpMode === 'tour' ? tourSteps[tourStep].id : undefined}>
-      <header className="free-topbar"><div className="free-brand"><Box size={23}/><strong>codebuddy<small>CENA LIVRE 3D</small></strong></div>
+      <header className="free-topbar"><div className="free-brand"><Box size={23}/><strong>CenoLab<small>CENA LIVRE 3D</small></strong></div>
         <div className="free-file-actions"><button onClick={()=>{setError('');setShowStart(true);}} disabled={isBusy} title="Opções de nova cena"><Plus size={15}/><span>Novo</span></button><button data-tour-anchor="save" onClick={save} disabled={isBusy}><Save size={15}/><span>Salvar cena</span></button><button onClick={()=>fileInput.current?.click()} disabled={isBusy}><FolderOpen size={15}/><span>Abrir cena</span></button><button onClick={onGuided} disabled={isBusy} className="free-guided">Projetos guiados</button></div>
         <div className="free-export-actions">
             <button ref={helpButton} type="button" title="Ajuda e atalhos" aria-label="Ajuda e atalhos"

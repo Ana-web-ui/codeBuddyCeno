@@ -979,7 +979,7 @@ export function generate(c: Config, options: {
 export function generateBlender(c: Config, additions = '') {
     validate(c);
     const rgb = [1, 3, 5].map(i => +(parseInt(c.color.slice(i, i + 2), 16) / 255).toFixed(5));
-    return `# CODE BUDDY | Cenografia
+    return `# CenoLab | Cenografia
 # Modelo conceitual em metros. Projeto: ${c.name.replace(/[\r\n]/g, ' ')}
 # Blender: Scripting > New > cole este código > Run Script.
 # Cada execução cria uma nova versão, preservando objetos e materiais anteriores.
@@ -1084,7 +1084,7 @@ def finalizar_geracao():
     # Inclui as peças criadas diretamente pelos exportadores da biblioteca V3.
     for objeto in colecao.all_objects:
         identificar(objeto)
-    print('Code Buddy: nova versão criada em ' + colecao.name + '. Anteriores preservadas.')
+    print('CenoLab: nova versão criada em ' + colecao.name + '. Anteriores preservadas.')
 
 def organizar(objeto):
     for origem in list(objeto.users_collection):
@@ -1341,7 +1341,7 @@ def gerar_stand():
     criar_elementos(branco, marca, escuro, tela)
     criar_iluminacao(escuro)
     configurar_render()
-    print('Code Buddy: stand pronto. Use NumPad 0 para a câmera e F12 para renderizar.')
+    print('CenoLab: stand pronto. Use NumPad 0 para a câmera e F12 para renderizar.')
 
 gerar_stand()
 ${blenderStorage(c)}

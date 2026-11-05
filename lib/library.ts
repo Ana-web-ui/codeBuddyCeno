@@ -1,4 +1,4 @@
-/** Catálogo dos componentes que já possuem geração no Code Buddy. */
+/** Catálogo dos componentes que já possuem geração no CenoLab. */
 import type { MaterialKind, ProjectType } from "./generator";
 export const libraryCatalog = [
     { id: 'shelving', label: 'Estantes expositoras', projectTypes: ['stand', 'palco'] },

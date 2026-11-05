@@ -104,7 +104,7 @@ export function maxStorage(c: Config): string {
     const point = (p: number[]) => '[' + p.map(n => `(${n}*METRO)`).join(',') + ']';
     return `
 -- DEPOSITO: mesmas pecas e medidas do exportador Blender.
-undo "Adicionar deposito Code Buddy" on
+undo "Adicionar deposito CenoLab" on
 (
     local raizDeposito = cbRegistrar (Dummy name:(nomeGeracao + "_Deposito") pos:${point(data.root)})
     setUserProp raizDeposito "code_buddy_role" "storage_root"

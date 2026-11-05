@@ -1115,7 +1115,7 @@ function GuidedEditor({onFree,active}:{onFree:()=>void;active:boolean}) {
         setNotice('');
         try {
             if (!/\.json$/i.test(file.name) || file.size > MAX_PROJECT_BYTES) {
-                throw new Error('Escolha um arquivo .json do Code Buddy de até 10 MB.');
+                throw new Error('Escolha um arquivo .json do CenoLab de até 10 MB.');
             }
             const loaded = parseProject(await file.text());
             if (requestId !== projectRequest.current) return;
@@ -1251,10 +1251,10 @@ function GuidedEditor({onFree,active}:{onFree:()=>void;active:boolean}) {
         setCopied(false);
     }
     return <div className="app-shell editor-shell" onKeyDown={editorKeys}>
-    <header className="topbar"><Link href="/" className="brand"><span className="brand-mark"><Box size={24}/></span><span>code<span className="brand-light">buddy</span><small>CENOGRAFIA</small></span></Link><div className="editor-filebar"><button type="button" className="editor-return-free" onClick={onFree}>Cena livre 3D</button>      <div className="project-file-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '12px 0' }}>
+    <header className="topbar"><Link href="/" className="brand"><span className="brand-mark"><Box size={24}/></span><span>Ceno<span className="brand-light">Lab</span><small>CENOGRAFIA</small></span></Link><div className="editor-filebar"><button type="button" className="editor-return-free" onClick={onFree}>Cena livre 3D</button>      <div className="project-file-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '12px 0' }}>
         <button type="button" className="generate-button" onClick={saveProject} disabled={openingProject} style={{ flex: 1 }}>Salvar projeto JSON</button>
         <button type="button" className="generate-button" onClick={() => projectInput.current?.click()} disabled={openingProject} style={{ flex: 1 }}>{openingProject ? 'Abrindo projeto…' : 'Abrir projeto JSON'}</button>
-        <input ref={projectInput} type="file" accept=".json,application/json" aria-label="Arquivo de projeto Code Buddy" onChange={openProject} hidden />
+        <input ref={projectInput} type="file" accept=".json,application/json" aria-label="Arquivo de projeto CenoLab" onChange={openProject} hidden />
       </div>
 <button type="button" className="editor-export" aria-label="Gerar exportação" onClick={build} disabled={!valid || openingProject || !!dragPreview || (needsPartialConfirmation && !partialConfirmed)}><Code2 size={15}/>Gerar {c.target==='max' ? 'MaxScript' : 'Blender'}</button></div></header>
     <main className="editor-main"><div className="editor-documentbar"><div><span className="document-dot"/><strong>{c.name || 'Projeto sem título'}</strong><span>{projectTypes.find(type=>type.value===c.projectType)?.label}</span></div><span>{selectedUnit ? selectedUnit.label : 'Selecione uma peça na planta para editar'}</span></div>
@@ -1934,6 +1934,6 @@ function GuidedEditor({onFree,active}:{onFree:()=>void;active:boolean}) {
             (needsPartialConfirmation &&
                 !partialConfirmed)}><Sparkles size={18}/>Gerar {c.target === 'max' ? 'MaxScript' : 'script Blender'}</button><p className="generation-note">Piso, iluminação e câmera de apresentação incluídos.</p>{error && <p role="alert" className="error">{error}</p>}
     </section></div></aside>
-</div><footer><span>CODE BUDDY / CENOGRAFIA</span><span>Uma base para a sua próxima ideia.</span></footer></main>
+</div><footer><span>CenoLab / CENOGRAFIA</span><span>Uma base para a sua próxima ideia.</span></footer></main>
   </div>;
 }

@@ -16,7 +16,7 @@ export function generateMax(c:Config){
   const rgb=[1,3,5].map(i=>parseInt(c.color.slice(i,i+2),16));
   const settings:Record<string,number|boolean>={LARGURA:c.width,PROFUNDIDADE:c.depth,ALTURA:c.height,PAREDE_FUNDO:c.back,PAREDE_ESQUERDA:c.left,PAREDE_DIREITA:c.right,ADICIONAR_LED:c.led,ADICIONAR_BALCAO:c.counter,ADICIONAR_PALCO:c.stage,ADICIONAR_TOTEM:c.totem,ADICIONAR_SPOTS:c.spots,LED_LARGURA:c.ledWidth,LED_ALTURA:c.ledHeight,LED_BASE:c.ledBottom,BALCAO_LARGURA:c.counterWidth,BALCAO_PROFUNDIDADE:c.counterDepth,BALCAO_ALTURA:c.counterHeight,BALCOES:c.counterCount,PALCO_LARGURA:c.stageWidth,PALCO_PROFUNDIDADE:c.stageDepth,PALCO_ALTURA:c.stageHeight,TOTEM_LARGURA:c.totemWidth,TOTEM_PROFUNDIDADE:c.totemDepth,TOTEM_ALTURA:c.totemHeight,TOTENS:c.totemCount,SPOTS_POR_LADO:c.spotsCount};
   const data=c.led&&c.screenImage?c.screenImage.split(',')[1]:'';
-  return `-- CODE BUDDY | Cenografia | 3ds Max (Physical Material)
+  return `-- CenoLab | Cenografia | 3ds Max (Physical Material)
 -- Projeto: ${c.name.replace(/[\r\n]/g,' ')}
 -- Scripting > Run Script > selecione este arquivo .ms.
 -- Medidas em metros, convertidas para as unidades atuais da cena.
@@ -163,7 +163,7 @@ local tela = if ADICIONAR_LED then cbTV() else undefined
 local escuro = cbMaterial "metal"
 escuro.base_color = color 30 35 43
 
-undo "Gerar stand Code Buddy" on
+undo "Gerar stand CenoLab" on
 (
 ${maxFloor(c).split('\n').map(line => '    ' + line).join('\n')}
     if PAREDE_FUNDO do
@@ -248,7 +248,7 @@ ${maxStorage(c)}
 ${receptionExport(c)}
 ${maxImportedModels(c)}
 select criados
-undo "Orientar estande Code Buddy" on
+undo "Orientar estande CenoLab" on
 (
     local anguloFrente = ${c.projectType === 'stand' || c.projectType === 'reception' ? c.frontRotation : 0}
     if anguloFrente != 0 do
@@ -266,7 +266,7 @@ undo "Orientar estande Code Buddy" on
     )
 )
 ${c.presentationCameras ? '' : 'max zoomext sel all'}
-format "Code Buddy: nova versão criada na camada %. Anteriores preservadas.\\n" nomeGeracao
+format "CenoLab: nova versão criada na camada %. Anteriores preservadas.\\n" nomeGeracao
 )
 `;
 }
