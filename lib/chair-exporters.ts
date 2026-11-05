@@ -103,7 +103,7 @@ export function maxChairs(c: ChairExportConfig, layout: ChairLayout, options: Ch
 -- BIBLIOTECA: CADEIRAS PARAMETRICAS
 -- ${layout.positions.length} cadeiras; orientacao definida pelas posicoes e rotacoes calculadas.
 -- Instancias compartilham a malha. Alterar a malha altera todas as cadeiras.
-undo "Adicionar plateia Code Buddy" on
+undo "Adicionar plateia CenoLab" on
 (
     local matAssento = cbMaterial "plastic"
     matAssento.base_color = color ${rgb.join(' ')}

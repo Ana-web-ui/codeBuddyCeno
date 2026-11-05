@@ -11,7 +11,9 @@ const { default: app } = await import(pathToFileURL(resolve(functionRoot, runtim
 const response = await app.fetch(new Request('https://code-buddy-ceno.vercel.app/'));
 const html = await response.text();
 assert.equal(response.status, 200, 'A função deve renderizar a página sem erro.');
-assert.match(html, /Configure seu projeto/);
+assert.match(html, /Construa sua cena/);
+assert.match(html, /Cena sem título/);
+assert.match(html, /Projetos guiados/);
 assert.doesNotMatch(html, /This page couldn.t load/);
 const assets = [...new Set([...html.matchAll(/(?:src|href)="(\/_next\/static\/[^"?]+)/g)].map(match => match[1]))];
 assert.ok(assets.length > 0, 'O HTML deve referenciar arquivos estáticos.');

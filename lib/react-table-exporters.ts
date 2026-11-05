@@ -118,7 +118,7 @@ export function maxRectTables(
 -- BIBLIOTECA: MESAS RETANGULARES PARAMETRICAS
 -- Quantidade: ${layout.generatedCount}
 
-undo "Adicionar mesas retangulares Code Buddy" on
+undo "Adicionar mesas retangulares CenoLab" on
 (
     local posicoesRetangulares = ${positions}
     local pecasRetangulares = ${parts}
