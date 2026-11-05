@@ -6,7 +6,7 @@ import { createFreeEnvironment, environmentLighting } from './free-scene-environ
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { freeParts } from '@/lib/free-scene-geometry';
-import type { FreeScene, FreeObject, V3 } from '@/lib/free-scene';
+import type { FreeScene, FreeObject, FreeKind, V3 } from '@/lib/free-scene';
 export type FreeTool='select'|'move'|'rotate'|'scale'|'hand'|'wall'|'rectangle';
 export type FreePose={position:V3;rotation:V3;size:V3};
 export type FreeViewportApi={fit:()=>void;zoom:(factor:number)=>void;center:()=>V3;cancel:()=>void};
@@ -60,8 +60,19 @@ function buildObject(o:FreeObject,textures:Map<string,THREE.Texture>):THREE.Grou
     }
     return root;
 }
+const measureFormat = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function measurementText(kind: FreeKind, size: V3): string {
+    const [width, depth, height] = size.map(value => measureFormat.format(Math.abs(value)) + ' m');
+    return kind === 'wall'
+        ? 'Comprimento ' + width + '\nAltura ' + height + ' · Espessura ' + depth
+        : 'Largura ' + width + ' · Profundidade ' + depth + '\nAltura ' + height;
+}
+
 export function FreeSceneViewport(props:Props) {
     const host=useRef<HTMLDivElement>(null),latest=useRef(props),runtime=useRef<{sync:()=>void}|null>(null);
+    const measurement = useRef<HTMLOutputElement>(null);
+    const measurementTitle = useRef<HTMLElement>(null);
+    const measurementValues = useRef<HTMLSpanElement>(null);
     const [error,setError]=useState('');
     useLayoutEffect(()=>{latest.current=props;runtime.current?.sync();},[props]);
     useEffect(()=>{
@@ -86,6 +97,10 @@ export function FreeSceneViewport(props:Props) {
         const selection=new THREE.Box3Helper(new THREE.Box3(),0x5268df);selection.visible=false;scene.add(selection);
         const draft=new THREE.Mesh(new THREE.BoxGeometry(1,1,1),new THREE.MeshStandardMaterial({color:0x657be5,transparent:true,opacity:.35}));draft.visible=false;scene.add(draft);
         const ray=new THREE.Raycaster(),pointer=new THREE.Vector2();
+        const feedback = measurement.current!;
+        const feedbackTitle = measurementTitle.current!;
+        const feedbackValues = measurementValues.current!;
+        const cursor = new THREE.Vector2();
         let grid:THREE.GridHelper|null=null,gridSize=0,currentView:'3d'|'plan'='3d';let lastW=0,lastH=0,disposed=false;
         const nodes=new Map<number,THREE.Group>(),textures=new Map<string,THREE.Texture>();
         let direct:{id:number;start:THREE.Vector3;position:V3;axis:'x'|'y'|null}|null=null;
@@ -172,7 +187,48 @@ if (selected && data?.visible && !data.locked && showManipulator) {
             const pose:FreePose={position:node.position.toArray() as V3,rotation:[node.rotation.x,node.rotation.y,node.rotation.z].map(THREE.MathUtils.radToDeg) as V3,size:o.size.map((v,i)=>v*node.scale.toArray()[i]) as V3};
             if(!latest.current.onTransformAction(o.id,pose))resetNode(node);
         }
+        function updateMeasurements() {
+            let title: string;
+            let text: string;
+            let floating = false;
+            if (wallStart && wallEnd) {
+                const dx = wallEnd.x - wallStart.x;
+                const dy = wallEnd.y - wallStart.y;
+                if (latest.current.tool === 'rectangle') {
+                    title = 'Bloco em criação';
+                    text = measurementText('box', [Math.abs(dx), Math.abs(dy), 1]);
+                } else {
+                    title = 'Parede em criação';
+                    text = measurementText('wall', [Math.hypot(dx, dy), .12, 3]);
+                }
+                floating = true;
+            } else {
+                const selected = latest.current.selectedId === null ? undefined : nodes.get(latest.current.selectedId);
+                if (!selected?.visible) {
+                    feedback.hidden = true;
+                    return;
+                }
+                const object = selected.userData.config as FreeObject;
+                const size = object.size.map((value, axis) => value * selected.scale.getComponent(axis)) as V3;
+                title = transform.dragging && transform.getMode() === 'scale'
+                    ? 'Redimensionando ' + object.name : object.name;
+                text = measurementText(object.kind, size);
+                floating = transform.dragging;
+            }
+            if (feedbackTitle.textContent !== title) feedbackTitle.textContent = title;
+            if (feedbackValues.textContent !== text) feedbackValues.textContent = text;
+            feedback.hidden = false;
+            const maxLeft = Math.max(12, lastW - feedback.offsetWidth - 12);
+            const maxTop = Math.max(12, lastH - feedback.offsetHeight - 12);
+            const left = floating ? Math.min(Math.max(12, cursor.x + 18), maxLeft) : maxLeft;
+            const top = floating ? Math.min(Math.max(12, cursor.y + 18), maxTop) : Math.min(64, maxTop);
+            const leftStyle = Math.round(left) + 'px';
+            const topStyle = Math.round(top) + 'px';
+            if (feedback.style.left !== leftStyle) feedback.style.left = leftStyle;
+            if (feedback.style.top !== topStyle) feedback.style.top = topStyle;
+        }
         function pointerDown(event:PointerEvent) {
+            cursor.set(event.offsetX, event.offsetY);
             if(event.button!==0)return;renderer.domElement.focus();down={x:event.clientX,y:event.clientY,gizmo:!!transform.axis && !!transform.object};
             const p=latest.current;
             if(p.tool==='wall' || p.tool==='rectangle') {const point=ground(event);if(!point)return;wallStart=point;wallEnd=point.clone();controls.enabled=false;renderer.domElement.setPointerCapture(event.pointerId);markBusy(true);event.preventDefault();return;}
@@ -185,6 +241,7 @@ if (selected && data?.visible && !data.locked && showManipulator) {
             }
         }
         function pointerMove(event:PointerEvent) {
+            cursor.set(event.offsetX, event.offsetY);
             if (wallStart) {
                 const point = ground(event);
                 if (point) {
@@ -259,7 +316,7 @@ if (selected && data?.visible && !data.locked && showManipulator) {
             if(direct){const node=nodes.get(direct.id);if(node)resetNode(node);direct=null;}
             wallStart=null;wallEnd=null;draft.visible=false;down=null;
             if(transform.dragging){ignoreGizmoCommit=true;transform.reset();transform.pointerUp(null);ignoreGizmoCommit=false;}
-            markBusy(false);configure();
+            markBusy(false);configure();updateMeasurements();
         }
         function fit() {
             const box=new THREE.Box3();for(const node of nodes.values())if(node.visible)box.expandByObject(node);
@@ -280,10 +337,14 @@ if (selected && data?.visible && !data.locked && showManipulator) {
         canvas.addEventListener('pointercancel',cancel);canvas.addEventListener('keydown',onKey);
         const observer=new ResizeObserver(resize);observer.observe(container);
         const api={fit,zoom,center:()=>[controls.target.x,controls.target.y,0] as V3,cancel};latest.current.apiRef.current=api;runtime.current={sync};sync();
-        renderer.setAnimationLoop(()=>{if(disposed || !container.clientWidth || !container.clientHeight)return;controls.update();scene.updateMatrixWorld();const selected=latest.current.selectedId===null?null:nodes.get(latest.current.selectedId);if(selected && selection.visible)selection.box.setFromObject(selected);renderer.render(scene,camera);});
-        return ()=>{disposed=true;runtime.current=null;latest.current.apiRef.current=null;observer.disconnect();renderer.setAnimationLoop(null);controls.dispose();transform.dispose();canvas.removeEventListener('pointerdown',pointerDown,true);canvas.removeEventListener('pointermove',pointerMove);canvas.removeEventListener('pointerup',pointerUp);canvas.removeEventListener('pointercancel',cancel);canvas.removeEventListener('keydown',onKey);disposeTree(scene);for(const texture of textures.values())texture.dispose();textures.clear();renderer.dispose();renderer.forceContextLoss();canvas.remove();};
+        renderer.setAnimationLoop(()=>{if(disposed || !container.clientWidth || !container.clientHeight)return;controls.update();scene.updateMatrixWorld();const selected=latest.current.selectedId===null?null:nodes.get(latest.current.selectedId);if(selected && selection.visible)selection.box.setFromObject(selected);updateMeasurements();renderer.render(scene,camera);});
+        return ()=>{disposed=true;feedback.hidden=true;runtime.current=null;latest.current.apiRef.current=null;observer.disconnect();renderer.setAnimationLoop(null);controls.dispose();transform.dispose();canvas.removeEventListener('pointerdown',pointerDown,true);canvas.removeEventListener('pointermove',pointerMove);canvas.removeEventListener('pointerup',pointerUp);canvas.removeEventListener('pointercancel',cancel);canvas.removeEventListener('keydown',onKey);disposeTree(scene);for(const texture of textures.values())texture.dispose();textures.clear();renderer.dispose();renderer.forceContextLoss();canvas.remove();};
     },[]);
     return <div ref={host} className={`free-viewport tool-${props.tool}`} role="application" aria-label="Área de criação 3D" data-view={props.view}>
+        <output ref={measurement} className="free-measurement-feedback" role="note" aria-label="Medidas em tempo real" aria-live="off" hidden>
+            <strong ref={measurementTitle}/>
+            <span ref={measurementValues}/>
+        </output>
         {error && <p role="alert" className="free-webgl-error">{error}</p>}
         {!error && props.data.objects.length===0 && <div className="free-blank-hint"><strong>Comece do zero.</strong><span>Desenhe uma parede ou escolha uma peça para inserir.</span></div>}
     </div>;

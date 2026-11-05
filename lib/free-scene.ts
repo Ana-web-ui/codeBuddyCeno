@@ -5,6 +5,7 @@ import { parseObj } from './imported-models';
 export type V3 = [number, number, number];
 export type FreeKind = 'wall' | 'box' | 'cylinder' | 'floor' | 'counter' | 'stage' | 'led' | 'text' | 'shelf' | 'showcase' | 'roundTable' | 'bistro' | 'chair' | 'armchair' | 'puff' | 'coffeeTable' | 'backdrop' | 'obj' | 'supplierTotem';
 export type FreeObject = {
+    originalSize?: V3;
     productId?: string;
     mount?: SupplierMount;
     screenOrientation?: ScreenOrientation;
@@ -90,7 +91,7 @@ export function validateFreeScene(value: unknown): asserts value is FreeScene {
     if(!Array.isArray(value.objects) || value.objects.length>200) throw new Error('Use até 200 peças na cena.');
     const ids=new Set<number>();let objCount=0,artPixels=0;const arts=new Set<string>();
     for(const item of value.objects) {
-        if(!isRecord(item) || Object.keys(item).filter(key=>!['productId','mount','screenOrientation'].includes(key)).sort().join(',')!==objectKeys || !Number.isInteger(item.id) || (item.id as number)<1 || (item.id as number)>1000000 || ids.has(item.id as number)) throw new Error('Uma peça tem dados ou identificador inválidos.');
+        if(!isRecord(item) || Object.keys(item).filter(key=>!['productId','mount','screenOrientation','originalSize'].includes(key)).sort().join(',')!==objectKeys || !Number.isInteger(item.id) || (item.id as number)<1 || (item.id as number)>1000000 || ids.has(item.id as number)) throw new Error('Uma peça tem dados ou identificador inválidos.');
         ids.add(item.id as number);
         if(!freeCatalog.some(entry=>entry.kind===item.kind) && item.kind!=='obj' && item.kind!=='supplierTotem') throw new Error('Tipo de peça desconhecido.');
         if (item.kind === 'supplierTotem') {
@@ -107,9 +108,10 @@ export function validateFreeScene(value: unknown): asserts value is FreeScene {
         }
         if(typeof item.name!=='string' || /[\u0000-\u001f]/.test(item.name) || item.name.length>100 || typeof item.text!=='string' || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(item.text) || item.text.length>1000 || typeof item.visible!=='boolean' || typeof item.locked!=='boolean' ||
             typeof item.color!=='string' || !/^#[0-9a-fA-F]{6}$/.test(item.color)) throw new Error('Confira o nome, texto e cor da peça.');
-        for(const key of ['position','rotation','size']) {
+        for(const key of ['position','rotation','size','originalSize']) {
+            if (key === 'originalSize' && !('originalSize' in item)) continue;
             const vector=item[key];
-            if(!Array.isArray(vector) || vector.length!==3 || vector.some(v=>typeof v!=='number' || !Number.isFinite(v) || Math.abs(v)>10000 || (key==='size' && (v<.01 || v>1000)))) throw new Error('Use dimensões entre 0,01 e 1000 m e transformações finitas.');
+            if(!Array.isArray(vector) || vector.length!==3 || vector.some(v=>typeof v!=='number' || !Number.isFinite(v) || Math.abs(v)>10000 || ((key==='size' || key==='originalSize') && (v<.01 || v>1000)))) throw new Error('Use dimensões entre 0,01 e 1000 m e transformações finitas.');
         }
         if(typeof item.roughness!=='number' || !Number.isFinite(item.roughness) || item.roughness<0 || item.roughness>1 || typeof item.opacity!=='number' || !Number.isFinite(item.opacity) || item.opacity<.05 || item.opacity>1 || !Number.isInteger(item.shelves) || (item.shelves as number)<0 || (item.shelves as number)>10) throw new Error('Confira acabamento, transparência e prateleiras.');
         if(typeof item.image!=='string' || typeof item.source!=='string' || !['m','cm','mm'].includes(item.objUnit as string) || !['z','y'].includes(item.upAxis as string)) throw new Error('Arte ou modelo inválido.');

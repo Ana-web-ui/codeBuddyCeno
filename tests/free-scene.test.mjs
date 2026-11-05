@@ -6,12 +6,13 @@ import { join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 const require = createRequire(import.meta.url), out = mkdtempSync(join(tmpdir(), 'codebuddy-structure-move-'));
-const compiled = spawnSync(process.execPath, [require.resolve('typescript/bin/tsc'), '--target', 'ES2022', '--module', 'commonjs', '--moduleResolution', 'node', '--strict', '--skipLibCheck', '--esModuleInterop', '--outDir', out, 'lib/free-scene-exporters.ts'], { encoding: 'utf8' });
+const compiled = spawnSync(process.execPath, [require.resolve('typescript/bin/tsc'), '--target', 'ES2022', '--module', 'commonjs', '--moduleResolution', 'node', '--strict', '--skipLibCheck', '--esModuleInterop', '--outDir', out, 'lib/free-scene-exporters.ts', 'lib/free-scene-sizing.ts'], { encoding: 'utf8' });
 assert.equal(compiled.status, 0, compiled.stdout + compiled.stderr);
 writeFileSync(join(out, 'package.json'), '{"type":"commonjs"}');
 
 const {emptyFreeScene,newFreeObject,freeCatalog,wallBetween,validateFreeScene,stringifyFreeScene,parseFreeScene,MAX_FREE_SCENE_BYTES}=require(join(out,'free-scene.js'));
 const {freeParts}=require(join(out,'free-scene-geometry.js'));
+const {resizeFreeObject}=require(join(out,'free-scene-sizing.js'));
 const {supplierProducts,supplierObjectSize}=require(join(out,'supplier-products.js'));
 const {exportFreeBlender,exportFreeMax}=require(join(out,'free-scene-exporters.js'));
 const fixtures=process.env.CODEBUDDY_FREE_FIXTURES?resolve(process.env.CODEBUDDY_FREE_FIXTURES):join(out,'fixtures');mkdirSync(fixtures,{recursive:true});
@@ -138,4 +139,52 @@ test('WT21S e WT55S preservam instalação e orientação e respeitam o volume e
  assert.throws(()=>validateFreeScene({...emptyFreeScene(),objects:[{...slim,mount:'wall'}]}));
  const slimReopened=parseFreeScene(stringifyFreeScene({...emptyFreeScene(),objects:[slim]}));
  assert.equal(slimReopened.objects[0].mount,undefined);
+});
+
+
+test('redimensionamento preserva o apoio do LED e o tamanho original no JSON',()=>{
+ const led=newFreeObject('led',1);
+ const original=structuredClone(led);
+ const large=resizeFreeObject(led,led.size.map(value=>value*1.1));
+ assert.deepEqual(led,original);
+ assert.deepEqual(large.originalSize,led.size);
+ assert.ok(Math.abs(large.position[2]+large.size[2]*.35)<1e-8);
+ const small=resizeFreeObject(large,large.size.map(value=>value*.9));
+ assert.deepEqual(small.originalSize,led.size);
+ const reopened=parseFreeScene(stringifyFreeScene({...emptyFreeScene(),objects:[small]})).objects[0];
+ assert.deepEqual(reopened.originalSize,led.size);
+ const restored=resizeFreeObject(reopened,reopened.originalSize);
+ restored.size.forEach((value,i)=>assert.ok(Math.abs(value-led.size[i])<1e-8));
+ assert.ok(Math.abs(restored.position[2]-led.position[2])<1e-8);
+ assert.deepEqual(restored.rotation,led.rotation);
+});
+
+test('tamanho original opcional aceita JSON antigo e rejeita valores inválidos',()=>{
+ const item=newFreeObject('box',1);
+ assert.equal(parseFreeScene(stringifyFreeScene({...emptyFreeScene(),objects:[item]})).objects[0].originalSize,undefined);
+ for (const originalSize of [[0,1,1],[1,NaN,1],[1,1,1001],[1,2],null,'1,1,1'])
+  assert.throws(()=>validateFreeScene({...emptyFreeScene(),objects:[{...item,originalSize}]}));
+ for (const size of [[0,1,1],[1,Infinity,1],[1,1,1001]])
+  assert.throws(()=>resizeFreeObject(item,size));
+});
+
+test('aumentar e restaurar conserva a altura de apoio das peças e a identidade Touk',()=>{
+ for (const item of [
+  {...newFreeObject('counter',1),position:[2,3,1.5]},
+  newFreeObject('supplierTotem',1,'touk-wt21s'),
+  newFreeObject('supplierTotem',1,'touk-wt55s'),
+  {...newFreeObject('obj',1),source:obj,position:[1,2,3]},
+ ]) {
+  const resized=resizeFreeObject(item,item.size.map(value=>value*1.1));
+  assert.equal(resized.position[2],item.position[2]);
+  assert.equal(resized.productId,item.productId);
+  assert.equal(resized.source,item.source);
+  const restored=resizeFreeObject(resized,resized.originalSize);
+  assert.deepEqual(restored.size,item.size);
+  assert.deepEqual(restored.position,item.position);
+ }
+ const wall={...newFreeObject('wall',1),rotation:[30,0,0]};
+ const resized=resizeFreeObject(wall,wall.size.map(value=>value*2));
+ const bottom=-Math.sin(Math.PI/6)*wall.size[1]/2;
+ assert.ok(Math.abs(resized.position[2]-(-bottom))<1e-8);
 });

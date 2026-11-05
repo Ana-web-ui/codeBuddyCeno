@@ -11,6 +11,7 @@ import { createStandBase, emptyFreeScene, freeCatalog, freeEnvironments, newFree
 import type { FreeEnvironment, FreeScene, FreeKind, FreeObject, V3 } from '@/lib/free-scene';
 import { exportFreeBlender, exportFreeMax } from '@/lib/free-scene-exporters';
 import { exportFreePackage } from '@/lib/free-scene-package';
+import { resizeFreeObject } from '@/lib/free-scene-sizing';
 import { readArtworkFile } from '@/lib/branding-upload';
 import type { SupplierMount, ScreenOrientation } from '@/lib/supplier-products';
 import { supplierProducts, getSupplierProduct, supplierObjectSize } from '@/lib/supplier-products';
@@ -31,6 +32,7 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
     const copiedObject = useRef<FreeObject | null>(null);
     const [selectedId,setSelectedId]=useState<number|null>(null),[tool,setTool]=useState<FreeTool>('move'),[view,setView]=useState<'3d'|'plan'>('3d');
     const [panel,setPanel]=useState<'insert'|'object'|'layers'|'scene'>('insert'),[snap,setSnap]=useState(false),[busy,setBusy]=useState(false),[loading,setLoading]=useState(false);
+    const [keepProportions, setKeepProportions] = useState(true);
     const [showStart, setShowStart] = useState(true);
     const startDialog = useRef<HTMLDialogElement>(null);
     useLayoutEffect(() => {
@@ -47,8 +49,11 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
     const selected=data.objects.find(o=>o.id===selectedId),canEdit=!!selected && !selected.locked && !busy && !loading;
     const selectedProduct = getSupplierProduct(selected?.productId);
     const nextId=()=>Math.max(0,...current.current.objects.map(o=>o.id))+1;
-    const commit=useCallback((next:FreeScene):boolean=>{
+    const commit=useCallback((input:FreeScene):boolean=>{
         try {
+            const next: FreeScene = { ...input, objects: input.objects.map(object =>
+                object.originalSize ? object : { ...object, originalSize: [...object.size] as V3 }) };
+
             stringifyFreeScene(next);if(JSON.stringify(next)===JSON.stringify(current.current))return true;
             epoch.current++;current.current=next;
             setHistory(previous=>({past:[...previous.past.slice(-39),previous.present],present:next,future:[]}));setError('');return true;
@@ -92,14 +97,43 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
         if(item.locked && Object.keys(change).some(key=>key!=='locked' && key!=='visible')){setError('Desbloqueie a peça para editar.');return false;}
         return commit({...scene,objects:scene.objects.map(o=>o.id===id?{...o,...change}:o)});
     }
+    function resizeSelected(size: V3): boolean {
+        if (!selected || !canEdit) return false;
+        try {
+            const resized = resizeFreeObject(selected, size);
+            return patch(selected.id, { size: resized.size, position: resized.position, originalSize: resized.originalSize });
+        } catch (error) {
+            setError(error instanceof Error ? error.message : 'Não foi possível alterar o tamanho.');
+            return false;
+        }
+    }
+    function scaleSelected(factor: number) {
+        if (!selected) return;
+        if (resizeSelected(selected.size.map(value => value * factor) as V3)) {
+            setNotice(factor > 1 ? 'Peça aumentada em 10%.' : 'Peça reduzida em 10%.');
+        }
+    }
+    function changeDimension(axis: number, value: number): boolean {
+        if (!selected) return false;
+        const factor = value / selected.size[axis];
+        const size = selected.size.map((current, index) =>
+            keepProportions ? current * factor : index === axis ? value : current) as V3;
+        return resizeSelected(size);
+    }
+    function restoreSize() {
+        if (selected && resizeSelected(selected.originalSize ?? selected.size)) {
+            setNotice('Tamanho original restaurado.');
+        }
+    }
     function supplierLayout(change: { mount?: SupplierMount; screenOrientation?: ScreenOrientation }) {
         if (!selected || !selectedProduct?.display) return;
         const mount = change.mount ?? selected.mount ?? selectedProduct.display.defaultMount;
         const orientation = change.screenOrientation ?? selected.screenOrientation ?? 'horizontal';
-        patch(selected.id, { mount, screenOrientation: orientation, size: supplierObjectSize(selectedProduct, mount, orientation) });
+        const size = supplierObjectSize(selectedProduct, mount, orientation);
+        patch(selected.id, { mount, screenOrientation: orientation, size, originalSize: [...size] });
     }
     function modelSettings(item:FreeObject,settings:Partial<Pick<FreeObject,'objUnit'|'upAxis'>>):boolean {
-        try{const next={...item,...settings};const g=modelGeometry({id:1,name:next.name,source:next.source,unit:next.objUnit,upAxis:next.upAxis,scale:1,x:0,y:0,z:0,rotation:0,material:'white'});return patch(item.id,{...settings,size:g.size.map(n=>Math.max(.01,n)) as V3});}
+        try{const next={...item,...settings};const g=modelGeometry({id:1,name:next.name,source:next.source,unit:next.objUnit,upAxis:next.upAxis,scale:1,x:0,y:0,z:0,rotation:0,material:'white'});const size=g.size.map(n=>Math.max(.01,n)) as V3;return patch(item.id,{...settings,size,originalSize:[...size]});}
         catch(e){setError(e instanceof Error?e.message:'Modelo inválido.');return false;}
     }
     function insertCopy(source: FreeObject) {
@@ -402,9 +436,24 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
                   </> : <p className="free-small">Totem integrado vertical. Tela e rodízios aproximados. A arte é aplicada na tela.</p>}
               </div>}
               <div className="free-state-row"><button aria-pressed={selected.visible} disabled={isBusy} onClick={()=>patch(selected.id,{visible:!selected.visible})}>{selected.visible?<Eye size={15}/>:<EyeOff size={15}/>} {selected.visible?'Visível':'Oculta'}</button><button aria-pressed={selected.locked} disabled={isBusy} onClick={()=>patch(selected.id,{locked:!selected.locked})}>{selected.locked?<Lock size={15}/>:<Unlock size={15}/>} {selected.locked?'Bloqueada':'Livre'}</button></div>
+              <h3>{selectedProduct?.display ? "Medidas com suporte · m" : "Medidas · m"}</h3>
+              <div className="free-size-actions">
+                  <button type="button" disabled={!canEdit || selected.size.some(value=>value*.9<.01)}
+                    onClick={()=>scaleSelected(.9)} aria-label="Diminuir peça em 10%">− Menor</button>
+                  <button type="button" disabled={!canEdit || selected.size.some(value=>value*1.1>1000)}
+                    onClick={()=>scaleSelected(1.1)} aria-label="Aumentar peça em 10%">+ Maior</button>
+              </div>
+              <p className="free-small">Cada clique muda o tamanho em 10%.</p>
+              <label className="free-size-lock">
+                  <input type="checkbox" checked={keepProportions} disabled={!canEdit}
+                    onChange={event=>setKeepProportions(event.target.checked)}/>
+                  Manter proporções ao editar medidas
+              </label>
+              <div className="free-vector">{(['Largura','Profundidade','Altura'] as const).map((label,i)=><NumberField key={label} label={label} value={selected.size[i]} min={.01} max={1000} disabled={!canEdit} change={n=>changeDimension(i,n)}/>)}</div>
+              <button type="button" className="free-secondary" disabled={!canEdit} onClick={restoreSize}
+                title="Volta ao tamanho de inserção ou de abertura da peça nesta cena">Restaurar tamanho original</button>
               <h3>Posição · m</h3><div className="free-vector">{(['X','Y','Z'] as const).map((axis,i)=><NumberField key={axis} label={`Posição ${axis}`} value={selected.position[i]} disabled={!canEdit} change={n=>{const position=[...selected.position] as V3;position[i]=n;return patch(selected.id,{position});}}/>)}</div>
               <h3>Rotação · graus</h3><div className="free-vector">{(['X','Y','Z'] as const).map((axis,i)=><NumberField key={axis} label={`Rotação ${axis}`} value={selected.rotation[i]} step={1} disabled={!canEdit} change={n=>{const rotation=[...selected.rotation] as V3;rotation[i]=n;return patch(selected.id,{rotation});}}/>)}</div>
-              <h3>{selectedProduct?.display ? "Medidas com suporte · m" : "Medidas · m"}</h3><div className="free-vector">{(['Largura','Profundidade','Altura'] as const).map((label,i)=><NumberField key={label} label={label} value={selected.size[i]} min={.01} max={1000} disabled={!canEdit} change={n=>{const size=[...selected.size] as V3;size[i]=n;return patch(selected.id,{size});}}/>)}</div>
               {selected.kind==='text' && <label className="free-field">Texto<textarea aria-label="Conteúdo do texto" maxLength={1000} rows={4} value={selected.text} disabled={!canEdit} onChange={event=>patch(selected.id,{text:event.target.value})}/></label>}
               {['shelf','showcase'].includes(selected.kind) && <NumberField label="Prateleiras internas" value={selected.shelves} min={0} max={10} step={1} disabled={!canEdit} change={n=>patch(selected.id,{shelves:n})}/>}
               {selected.kind==='obj' && <div className="free-obj-options"><label>Unidade<select aria-label="Unidade do objeto importado" disabled={!canEdit} value={selected.objUnit} onChange={event=>modelSettings(selected,{objUnit:event.target.value as 'm'|'cm'|'mm'})}><option value="m">Metros</option><option value="cm">Centímetros</option><option value="mm">Milímetros</option></select></label><label>Eixo vertical<select aria-label="Eixo vertical do objeto importado" disabled={!canEdit} value={selected.upAxis} onChange={event=>modelSettings(selected,{upAxis:event.target.value as 'z'|'y'})}><option value="z">Z</option><option value="y">Y</option></select></label></div>}
