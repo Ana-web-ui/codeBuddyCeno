@@ -59,4 +59,26 @@ for item in items:
     for obj,matrix in previous:
         assert max(abs(obj.matrix_world[i][j]-matrix[i][j]) for i in range(4) for j in range(4))<1e-5
     print('FREE_SCENE_OK',item['id'])
+
+from bpy_extras.object_utils import world_to_camera_view
+
+for filename, mode in [('cena-completa.py', 'exec'), ('cena-completa-console.py', 'single')]:
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    script = (folder / filename).read_text(encoding='utf8')
+    exec(compile(script, filename, mode), {})
+    bpy.context.view_layer.update()
+    scene = bpy.context.scene
+    collection = next(c for c in scene.collection.children if c.get('code_buddy_free_scene'))
+    roots = {obj.get('code_buddy_role'): obj for obj in collection.objects if obj.type == 'EMPTY'}
+    assert roots.keys() == {'wall', 'floor', 'counter', 'text'}, filename
+    assert all(root.children for root in roots.values()), filename
+    assert any(obj.type == 'FONT' and obj.data.body == 'Cenário 🎭\n"Texto"' for obj in collection.objects)
+    assert any(image.packed_file for image in bpy.data.images)
+    for obj in collection.objects:
+        if obj.type in {'MESH', 'FONT'}:
+            for corner in obj.bound_box:
+                point = world_to_camera_view(scene, scene.camera, obj.matrix_world @ Vector(corner))
+                assert 0 < point.x < 1 and 0 < point.y < 1 and point.z > 0, (filename, obj.name, point)
+    print('FREE_SCENE_MULTI_OK', filename, len(roots))
+
 print('FREE_SCENE_ALL_OK',len(items))

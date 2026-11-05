@@ -8,7 +8,7 @@ export const tourSteps = [
     { id: 'draw', title: 'Desenhe na planta', description: 'Abra Planta. Pressione R e arraste entre dois cantos para criar um bloco. Use B para desenhar uma parede. As medidas aparecem enquanto você arrasta. Esc cancela o desenho.', keys: ['R', 'B', 'Esc'] },
     { id: 'adjust', title: 'Ajuste e duplique', description: 'Em Propriedades, use Menor e Maior para mudar o tamanho em 10%. Manter proporções ajusta as três medidas juntas. As medidas também aparecem na cena durante o desenho e o redimensionamento. Você também pode usar G para girar, S para redimensionar e Ctrl + D para duplicar, ou Ctrl + C e Ctrl + V.', keys: ['G', 'S', 'Ctrl + D', 'Ctrl + C', 'Ctrl + V'] },
     { id: 'environment', title: 'Escolha um cenário', description: 'Abra Ambiente e grade → Cenário para escolher o fundo branco, a área com grama, o hall de hotel ou o pavilhão cinza.', keys: [] },
-    { id: 'save', title: 'Salve ou exporte', description: 'Salve em JSON para editar depois. Escolha Blender ou 3ds Max. Use Baixar para obter o arquivo indicado ou Copiar script para copiar o conteúdo. Cenas com fotos ou logos baixam em ZIP com a pasta materiais.', keys: ['Ctrl + Z', 'Ctrl + S'] },
+    { id: 'save', title: 'Salve ou exporte', description: 'Salve em JSON para editar depois. Escolha Blender ou 3ds Max. No Blender, abra o arquivo baixado em Scripting e use Run Script, ou cole o comando de Copiar script no Console Python e pressione Enter. Cenas com fotos ou logos baixam em ZIP com a pasta materiais.', keys: ['Ctrl + Z', 'Ctrl + S'] },
 ] as const;
 
 const shortcuts = [

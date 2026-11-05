@@ -9,7 +9,7 @@ import { FreeSceneViewport } from './free-scene-viewport';
 import type { FreeTool, FreeViewportApi, FreePose } from './free-scene-viewport';
 import { createStandBase, emptyFreeScene, freeCatalog, freeEnvironments, newFreeObject, stringifyFreeScene, parseFreeScene, sceneFilename, wallBetween, rectangleBetween, MAX_FREE_SCENE_BYTES } from '@/lib/free-scene';
 import type { FreeEnvironment, FreeScene, FreeKind, FreeObject, V3 } from '@/lib/free-scene';
-import { exportFreeBlender, exportFreeMax } from '@/lib/free-scene-exporters';
+import { exportFreeBlender, exportFreeBlenderCommand, exportFreeMax } from '@/lib/free-scene-exporters';
 import { exportFreePackage } from '@/lib/free-scene-package';
 import { resizeFreeObject } from '@/lib/free-scene-sizing';
 import { readArtworkFile } from '@/lib/branding-upload';
@@ -228,14 +228,17 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
             if (!navigator.clipboard?.writeText) {
                 throw new Error('A cópia não está disponível neste navegador. Use o botão Baixar.');
             }
-            const script = createExportScript(current.current);
+            const scene = current.current;
+            const script = target === 'blender' ? exportFreeBlenderCommand(scene) : exportFreeMax(scene);
             try {
                 await navigator.clipboard.writeText(script);
             } catch {
                 throw new Error('O navegador não permitiu copiar. Use o botão Baixar.');
             }
             setError('');
-            setNotice(`Script para ${exportDestination} copiado.`);
+            setNotice(target === 'blender'
+                ? 'Cena completa copiada. No Console Python do Blender, cole o comando e pressione Enter.'
+                : 'Script para 3ds Max copiado.');
         } catch (error) {
             setError(error instanceof Error ? error.message : 'Não foi possível copiar o script.');
         }

@@ -156,7 +156,10 @@ else: centro=Vector((0,0,0)); alcance=8
 camera_dados=bpy.data.cameras.new('Camera_Cena_Livre'); camera=vincular(bpy.data.objects.new('Camera_Cena_Livre',camera_dados))
 camera.location=centro+Vector((1,-1,.8)).normalized()*alcance*1.4
 camera.rotation_euler=(centro-camera.location).to_track_quat('-Z','Y').to_euler()
-camera_dados.type='ORTHO'; camera_dados.ortho_scale=alcance*1.2; camera_dados.clip_end=max(1000,alcance*10)
+camera_dados.type = 'ORTHO'
+# A largura ortográfica precisa acomodar a altura da cena em um quadro 16:9.
+camera_dados.ortho_scale = alcance * (16 / 9) * 1.1
+camera_dados.clip_end = max(1000, alcance * 10)
 bpy.context.scene.camera=camera
 for nome_luz,offset,energia in [('Principal',(1,-1,2),1600),('Preenchimento',(-1,-.3,1),900)]:
     dados=bpy.data.lights.new(nome_luz,'AREA'); dados.energy=energia*max(1,alcance/8)**2; dados.shape='DISK'; dados.size=alcance
@@ -168,9 +171,13 @@ mundo.node_tree.nodes['Background'].inputs[1].default_value=.5
 bpy.context.scene.world=mundo
 bpy.context.scene.render.engine='CYCLES'; bpy.context.scene.cycles.samples=32
 bpy.context.scene.render.resolution_x=1920; bpy.context.scene.render.resolution_y=1080; bpy.context.scene.render.resolution_percentage=100
-print('CenoLab: cena livre criada, com objetos independentes e texto editável.')
+print(f'CenoLab: {len(objetos)} peça(s) na coleção {colecao.name}. Use NumPad 0 para ver o enquadramento.')
 `;
 }
+export function exportFreeBlenderCommand(scene: FreeScene): string {
+    return 'exec(' + JSON.stringify(exportFreeBlender(scene)) + ', {})';
+}
+
 const ms=(value:string)=>JSON.stringify(value).replace(/\\u([0-9a-f]{4})/gi,(_,h:string)=>String.fromCharCode(parseInt(h,16)));
 const vec=(v:number[])=>'['+v.map(n=>`(${n})*METRO`).join(',')+']';
 export function exportFreeMax(scene:FreeScene, artwork?:ArtworkPaths):string {

@@ -14,7 +14,7 @@ const {emptyFreeScene,newFreeObject,freeCatalog,wallBetween,validateFreeScene,st
 const {freeParts}=require(join(out,'free-scene-geometry.js'));
 const {resizeFreeObject}=require(join(out,'free-scene-sizing.js'));
 const {supplierProducts,supplierObjectSize}=require(join(out,'supplier-products.js'));
-const {exportFreeBlender,exportFreeMax}=require(join(out,'free-scene-exporters.js'));
+const {exportFreeBlender,exportFreeBlenderCommand,exportFreeMax}=require(join(out,'free-scene-exporters.js'));
 const fixtures=process.env.CODEBUDDY_FREE_FIXTURES?resolve(process.env.CODEBUDDY_FREE_FIXTURES):join(out,'fixtures');mkdirSync(fixtures,{recursive:true});
 const logo='data:image/png;base64,'+readFileSync('tests/fixtures/branding-logo.png').toString('base64');
 const obj='o Produto\nv 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nv 0 0 1\nv 1 0 1\nv 1 1 1\nv 0 1 1\nf 1 4 3 2\nf 5 6 7 8\nf 1 2 6 5\nf 2 3 7 6\nf 3 4 8 7\nf 4 1 5 8';
@@ -187,4 +187,18 @@ test('aumentar e restaurar conserva a altura de apoio das peças e a identidade 
  const resized=resizeFreeObject(wall,wall.size.map(value=>value*2));
  const bottom=-Math.sin(Math.PI/6)*wall.size[1]/2;
  assert.ok(Math.abs(resized.position[2]-(-bottom))<1e-8);
+});
+
+test('cena criada do zero exporta várias peças também como comando único do Blender', () => {
+ const scene = {...emptyFreeScene(), objects: [
+  wallBetween([-8, -4, 0], [6, -4, 0], 1),
+  {...newFreeObject('floor', 2), position: [3, 2, 0], image: logo},
+  {...newFreeObject('counter', 3), position: [-5, 9, 0]},
+  {...newFreeObject('text', 4), position: [2, 4, 35], text: 'Cenário 🎭\n"Texto"'},
+ ]};
+ const script = exportFreeBlender(scene);
+ const command = exportFreeBlenderCommand(scene);
+ assert.equal(command.split('\n').length, 1);
+ writeFileSync(join(fixtures, 'cena-completa.py'), script);
+ writeFileSync(join(fixtures, 'cena-completa-console.py'), command);
 });
