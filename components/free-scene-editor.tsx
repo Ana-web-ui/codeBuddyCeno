@@ -339,7 +339,7 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
               {Array.from(new Set(supplierProducts.map(product=>product.supplier))).map(supplier=>
                   <section key={supplier} aria-label={'Peças de ' + supplier}>
                       <h3>{supplier}</h3>
-                      <div className="free-catalog">
+                      <div className="free-catalog free-supplier-catalog">
                           {supplierProducts.filter(product=>product.supplier===supplier).map(product=>
                               <button key={product.id} onClick={()=>add('supplierTotem',product.id)} disabled={isBusy}
                                 title={(product.display ? 'Tela ' : 'Totem ') + product.supplier + ' ' + product.model}>
