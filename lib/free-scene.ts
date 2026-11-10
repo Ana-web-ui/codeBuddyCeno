@@ -21,7 +21,8 @@ export const freeEnvironments = {
 } as const;
 export type FreeEnvironment = keyof typeof freeEnvironments;
 export type FreeGroup = { id: number; name: string; objectIds: number[] };
-export type FreeScene = { name: string; grid: boolean; gridSize: number; environment?: FreeEnvironment; view: '3d'|'plan'; objects: FreeObject[]; groups?: FreeGroup[] };
+export type WallLink = [number, number];
+export type FreeScene = { name: string; grid: boolean; gridSize: number; environment?: FreeEnvironment; view: '3d'|'plan'; objects: FreeObject[]; groups?: FreeGroup[]; wallLinks?: WallLink[] };
 export const MAX_FREE_SCENE_BYTES = 10*1024*1024;
 export const freeCatalog: {kind: FreeKind; label: string; size: V3; color: string}[] = [
     {kind:'wall',label:'Parede',size:[3,.12,3],color:'#e1e4eb'},
@@ -84,7 +85,7 @@ export function newFreeObject(kind: FreeKind, id: number, productId?: string): F
 const objectKeys=Object.keys(newFreeObject('box',1)).sort().join(',');
 const isRecord=(v:unknown):v is Record<string,unknown>=>!!v && typeof v==='object' && !Array.isArray(v);
 export function validateFreeScene(value: unknown): asserts value is FreeScene {
-    if(!isRecord(value) || !['grid,gridSize,name,objects,view','environment,grid,gridSize,name,objects,view'].includes(Object.keys(value).filter(key=>key!=='groups').sort().join(','))) throw new Error('Cena livre inválida.');
+    if(!isRecord(value) || !['grid,gridSize,name,objects,view','environment,grid,gridSize,name,objects,view'].includes(Object.keys(value).filter(key=>key!=='groups' && key!=='wallLinks').sort().join(','))) throw new Error('Cena livre inválida.');
     if ('environment' in value && (typeof value.environment !== 'string' || !Object.hasOwn(freeEnvironments, value.environment))) {
         throw new Error('Cenário desconhecido.');
     }
@@ -138,7 +139,18 @@ export function validateFreeScene(value: unknown): asserts value is FreeScene {
             }
         }
     }
-    // Sobreposições, paredes cruzadas e posições fora da grade são permitidas deliberadamente.
+    if ('wallLinks' in value) {
+        if (!Array.isArray(value.wallLinks) || value.wallLinks.length > 19900) throw new Error('Conexões de parede inválidas.');
+        const walls = new Set((value.objects as FreeObject[]).filter(object=>object.kind==='wall').map(object=>object.id));
+        const links = new Set<string>();
+        for (const pair of value.wallLinks) {
+            if (!Array.isArray(pair) || pair.length!==2 || pair[0]===pair[1] || pair.some(id=>!walls.has(id))) throw new Error('Confira as paredes de cada ímã.');
+            const key = [...pair].sort((a,b)=>a-b).join(':');
+            if (links.has(key)) throw new Error('Conexão de parede repetida.');
+            links.add(key);
+        }
+    }
+    // Arquivos antigos podem conter sobreposições. O editor limita novas movimentações.
 }
 export function stringifyFreeScene(scene: FreeScene): string {
     validateFreeScene(scene);

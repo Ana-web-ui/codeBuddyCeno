@@ -2,14 +2,15 @@
 import ImagePreview from 'next/image';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
-import { Box, MousePointer2, Move3D, Rotate3D, Scaling, Hand, BrickWall, Type, CopyPlus, Trash2, Undo2, Redo2, ZoomIn, ZoomOut, Maximize, Plus, Eye, EyeOff, Lock, Unlock, Upload, Grid2X2, Layers, Download, Save, FolderOpen } from 'lucide-react';
+import { Box, MousePointer2, Move3D, Rotate3D, Scaling, Hand, BrickWall, Type, CopyPlus, Trash2, Undo2, Redo2, ZoomIn, ZoomOut, Maximize, Plus, Eye, EyeOff, Lock, Unlock, Upload, Grid2X2, Layers, Download, Save, FolderOpen, Magnet } from 'lucide-react';
 import { FreeSceneHelp, freeTourStorageKey, tourSteps } from './free-scene-help';
 import type { FreeHelpMode } from './free-scene-help';
 import { FreeSceneViewport } from './free-scene-viewport';
 import type { FreeTool, FreeViewportApi, FreePose } from './free-scene-viewport';
 import { createStandBase, emptyFreeScene, freeCatalog, freeEnvironments, newFreeObject, stringifyFreeScene, parseFreeScene, sceneFilename, wallBetween, rectangleBetween, MAX_FREE_SCENE_BYTES } from '@/lib/free-scene';
-import type { FreeEnvironment, FreeScene, FreeKind, FreeObject, FreeGroup, V3 } from '@/lib/free-scene';
-import { freeSelection, groupFreeObjects, ungroupFreeObjects, moveFreeObjects, removeFreeObjects } from '@/lib/free-scene-groups';
+import type { FreeEnvironment, FreeScene, FreeKind, FreeObject, FreeGroup, WallLink, V3 } from '@/lib/free-scene';
+import { freeSelection, groupFreeObjects, ungroupFreeObjects, moveFreeObjects, removeFreeObjects, updateFreeObject } from '@/lib/free-scene-groups';
+import { connectedWallIds, placeFreeWall, placeWallCopies, toggleWallLink, trimDrawnWall } from '@/lib/free-wall-contact';
 import { exportFreeBlender, exportFreeBlenderCommand, exportFreeMax } from '@/lib/free-scene-exporters';
 import { exportFreePackage } from '@/lib/free-scene-package';
 import { resizeFreeObject } from '@/lib/free-scene-sizing';
@@ -23,15 +24,16 @@ function downloadFile(content:BlobPart,name:string,type:string) {
     const url=URL.createObjectURL(new Blob([content],{type})),anchor=document.createElement('a');anchor.href=url;anchor.download=name;anchor.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 function NumberField({label,value,min=-10000,max=10000,step=.1,disabled=false,change}:{label:string;value:number;min?:number;max?:number;step?:number;disabled?:boolean;change:(n:number)=>boolean}) {
-    return <label>{label}<input key={String(value)} aria-label={label} type="number" min={min} max={max} step={step} disabled={disabled} defaultValue={Number(value.toFixed(4))}
+    const [editVersion,setEditVersion] = useState(0);
+    return <label>{label}<input key={`${value}:${editVersion}`} aria-label={label} type="number" min={min} max={max} step={step} disabled={disabled} defaultValue={Number(value.toFixed(4))}
         onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur();}}
-        onBlur={event=>{const raw=event.currentTarget.value,n=Number(raw);if(raw===String(Number(value.toFixed(4))))return;if(!raw.trim() || !Number.isFinite(n) || n<min || n>max || !change(n))event.currentTarget.value=String(Number(value.toFixed(4)));}}/></label>;
+        onBlur={event=>{const raw=event.currentTarget.value,n=Number(raw);if(raw===String(Number(value.toFixed(4))))return;if(!raw.trim() || !Number.isFinite(n) || n<min || n>max || !change(n))event.currentTarget.value=String(Number(value.toFixed(4)));setEditVersion(previous=>previous+1);}}/></label>;
 }
 const toolItems=[{id:'select',label:'Selecionar (M)',Icon:MousePointer2},{id:'move',label:'Mover (V)',Icon:Move3D},{id:'rotate',label:'Girar (G)',Icon:Rotate3D},{id:'scale',label:'Redimensionar (S)',Icon:Scaling},{id:'hand',label:'Navegar (H)',Icon:Hand},{id:'wall',label:'Desenhar parede (B)',Icon:BrickWall},{id:'rectangle',label:'Desenhar retângulo (R)',Icon:Box}] as const;
 export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
     const [history,setHistory]=useState(()=>({past:[] as FreeScene[],present:emptyFreeScene(),future:[] as FreeScene[]}));
     const data=history.present,current=useRef(data),epoch=useRef(0);
-    const copiedObject = useRef<{objects: FreeObject[]; groups: FreeGroup[]} | null>(null);
+    const copiedObject = useRef<{objects: FreeObject[]; groups: FreeGroup[]; wallLinks: WallLink[]} | null>(null);
     const [selection, setSelection] = useState<number[]>([]);
     const selectedIds = selection.filter(id => data.objects.some(object => object.id === id));
     const selectedId = selectedIds.at(-1) ?? null;
@@ -60,12 +62,14 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
         setPanel('layers');
         setNotice('Seu trabalho anterior foi recuperado deste navegador.');
         requestAnimationFrame(()=>api.current?.fit());
-    }, []);
+    }, [setHistory,setNotice,setPanel,setShowStart,setView]);
     const {restoring: restoringDraft, status: draftStatus, save: saveDraft} = useFreeSceneDraft(restoreDraft);
     useLayoutEffect(()=>{current.current=data;},[data]);
     const selected=data.objects.find(o=>o.id===selectedId);
     const canEditSelection = selectedIds.length > 0 && !busy && !loading && !restoringDraft && !data.objects.some(object => selectedIds.includes(object.id) && object.locked);
     const canEdit = canEditSelection && selectedIds.length === 1;
+    const selectedWallLinked = !!data.wallLinks?.some(pair=>pair.includes(selectedId ?? -1));
+    const canEditShape = canEdit && !selectedWallLinked;
     const selectedGroup = data.groups?.find(group => group.objectIds.length === selectedIds.length && group.objectIds.every(id => selectedIds.includes(id)));
     const selectedProduct = getSupplierProduct(selected?.productId);
     const nextId=()=>Math.max(0,...current.current.objects.map(o=>o.id))+1;
@@ -97,11 +101,12 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
                 return commit(moveFreeObjects(scene, selectionRef.current, delta));
             } catch (error) { setError(error instanceof Error ? error.message : 'Não foi possível mover o conjunto.'); return false; }
         }
-        const next={...item,...pose};return commit({...scene,objects:scene.objects.map(o=>o.id===id?next:o)});
+        try {return commit(updateFreeObject(scene,id,pose));}
+        catch(error){setError(error instanceof Error?error.message:'Não foi possível transformar a peça.');return false;}
     },[commit]);
     const addWall=useCallback((a:V3,b:V3)=>{
         const scene=current.current,id=Math.max(0,...scene.objects.map(o=>o.id))+1;
-        try{const wall=wallBetween(a,b,id);if(commit({...scene,objects:[...scene.objects,wall]})){select(id);setNotice('Parede criada. Continue desenhando ou use Mover e Girar.');}}catch(e){setError(e instanceof Error?e.message:'Não foi possível criar a parede.');}
+        try{const wall=trimDrawnWall(scene,wallBetween(a,b,id));if(commit({...scene,objects:[...scene.objects,wall]})){select(id);setNotice('Parede criada. Aproxime outra parede para encaixar e ligar o ímã.');}}catch(e){setError(e instanceof Error?e.message:'Não foi possível criar a parede.');}
     },[commit,select]);
     function addRectangle(a: V3, b: V3) {
         const scene = current.current;
@@ -115,8 +120,8 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
     }
 
     function activateTool(nextTool: FreeTool) {
-        if (selectedIds.length > 1 && (nextTool === 'rotate' || nextTool === 'scale')) {
-            setNotice('Para girar ou redimensionar, selecione uma peça dentro do grupo pela Lista de peças.');
+        if ((selectedIds.length > 1 || selectedWallLinked) && (nextTool === 'rotate' || nextTool === 'scale')) {
+            setNotice(selectedWallLinked?'Solte o ímã antes de girar ou redimensionar as paredes.':'Para girar ou redimensionar, selecione uma peça dentro do grupo pela Lista de peças.');
             return;
         }
         setTool(nextTool);
@@ -126,18 +131,20 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
     }
 
     function add(kind:FreeKind, productId?:string) {
-        if(busy || loading)return;const item=newFreeObject(kind,nextId(),productId);
+        if(busy || loading)return;let item=newFreeObject(kind,nextId(),productId);
         const [x,y]=api.current?.center() ?? [0,0,0];
         item.position=[x,y,item.position[2]];
+        if (kind==='wall') item=placeFreeWall(current.current,item,true);
         if(commit({...current.current,objects:[...current.current.objects,item]})){select(item.id);setTool('move');setNotice(`${item.name} adicionado. Arraste ou ajuste as propriedades.`);}
     }
     function patch(id:number,change:Partial<FreeObject>):boolean {
         const scene=current.current,item=scene.objects.find(o=>o.id===id);if(!item)return false;
         if(item.locked && Object.keys(change).some(key=>key!=='locked' && key!=='visible')){setError('Desbloqueie a peça para editar.');return false;}
-        return commit({...scene,objects:scene.objects.map(o=>o.id===id?{...o,...change}:o)});
+        try {return commit(updateFreeObject(scene,id,change));}
+        catch(error){setError(error instanceof Error?error.message:'Não foi possível alterar a peça.');return false;}
     }
     function resizeSelected(size: V3): boolean {
-        if (!selected || !canEdit) return false;
+        if (!selected || !canEditShape) return false;
         try {
             const resized = resizeFreeObject(selected, size);
             return patch(selected.id, { size: resized.size, position: resized.position, originalSize: resized.originalSize });
@@ -175,17 +182,18 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
         try{const next={...item,...settings};const g=modelGeometry({id:1,name:next.name,source:next.source,unit:next.objUnit,upAxis:next.upAxis,scale:1,x:0,y:0,z:0,rotation:0,material:'white'});const size=g.size.map(n=>Math.max(.01,n)) as V3;return patch(item.id,{...settings,size,originalSize:[...size]});}
         catch(e){setError(e instanceof Error?e.message:'Modelo inválido.');return false;}
     }
-    function insertCopy(source: {objects: FreeObject[]; groups: FreeGroup[]}) {
+    function insertCopy(source: {objects: FreeObject[]; groups: FreeGroup[]; wallLinks: WallLink[]}) {
         if (busy || loading) return;
         const scene = current.current;
         const ids = new Map(source.objects.map((object, index) => [object.id, nextId() + index]));
-        const copies = source.objects.map(object => ({
+        const copies = placeWallCopies(scene,source.objects.map(object => ({
             ...structuredClone(object), id: ids.get(object.id)!, name: (object.name + ' · cópia').slice(0,100),
             position: [object.position[0] + .3, object.position[1] + .3, object.position[2]] as V3, locked: false,
-        }));
+        })));
         const nextGroupId = Math.max(0, ...(scene.groups ?? []).map(group => group.id)) + 1;
         const groups = source.groups.map((group, index) => ({id: nextGroupId + index, name: (group.name + ' · cópia').slice(0,100), objectIds: group.objectIds.map(id => ids.get(id)!)}));
-        if (commit({ ...scene, objects: [...scene.objects, ...copies], groups: [...(scene.groups ?? []), ...groups] })) {
+        const wallLinks = source.wallLinks.map(([a,b])=>[ids.get(a)!,ids.get(b)!] as WallLink);
+        if (commit({ ...scene, objects: [...scene.objects, ...copies], groups: [...(scene.groups ?? []), ...groups],wallLinks:[...(scene.wallLinks ?? []),...wallLinks] })) {
             selectionRef.current = copies.map(object => object.id);
             setSelection(selectionRef.current);
             setPanel('object');
@@ -195,7 +203,8 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
     }
     function selectionSnapshot() {
         return structuredClone({objects: data.objects.filter(object => selectedIds.includes(object.id)),
-            groups: (data.groups ?? []).filter(group => group.objectIds.every(id => selectedIds.includes(id)))});
+            groups: (data.groups ?? []).filter(group => group.objectIds.every(id => selectedIds.includes(id))),
+            wallLinks: (data.wallLinks ?? []).filter(pair=>pair.every(id=>selectedIds.includes(id)))});
     }
     function duplicate() {
         if (selectedIds.length) insertCopy(selectionSnapshot());
@@ -229,6 +238,20 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
     function ungroupSelection() {
         if (busy || loading) return;
         if (commit(ungroupFreeObjects(current.current, selectedIds))) setNotice('Grupo desfeito. As peças mantêm suas posições.');
+    }
+    function wallMagnet(a: number,b: number) {
+        if (busy || loading || restoringDraft) return;
+        try {
+            const scene=current.current;
+            const linked=scene.wallLinks?.some(pair=>pair.includes(a) && pair.includes(b));
+            const next=toggleWallLink(scene,a,b);
+            if (!commit(next)) return;
+            const primary = selectedId!==null && [a,b].includes(selectedId) ? selectedId : a;
+            const connected=linked?freeSelection(next,primary,[]):connectedWallIds(next,selectionRef.current);
+            const ids=[...connected.filter(id=>id!==primary),primary];
+            selectionRef.current=ids;setSelection(ids);setTool('move');setPanel('object');
+            setNotice(linked?'Ímã solto. Você pode afastar as paredes.':'Ímã ligado. As paredes se movem juntas.');
+        } catch(error){setError(error instanceof Error?error.message:'Não foi possível alterar o ímã.');}
     }
     function travel(direction:'undo'|'redo') {
         if(busy || loading || restoringDraft)return;
@@ -446,7 +469,7 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
       <div className="free-documentbar"><span><i/>{data.name}</span><span>{selectedIds.length>1 ? `${selectedGroup?.name ?? 'Seleção'} · ${selectedIds.length} peças` : selected?.name ?? `${data.objects.length} peças · metros`}</span><div className="free-view-switch" role="group" aria-label="Vista da cena"><button aria-pressed={view==='3d'} onClick={()=>changeView('3d')} disabled={isBusy}>3D</button><button data-tour-anchor="draw" aria-pressed={view==='plan'} onClick={()=>changeView('plan')} disabled={isBusy}>Planta</button></div></div>
       <main className="free-workspace">
         <nav className="free-tools" aria-label="Ferramentas da cena livre">
-          {toolItems.map(({id,label,Icon})=><button key={id} data-tour-anchor={id==='move' ? 'move' : id==='rotate' || id==='scale' ? 'adjust' : id==='rectangle' || id==='wall' ? 'draw' : undefined} title={label} aria-label={label} aria-pressed={tool===id} disabled={isBusy || (selectedIds.length>1 && (id==='rotate' || id==='scale'))} onClick={()=>activateTool(id)}><Icon size={19}/></button>)}
+          {toolItems.map(({id,label,Icon})=><button key={id} data-tour-anchor={id==='move' ? 'move' : id==='rotate' || id==='scale' ? 'adjust' : id==='rectangle' || id==='wall' ? 'draw' : undefined} title={label} aria-label={label} aria-pressed={tool===id} disabled={isBusy || ((selectedIds.length>1 || selectedWallLinked) && (id==='rotate' || id==='scale'))} onClick={()=>activateTool(id)}><Icon size={19}/></button>)}
           <button title="Adicionar texto (T)" aria-label="Adicionar texto" disabled={isBusy} onClick={()=>add('text')}><Type size={20}/></button><span/>
           <button title="Agrupar (Ctrl+G)" aria-label="Agrupar seleção" disabled={!canEditSelection || selectedIds.length<2 || !!selectedGroup} onClick={groupSelection}><Layers size={19}/></button>
           <button title="Duplicar (Ctrl+D ou Ctrl+C e Ctrl+V)" aria-label="Duplicar peça" disabled={!selected || isBusy} onClick={duplicate}><CopyPlus size={19}/></button><button title="Excluir (Delete)" aria-label="Excluir peça" disabled={!canEditSelection} onClick={remove}><Trash2 size={18}/></button><span/>
@@ -454,8 +477,8 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
           <button aria-label="Aproximar cena" title="Aproximar" disabled={isBusy} onClick={()=>api.current?.zoom(1.25)}><ZoomIn size={19}/></button><button aria-label="Afastar cena" title="Afastar" disabled={isBusy} onClick={()=>api.current?.zoom(.8)}><ZoomOut size={19}/></button><button aria-label="Enquadrar cena" title="Enquadrar todas as peças (0)" disabled={isBusy} onClick={()=>api.current?.fit()}><Maximize size={18}/></button>
         </nav>
         <section className="free-stage" aria-label="Editor da cena livre">
-          <FreeSceneViewport data={data} selectedId={selectedId} selectedIds={selectedIds} tool={tool} view={view} snap={snap} apiRef={api} onSelectAction={select} onTransformAction={transform} onWallAction={addWall} onRectangleAction={addRectangle} onBusyAction={setBusy}/>
-          <div className="free-canvas-controls"><label><input type="checkbox" checked={data.grid} disabled={isBusy} onChange={event=>commit({...data,grid:event.target.checked})}/><Grid2X2 size={13}/>Grade</label><label><input type="checkbox" checked={snap} disabled={isBusy} onChange={event=>setSnap(event.target.checked)}/>Encaixar 10 cm / 15°</label></div>
+          <FreeSceneViewport data={data} selectedId={selectedId} selectedIds={selectedIds} tool={tool} view={view} snap={snap} apiRef={api} onSelectAction={select} onTransformAction={transform} onWallAction={addWall} onRectangleAction={addRectangle} onWallLinkAction={wallMagnet} onBusyAction={setBusy}/>
+          <div className="free-canvas-controls"><label><input type="checkbox" checked={data.grid} disabled={isBusy} onChange={event=>commit({...data,grid:event.target.checked})}/><Grid2X2 size={13}/>Grade</label><label><input type="checkbox" checked={snap} disabled={isBusy} onChange={event=>setSnap(event.target.checked)}/>Encaixar 10 cm / 15°</label><span data-tour-anchor="magnets" title="Aproxime paredes para encaixar. Clique no ímã do encontro para ligar ou soltar."><Magnet size={13}/>Paredes · ímã 10 cm</span></div>
           <div className="free-stage-help">{tool==='rectangle'?'Arraste no chão de um canto ao outro. V ou Esc volta para Mover.':tool==='wall'?'Arraste no chão para desenhar a parede. Esc cancela.':view==='plan'?'Planta: mova no plano ou use os eixos. Role para aproximar.':'3D: arraste o fundo para orbitar · botão direito para navegar · role para aproximar'}</div>
         </section>
         <aside className="free-inspector" aria-label="Criação e propriedades da cena livre">
@@ -510,7 +533,7 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
                 <h3>Posição do conjunto · m</h3>
                 <div className="free-vector">{(['X','Y','Z'] as const).map((axis,i)=><NumberField key={axis} label={`Posição do conjunto ${axis}`} value={selected!.position[i]} disabled={!canEditSelection}
                     change={value=>{const delta:V3=[0,0,0];delta[i]=value-selected!.position[i];return commit(moveFreeObjects(current.current,selectedIds,delta));}}/>)}</div>
-                <p className="free-small">Para editar medidas ou girar uma peça, selecione-a dentro do grupo na Lista de peças.</p>
+                <p className="free-small">{selectedWallLinked?'Solte o ímã para alterar medidas ou rotação das paredes.':'Para editar medidas ou girar uma peça, selecione-a dentro do grupo na Lista de peças.'}</p>
                 {!canEditSelection && <p>Desbloqueie todas as peças do conjunto para movê-lo.</p>}
                 <div className="free-object-actions"><button disabled={isBusy} onClick={duplicate}>Duplicar conjunto</button><button disabled={!canEditSelection} onClick={remove}>Excluir conjunto</button></div>
             </> : selected ? <><h2>{selected.name}</h2><label className="free-field">Nome<input aria-label="Nome da peça" value={selected.name} maxLength={100} disabled={!canEdit} onChange={event=>patch(selected.id,{name:event.target.value})}/></label>
@@ -543,24 +566,25 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
                   </> : <p className="free-small">Totem integrado vertical. Tela e rodízios aproximados. A arte é aplicada na tela.</p>}
               </div>}
               <div className="free-state-row"><button aria-pressed={selected.visible} disabled={isBusy} onClick={()=>patch(selected.id,{visible:!selected.visible})}>{selected.visible?<Eye size={15}/>:<EyeOff size={15}/>} {selected.visible?'Visível':'Oculta'}</button><button aria-pressed={selected.locked} disabled={isBusy} onClick={()=>patch(selected.id,{locked:!selected.locked})}>{selected.locked?<Lock size={15}/>:<Unlock size={15}/>} {selected.locked?'Bloqueada':'Livre'}</button></div>
+              {selectedWallLinked && <p className="free-small">Ímã ligado. Solte o ímã para alterar medidas ou rotação desta parede.</p>}
               <h3>{selectedProduct?.display ? "Medidas com suporte · m" : "Medidas · m"}</h3>
               <div className="free-size-actions">
-                  <button type="button" disabled={!canEdit || selected.size.some(value=>value*.9<.01)}
+                  <button type="button" disabled={!canEditShape || selected.size.some(value=>value*.9<.01)}
                     onClick={()=>scaleSelected(.9)} aria-label="Diminuir peça em 10%">− Menor</button>
-                  <button type="button" disabled={!canEdit || selected.size.some(value=>value*1.1>1000)}
+                  <button type="button" disabled={!canEditShape || selected.size.some(value=>value*1.1>1000)}
                     onClick={()=>scaleSelected(1.1)} aria-label="Aumentar peça em 10%">+ Maior</button>
               </div>
               <p className="free-small">Cada clique muda o tamanho em 10%.</p>
               <label className="free-size-lock">
-                  <input type="checkbox" checked={keepProportions} disabled={!canEdit}
+                  <input type="checkbox" checked={keepProportions} disabled={!canEditShape}
                     onChange={event=>setKeepProportions(event.target.checked)}/>
                   Manter proporções ao editar medidas
               </label>
-              <div className="free-vector">{(['Largura','Profundidade','Altura'] as const).map((label,i)=><NumberField key={label} label={label} value={selected.size[i]} min={.01} max={1000} disabled={!canEdit} change={n=>changeDimension(i,n)}/>)}</div>
-              <button type="button" className="free-secondary" disabled={!canEdit} onClick={restoreSize}
+              <div className="free-vector">{(['Largura','Profundidade','Altura'] as const).map((label,i)=><NumberField key={label} label={label} value={selected.size[i]} min={.01} max={1000} disabled={!canEditShape} change={n=>changeDimension(i,n)}/>)}</div>
+              <button type="button" className="free-secondary" disabled={!canEditShape} onClick={restoreSize}
                 title="Volta ao tamanho de inserção ou de abertura da peça nesta cena">Restaurar tamanho original</button>
               <h3>Posição · m</h3><div className="free-vector">{(['X','Y','Z'] as const).map((axis,i)=><NumberField key={axis} label={`Posição ${axis}`} value={selected.position[i]} disabled={!canEdit} change={n=>{const position=[...selected.position] as V3;position[i]=n;return patch(selected.id,{position});}}/>)}</div>
-              <h3>Rotação · graus</h3><div className="free-vector">{(['X','Y','Z'] as const).map((axis,i)=><NumberField key={axis} label={`Rotação ${axis}`} value={selected.rotation[i]} step={1} disabled={!canEdit} change={n=>{const rotation=[...selected.rotation] as V3;rotation[i]=n;return patch(selected.id,{rotation});}}/>)}</div>
+              <h3>Rotação · graus</h3><div className="free-vector">{(['X','Y','Z'] as const).map((axis,i)=><NumberField key={axis} label={`Rotação ${axis}`} value={selected.rotation[i]} step={1} disabled={!canEditShape} change={n=>{const rotation=[...selected.rotation] as V3;rotation[i]=n;return patch(selected.id,{rotation});}}/>)}</div>
               {selected.kind==='text' && <label className="free-field">Texto<textarea aria-label="Conteúdo do texto" maxLength={1000} rows={4} value={selected.text} disabled={!canEdit} onChange={event=>patch(selected.id,{text:event.target.value})}/></label>}
               {['shelf','showcase'].includes(selected.kind) && <NumberField label="Prateleiras internas" value={selected.shelves} min={0} max={10} step={1} disabled={!canEdit} change={n=>patch(selected.id,{shelves:n})}/>}
               {selected.kind==='obj' && <div className="free-obj-options"><label>Unidade<select aria-label="Unidade do objeto importado" disabled={!canEdit} value={selected.objUnit} onChange={event=>modelSettings(selected,{objUnit:event.target.value as 'm'|'cm'|'mm'})}><option value="m">Metros</option><option value="cm">Centímetros</option><option value="mm">Milímetros</option></select></label><label>Eixo vertical<select aria-label="Eixo vertical do objeto importado" disabled={!canEdit} value={selected.upAxis} onChange={event=>modelSettings(selected,{upAxis:event.target.value as 'z'|'y'})}><option value="z">Z</option><option value="y">Y</option></select></label></div>}
@@ -569,6 +593,7 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
               {!['text','obj'].includes(selected.kind) && <><button className="free-secondary" onClick={()=>imageInput.current?.click()} disabled={!canEdit}><Upload size={15}/>{selected.image?'Trocar arte frontal':'Aplicar arte / logo'}</button>{selected.image && <div className="free-art-preview"><ImagePreview src={selected.image} alt="Arte frontal da peça" width={320} height={180} unoptimized/><button onClick={()=>patch(selected.id,{image:''})} disabled={!canEdit}>Remover arte</button></div>}</>}
               <div className="free-object-actions"><button onClick={duplicate} disabled={isBusy}><CopyPlus size={15}/>Duplicar</button><button onClick={remove} disabled={!canEdit}><Trash2 size={15}/>Excluir</button></div>
             </>:<><h2>Selecione uma peça</h2><p>Clique na cena ou abra a Lista de peças. Cada peça tem propriedades independentes.</p><button className="free-secondary" onClick={()=>setPanel('insert')}>Adicionar peça</button></>}
+            {(data.wallLinks ?? []).filter(pair=>pair.some(id=>selectedIds.includes(id))).map(([a,b])=><button key={`${a}:${b}`} className="free-secondary" disabled={isBusy} aria-pressed="true" onClick={()=>wallMagnet(a,b)}><Magnet size={15}/>Soltar ímã · {data.objects.find(object=>object.id===a)?.name} {a} + {data.objects.find(object=>object.id===b)?.name} {b}</button>)}
           </div>}
           {panel==='layers' && <div className="free-panel"><h2>Objetos · {data.objects.length}</h2>
             <p className="free-small">Shift + clique seleciona várias peças. Expanda um grupo para editar suas peças individualmente.</p>

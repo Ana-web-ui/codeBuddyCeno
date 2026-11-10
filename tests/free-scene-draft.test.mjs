@@ -80,6 +80,14 @@ test('gravações capturam a edição e a última edição válida prevalece',as
     assert.deepEqual(await draft.read(),emptyFreeScene());
 });
 
+test('rascunho recupera conexões magnéticas entre paredes',async()=>{
+    const storage=memoryStorage();
+    const draft=createFreeSceneDraft(storage.factory);
+    const linked={...scene,objects:[...scene.objects,{...newFreeObject('wall',4),position:[7,2,0]}],wallLinks:[[1,4]]};
+    await draft.write(linked);
+    assert.deepEqual(await draft.read(),linked);
+});
+
 test('falhas e dados inválidos preservam a última gravação e podem ser recuperados',async()=>{
     const storage = memoryStorage();
     const draft = createFreeSceneDraft(storage.factory);

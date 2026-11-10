@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Magnet } from 'lucide-react';
 import type { MutableRefObject } from 'react';
 import * as THREE from 'three';
 import { createFreeEnvironment, environmentLighting } from './free-scene-environment';
@@ -8,13 +9,15 @@ import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { freeParts } from '@/lib/free-scene-geometry';
 import { resizeFreeObject } from '@/lib/free-scene-sizing';
 import { freeSelection } from '@/lib/free-scene-groups';
+import { wallBetween } from '@/lib/free-scene';
+import { connectedWallIds, constrainWallMotion, wallIntersectsScene, wallMagnetContacts, trimDrawnWall } from '@/lib/free-wall-contact';
 import type { FreeScene, FreeObject, FreeKind, V3 } from '@/lib/free-scene';
 export type FreeTool='select'|'move'|'rotate'|'scale'|'hand'|'wall'|'rectangle';
 export type FreePose={position:V3;rotation:V3;size:V3};
 export type FreeViewportApi={fit:()=>void;zoom:(factor:number)=>void;center:()=>V3;cancel:()=>void};
 type Props={data:FreeScene;selectedId:number|null;selectedIds:number[];tool:FreeTool;view:'3d'|'plan';snap:boolean;
     apiRef:MutableRefObject<FreeViewportApi|null>;onSelectAction:(id:number|null,additive?:boolean)=>void;
-    onTransformAction:(id:number,pose:FreePose)=>boolean;onWallAction:(a:V3,b:V3)=>void;onRectangleAction:(a:V3,b:V3)=>void;onBusyAction:(busy:boolean)=>void};
+    onTransformAction:(id:number,pose:FreePose)=>boolean;onWallAction:(a:V3,b:V3)=>void;onRectangleAction:(a:V3,b:V3)=>void;onWallLinkAction:(a:number,b:number)=>void;onBusyAction:(busy:boolean)=>void};
 function disposeTree(root:THREE.Object3D) {
     root.traverse(obj=>{ if(obj instanceof THREE.Mesh || obj instanceof THREE.LineSegments) {
         obj.geometry.dispose(); const materials=Array.isArray(obj.material)?obj.material:[obj.material];
@@ -75,8 +78,11 @@ export function FreeSceneViewport(props:Props) {
     const measurement = useRef<HTMLOutputElement>(null);
     const measurementTitle = useRef<HTMLElement>(null);
     const measurementValues = useRef<HTMLSpanElement>(null);
+    const magnets = useMemo(()=>wallMagnetContacts(props.data,props.selectedIds),[props.data,props.selectedIds]);
+    const magnetContacts = useRef(magnets);
+    const magnetButtons = useRef(new Map<string,HTMLButtonElement>());
     const [error,setError]=useState('');
-    useLayoutEffect(()=>{latest.current=props;runtime.current?.sync();},[props]);
+    useLayoutEffect(()=>{latest.current=props;magnetContacts.current=magnets;runtime.current?.sync();},[props,magnets]);
     useEffect(()=>{
         const container=host.current!;let renderer:THREE.WebGLRenderer;
         try { renderer=new THREE.WebGLRenderer({antialias:true,alpha:false}); }
@@ -122,13 +128,14 @@ export function FreeSceneViewport(props:Props) {
             controls.enabled=p.tool!=='wall' && !busy;
             controls.mouseButtons.LEFT=p.tool==='hand'?THREE.MOUSE.PAN:THREE.MOUSE.ROTATE;
             controls.mouseButtons.RIGHT=THREE.MOUSE.PAN;
-            transform.setMode(p.selectedIds.length>1 ? 'translate' : p.tool==='rotate'?'rotate':p.tool==='scale'?'scale':'translate');
+            const movementIds=connectedWallIds(p.data,p.selectedIds);
+            transform.setMode(movementIds.length>1 ? 'translate' : p.tool==='rotate'?'rotate':p.tool==='scale'?'scale':'translate');
             transform.setSpace('world');transform.setTranslationSnap(p.snap?.1:null);transform.setRotationSnap(p.snap?Math.PI/12:null);transform.setScaleSnap(null);
             transform.showX=p.view==='3d' || p.tool!=='rotate';transform.showY=transform.showX;transform.showZ=p.view==='3d' || p.tool==='rotate';
             const selected=[...p.selectedIds].reverse().map(id=>nodes.get(id)).find(node=>node?.visible),data=selected?.userData.config as FreeObject|undefined;
             const showManipulator = ['select', 'move', 'rotate', 'scale'].includes(p.tool);
 
-if (selected && data?.visible && !p.data.objects.some(object=>p.selectedIds.includes(object.id) && object.locked) && showManipulator) {
+if (selected && data?.visible && !p.data.objects.some(object=>movementIds.includes(object.id) && object.locked) && showManipulator) {
     if (transform.object !== selected) {
         transform.attach(selected);
     }
@@ -202,11 +209,12 @@ if (selected && data?.visible && !p.data.objects.some(object=>p.selectedIds.incl
             const anchor = nodes.get(id);
             if (!anchor) return;
             const object = anchor.userData.config as FreeObject;
-            const delta = anchor.position.clone().sub(new THREE.Vector3(...object.position));
-            for (const memberId of ids) {
-                if (memberId === id) continue;
+            const requested = anchor.position.clone().sub(new THREE.Vector3(...object.position)).toArray() as V3;
+            const members = connectedWallIds(latest.current.data,ids);
+            const {delta} = constrainWallMotion(latest.current.data,members,requested);
+            for (const memberId of members) {
                 const node = nodes.get(memberId);
-                if (node) node.position.fromArray((node.userData.config as FreeObject).position).add(delta);
+                if (node) node.position.fromArray((node.userData.config as FreeObject).position).add(new THREE.Vector3(...delta));
             }
         }
         function updateMeasurements() {
@@ -221,7 +229,7 @@ if (selected && data?.visible && !p.data.objects.some(object=>p.selectedIds.incl
                     text = measurementText('box', [Math.abs(dx), Math.abs(dy), 1]);
                 } else {
                     title = 'Parede em criação';
-                    text = measurementText('wall', [Math.hypot(dx, dy), .12, 3]);
+                    text = measurementText('wall', [draft.visible ? draft.scale.x : Math.hypot(dx, dy), .12, 3]);
                 }
                 floating = true;
             } else {
@@ -267,7 +275,7 @@ if (selected && data?.visible && !p.data.objects.some(object=>p.selectedIds.incl
             if(node && p.tool==='move' && !(node.userData.config as FreeObject).locked){
                 const point=ground(event,node.position.z);if(!point)return;
                 const id = node.userData.freeId as number;
-                const ids = p.selectedIds.includes(id) ? p.selectedIds : freeSelection(p.data,id,p.selectedIds);
+                const ids = connectedWallIds(p.data,p.selectedIds.includes(id) ? p.selectedIds : freeSelection(p.data,id,p.selectedIds));
                 if (p.data.objects.some(object=>ids.includes(object.id) && object.locked)) {p.onSelectAction(id);return;}
                 if (!p.selectedIds.includes(id)) p.onSelectAction(id);
                 direct={id,ids,start:point,position:node.position.toArray() as V3,axis:null};
@@ -286,6 +294,7 @@ if (selected && data?.visible && !p.data.objects.some(object=>p.selectedIds.incl
                     const centerY = (point.y + wallStart.y) / 2;
 
                     if (latest.current.tool === 'rectangle') {
+                        draft.material.color.set(0x657be5);
                         const width = Math.abs(dx);
                         const depth = Math.abs(dy);
                         draft.visible = width >= 0.05 && depth >= 0.05;
@@ -298,6 +307,14 @@ if (selected && data?.visible && !p.data.objects.some(object=>p.selectedIds.incl
                         draft.scale.set(Math.max(0.001, length), 0.12, 3);
                         draft.position.set(centerX, centerY, 1.5);
                         draft.rotation.z = Math.atan2(dy, dx);
+                        if (length >= .05) {
+                            const wall=wallBetween(wallStart.toArray() as V3,point.toArray() as V3,-1);
+                            try {
+                                const placed=trimDrawnWall(latest.current.data,wall);
+                                draft.scale.x=placed.size[0];draft.position.set(placed.position[0],placed.position[1],1.5);
+                                draft.material.color.set(placed.size[0]<length-1e-5?0xe5a642:0x657be5);
+                            } catch {draft.material.color.set(0xe35a5a);}
+                        }
                     }
                 }
             }
@@ -364,16 +381,30 @@ if (selected && data?.visible && !p.data.objects.some(object=>p.selectedIds.incl
             controls.target.copy(center);controls.update();
         }
         function zoom(factor:number){if(camera===plan){plan.zoom=THREE.MathUtils.clamp(plan.zoom*factor,.02,100);plan.updateProjectionMatrix();}else{perspective.position.sub(controls.target).multiplyScalar(1/factor).add(controls.target);}controls.update();}
-        const onDrag=(event:{value:unknown})=>{markBusy(!!event.value);controls.enabled=!event.value && latest.current.tool!=='wall';};
+        let safeWallTransform: {position:THREE.Vector3;rotation:THREE.Euler;scale:THREE.Vector3}|null=null;
+        const onDrag=(event:{value:unknown})=>{
+            const node=transform.object;
+            if (event.value && node) safeWallTransform={position:node.position.clone(),rotation:node.rotation.clone(),scale:node.scale.clone()};
+            markBusy(!!event.value);controls.enabled=!event.value && latest.current.tool!=='wall';
+        };
         const onGizmoUp=()=>{if(transform.object && !ignoreGizmoCommit)commitNode(transform.object as THREE.Group);};
         const onGizmoChange = () => {
             const node = transform.object;
-            if (node && latest.current.selectedIds.length > 1 && transform.getMode() === 'translate') {
+            if (node && transform.getMode() === 'translate') {
                 previewMove(node.userData.freeId, latest.current.selectedIds);
                 return;
             }
-            if (!node || transform.getMode() !== 'scale') return;
+            if (!node) return;
             const object = node.userData.config as FreeObject;
+            if (object.kind==='wall') {
+                const candidate={...object,position:node.position.toArray() as V3,rotation:[node.rotation.x,node.rotation.y,node.rotation.z].map(THREE.MathUtils.radToDeg) as V3,size:object.size.map((value,axis)=>value*node.scale.getComponent(axis)) as V3};
+                if (wallIntersectsScene(latest.current.data,candidate)) {
+                    if (safeWallTransform) {node.position.copy(safeWallTransform.position);node.rotation.copy(safeWallTransform.rotation);node.scale.copy(safeWallTransform.scale);}
+                    else resetNode(node as THREE.Group);
+                } else safeWallTransform={position:node.position.clone(),rotation:node.rotation.clone(),scale:node.scale.clone()};
+                return;
+            }
+            if (transform.getMode() !== 'scale') return;
             if (object.kind !== 'floor') return;
             const size = object.size.map((value, axis) => value * node.scale.getComponent(axis)) as V3;
             if (size.some(value => !Number.isFinite(value) || value < .01 || value > 1000)) return;
@@ -394,11 +425,22 @@ if (selected && data?.visible && !p.data.objects.some(object=>p.selectedIds.incl
                 const node = nodes.get(id);
                 if (node) {box.box.setFromObject(node);selection.box.union(box.box);}
             }
+            for (const contact of magnetContacts.current) {
+                const button=magnetButtons.current.get(`${contact.a}:${contact.b}`);
+                if (!button) continue;
+                const projected=new THREE.Vector3(...contact.point).project(camera);
+                const visible=!busy && projected.z>=-1 && projected.z<=1 && Math.abs(projected.x)<1 && Math.abs(projected.y)<1;
+                button.style.display=visible?'flex':'none';
+                if (visible) {button.style.left=`${(projected.x+1)*lastW/2}px`;button.style.top=`${(1-projected.y)*lastH/2}px`;}
+            }
             updateMeasurements();renderer.render(scene,camera);
         });
         return ()=>{disposed=true;feedback.hidden=true;runtime.current=null;latest.current.apiRef.current=null;observer.disconnect();renderer.setAnimationLoop(null);controls.dispose();transform.dispose();canvas.removeEventListener('pointerdown',pointerDown,true);canvas.removeEventListener('pointermove',pointerMove);canvas.removeEventListener('pointerup',pointerUp);canvas.removeEventListener('pointercancel',cancel);canvas.removeEventListener('keydown',onKey);disposeTree(scene);for(const texture of textures.values())texture.dispose();textures.clear();renderer.dispose();renderer.forceContextLoss();canvas.remove();};
     },[]);
     return <div ref={host} className={`free-viewport tool-${props.tool}`} role="application" aria-label="Área de criação 3D" data-view={props.view}>
+        {magnets.map(contact=><button key={`${contact.a}:${contact.b}`} ref={button=>{const key=`${contact.a}:${contact.b}`;if(button)magnetButtons.current.set(key,button);else magnetButtons.current.delete(key);}}
+            type="button" className="free-wall-magnet" style={{display:'none'}} aria-label={contact.label} title={contact.label} aria-pressed={contact.linked}
+            onPointerDown={event=>event.stopPropagation()} onClick={()=>props.onWallLinkAction(contact.a,contact.b)}><Magnet size={18}/></button>)}
         <output ref={measurement} className="free-measurement-feedback" role="note" aria-label="Medidas em tempo real" aria-live="off" hidden>
             <strong ref={measurementTitle}/>
             <span ref={measurementValues}/>
