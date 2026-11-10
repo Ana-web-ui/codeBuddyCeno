@@ -17,6 +17,7 @@ import { readArtworkFile } from '@/lib/branding-upload';
 import type { SupplierMount, ScreenOrientation } from '@/lib/supplier-products';
 import { supplierProducts, getSupplierProduct, supplierObjectSize } from '@/lib/supplier-products';
 import { modelGeometry, MAX_MODEL_BYTES } from '@/lib/imported-models';
+import { useFreeSceneDraft } from './use-free-scene-draft';
 
 function downloadFile(content:BlobPart,name:string,type:string) {
     const url=URL.createObjectURL(new Blob([content],{type})),anchor=document.createElement('a');anchor.href=url;anchor.download=name;anchor.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
@@ -39,7 +40,7 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
     const [tool,setTool]=useState<FreeTool>('move'),[view,setView]=useState<'3d'|'plan'>('3d');
     const [panel,setPanel]=useState<'insert'|'object'|'layers'|'scene'>('insert'),[snap,setSnap]=useState(false),[busy,setBusy]=useState(false),[loading,setLoading]=useState(false);
     const [keepProportions, setKeepProportions] = useState(true);
-    const [showStart, setShowStart] = useState(true);
+    const [showStart, setShowStart] = useState(false);
     const startDialog = useRef<HTMLDialogElement>(null);
     useLayoutEffect(() => {
         const dialog = startDialog.current;
@@ -51,23 +52,35 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
     const [objUnit,setObjUnit]=useState<'m'|'cm'|'mm'>('m'),[objAxis,setObjAxis]=useState<'z'|'y'>('z');
     const [notice,setNotice]=useState('Cena vazia. Insira uma peça ou desenhe uma parede.'),[error,setError]=useState(''),[target,setTarget]=useState<'blender'|'max'>('blender');
     const api=useRef<FreeViewportApi|null>(null),fileInput=useRef<HTMLInputElement>(null),objInput=useRef<HTMLInputElement>(null),imageInput=useRef<HTMLInputElement>(null),fileRequest=useRef(0);
+    const restoreDraft = useCallback((scene: FreeScene | null) => {
+        if (!scene) { setShowStart(true); return; }
+        current.current = scene;
+        setHistory({past: [], present: scene, future: []});
+        setView(scene.view);
+        setPanel('layers');
+        setNotice('Seu trabalho anterior foi recuperado deste navegador.');
+        requestAnimationFrame(()=>api.current?.fit());
+    }, []);
+    const {restoring: restoringDraft, status: draftStatus, save: saveDraft} = useFreeSceneDraft(restoreDraft);
     useLayoutEffect(()=>{current.current=data;},[data]);
     const selected=data.objects.find(o=>o.id===selectedId);
-    const canEditSelection = selectedIds.length > 0 && !busy && !loading && !data.objects.some(object => selectedIds.includes(object.id) && object.locked);
+    const canEditSelection = selectedIds.length > 0 && !busy && !loading && !restoringDraft && !data.objects.some(object => selectedIds.includes(object.id) && object.locked);
     const canEdit = canEditSelection && selectedIds.length === 1;
     const selectedGroup = data.groups?.find(group => group.objectIds.length === selectedIds.length && group.objectIds.every(id => selectedIds.includes(id)));
     const selectedProduct = getSupplierProduct(selected?.productId);
     const nextId=()=>Math.max(0,...current.current.objects.map(o=>o.id))+1;
     const commit=useCallback((input:FreeScene):boolean=>{
+        if (restoringDraft) return false;
         try {
             const next: FreeScene = { ...input, objects: input.objects.map(object =>
                 object.originalSize ? object : { ...object, originalSize: [...object.size] as V3 }) };
 
             stringifyFreeScene(next);if(JSON.stringify(next)===JSON.stringify(current.current))return true;
             epoch.current++;current.current=next;
-            setHistory(previous=>({past:[...previous.past.slice(-39),previous.present],present:next,future:[]}));setError('');return true;
+            setHistory(previous=>({past:[...previous.past.slice(-39),previous.present],present:next,future:[]}));
+            saveDraft({...next,view});setError('');return true;
         } catch(e){setError(e instanceof Error?e.message:'Não foi possível alterar a cena.');return false;}
-    },[]);
+    },[restoringDraft,saveDraft,view]);
     const select=useCallback((id:number|null, additive = false, individual = false)=>{
         if (id === null && additive) return;
         const ids = id === null ? [] : freeSelection(current.current, id, selectionRef.current, additive, individual);
@@ -218,19 +231,26 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
         if (commit(ungroupFreeObjects(current.current, selectedIds))) setNotice('Grupo desfeito. As peças mantêm suas posições.');
     }
     function travel(direction:'undo'|'redo') {
-        if(busy || loading)return;epoch.current++;fileRequest.current++;
-        setHistory(previous=>{
-            const list=direction==='undo'?previous.past:previous.future;if(!list.length)return previous;
-            const present=direction==='undo'?list[list.length-1]:list[0];current.current=present;
-            return direction==='undo'?{past:previous.past.slice(0,-1),present,future:[previous.present,...previous.future].slice(0,40)}:{past:[...previous.past,previous.present].slice(-40),present,future:previous.future.slice(1)};
-        });setError('');setNotice(direction==='undo'?'Edição desfeita.':'Edição refeita.');
+        if(busy || loading || restoringDraft)return;
+        const list=direction==='undo'?history.past:history.future;if(!list.length)return;
+        epoch.current++;fileRequest.current++;
+        const present=direction==='undo'?list[list.length-1]:list[0];current.current=present;
+        setHistory(direction==='undo'
+            ? {past:history.past.slice(0,-1),present,future:[history.present,...history.future].slice(0,40)}
+            : {past:[...history.past,history.present].slice(-40),present,future:history.future.slice(1)});
+        saveDraft({...present,view});setError('');setNotice(direction==='undo'?'Edição desfeita.':'Edição refeita.');
+    }
+    function changeView(nextView: '3d' | 'plan') {
+        if (restoringDraft) return;
+        setView(nextView);
+        saveDraft({...current.current,view:nextView});
     }
     function startScene(scene: FreeScene) {
         if (busy || loading || !commit(scene)) return;
         setShowStart(false);
         setShowObjImport(false);
         select(null);
-        setView('3d');
+        changeView('3d');
         setPanel('insert');
         setTool('move');
         requestAnimationFrame(()=>api.current?.fit());
@@ -245,7 +265,7 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
         try {
             if(!/\.json$/i.test(file.name) || file.size>MAX_FREE_SCENE_BYTES)throw new Error('Abra uma cena JSON de até 10 MB.');
             const loaded=parseFreeScene(await file.text());if(request!==fileRequest.current || start!==epoch.current)throw new Error('A cena foi alterada durante a leitura. Abra o arquivo novamente.');
-            if(commit(loaded)){setShowStart(false);select(null);setView(loaded.view);setTool('move');setPanel('layers');requestAnimationFrame(()=>api.current?.fit());setNotice('Cena livre aberta. Todas as peças foram restauradas.');}
+            if(commit(loaded)){setShowStart(false);select(null);changeView(loaded.view);setTool('move');setPanel('layers');requestAnimationFrame(()=>api.current?.fit());setNotice('Cena livre aberta. Todas as peças foram restauradas.');}
         }catch(e){setError(e instanceof Error?e.message:'Não foi possível abrir.');}finally{if(request===fileRequest.current)setLoading(false);}
     }
     async function uploadObj(event:ChangeEvent<HTMLInputElement>) {
@@ -316,11 +336,11 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
     const helpButton = useRef<HTMLButtonElement>(null);
 
     useEffect(() => {
-        if (showStart) return;
+        if (showStart || restoringDraft) return;
         try { if (localStorage.getItem(freeTourStorageKey)) return; } catch {}
         const frame = requestAnimationFrame(() => setHelpMode(mode => mode ?? 'welcome'));
         return () => cancelAnimationFrame(frame);
-    }, [showStart]);
+    }, [showStart,restoringDraft]);
 
     function rememberTour() {
         try { localStorage.setItem(freeTourStorageKey, '1'); } catch {}
@@ -342,7 +362,7 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
     }
 
     function keys(event:KeyboardEvent<HTMLDivElement>) {
-        if(showStart || (event.target as HTMLElement).closest('[data-free-help],input,textarea,select,[contenteditable="true"]'))return;
+        if(restoringDraft || showStart || (event.target as HTMLElement).closest('[data-free-help],input,textarea,select,[contenteditable="true"]'))return;
         const key=event.key.toLowerCase(),modifier=event.ctrlKey || event.metaKey;
         if (!loading && tool === 'rectangle' && !modifier && (key === 'v' || key === 'escape')) {
             event.preventDefault();
@@ -367,7 +387,14 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
         else if(key==='delete' || key==='backspace'){event.preventDefault();remove();}
         else if(!modifier){const modes:Record<string,FreeTool>={m:'select',v:'move',r:'rectangle',g:'rotate',s:'scale',h:'hand',b:'wall'};if(modes[key])activateTool(modes[key]);else if(key==='t')add('text');else if(key==='0')api.current?.fit();}
     }
-    const isBusy=busy || loading;
+    const isBusy=busy || loading || restoringDraft;
+    const draftMessage = {
+        restoring: 'Recuperando seu trabalho…', ready: 'Salvamento automático neste navegador',
+        saving: 'Salvando…', saved: 'Salvo neste navegador',
+        error: 'Falha no salvamento automático. Use Salvar cena para baixar um JSON.',
+        'restore-error': 'Não foi possível recuperar o rascunho. Recarregue para tentar novamente.',
+    }[draftStatus];
+    const draftHasError = draftStatus === 'error' || draftStatus === 'restore-error';
     function layerRow(object: FreeObject, individual = false) {
         return <div key={object.id} className={selectedIds.includes(object.id)?'selected':''}>
             <button aria-label={`Selecionar ${object.name} ${object.id}`} aria-pressed={selectedIds.includes(object.id)} disabled={isBusy}
@@ -397,6 +424,7 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
           onCancel={event=>{event.preventDefault();if(!isBusy)setShowStart(false);}}>
           <h2 id="free-start-title">Começar com um stand-base</h2>
           <p>Escolha uma medida. A cena vem com piso, parede de fundo e balcão. Todas as peças são editáveis.</p>
+          {draftStatus === 'restore-error' && <p role="alert">{draftMessage}</p>}
           <div className="free-start-options">
               <button type="button" disabled={isBusy} onClick={()=>startScene(createStandBase(3))}>
                   <strong>Stand 3 × 3 m</strong><span>9 m²</span>
@@ -415,7 +443,7 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
       </dialog>}
       {!showStart && helpMode && <FreeSceneHelp mode={helpMode} step={tourStep} onStep={openTourStep}
           onClose={closeHelp} onShortcuts={()=>setHelpMode('shortcuts')}/>}
-      <div className="free-documentbar"><span><i/>{data.name}</span><span>{selectedIds.length>1 ? `${selectedGroup?.name ?? 'Seleção'} · ${selectedIds.length} peças` : selected?.name ?? `${data.objects.length} peças · metros`}</span><div className="free-view-switch" role="group" aria-label="Vista da cena"><button aria-pressed={view==='3d'} onClick={()=>setView('3d')} disabled={isBusy}>3D</button><button data-tour-anchor="draw" aria-pressed={view==='plan'} onClick={()=>setView('plan')} disabled={isBusy}>Planta</button></div></div>
+      <div className="free-documentbar"><span><i/>{data.name}</span><span>{selectedIds.length>1 ? `${selectedGroup?.name ?? 'Seleção'} · ${selectedIds.length} peças` : selected?.name ?? `${data.objects.length} peças · metros`}</span><div className="free-view-switch" role="group" aria-label="Vista da cena"><button aria-pressed={view==='3d'} onClick={()=>changeView('3d')} disabled={isBusy}>3D</button><button data-tour-anchor="draw" aria-pressed={view==='plan'} onClick={()=>changeView('plan')} disabled={isBusy}>Planta</button></div></div>
       <main className="free-workspace">
         <nav className="free-tools" aria-label="Ferramentas da cena livre">
           {toolItems.map(({id,label,Icon})=><button key={id} data-tour-anchor={id==='move' ? 'move' : id==='rotate' || id==='scale' ? 'adjust' : id==='rectangle' || id==='wall' ? 'draw' : undefined} title={label} aria-label={label} aria-pressed={tool===id} disabled={isBusy || (selectedIds.length>1 && (id==='rotate' || id==='scale'))} onClick={()=>activateTool(id)}><Icon size={19}/></button>)}
@@ -564,7 +592,7 @@ export default function FreeSceneEditor({onGuided}:{onGuided:()=>void}) {
               <label className="free-field">Nome da cena<input aria-label="Nome da cena" maxLength={100} value={data.name} disabled={isBusy} onChange={event=>commit({...data,name:event.target.value})}/></label><NumberField label="Tamanho da grade (m)" value={data.gridSize} min={2} max={200} step={1} disabled={isBusy} change={n=>commit({...data,gridSize:n})}/><p>A grade é uma referência. Você pode criar e mover peças além dela e permitir sobreposições.</p><p>Cada execução do script cria uma nova coleção ou camada, preservando as cenas anteriores.</p><button className="free-secondary" onClick={onGuided} disabled={isBusy}>Abrir projetos guiados anteriores</button></div>}
         </aside>
       </main>
-      <footer className="free-status"><span role={error?'alert':'status'} aria-live="polite" className={error?'has-error':''}>{error || (loading?'Lendo arquivo…':notice)}</span><span>{data.objects.length}/200 peças · X / Y / Z</span></footer>
+      <footer className="free-status"><span role={error?'alert':'status'} aria-live="polite" className={error?'has-error':''}>{error || (loading?'Lendo arquivo…':notice)}</span><span role={draftHasError?'alert':'status'} aria-label="Salvamento automático" aria-live="polite" data-autosave-state={draftHasError?'error':draftStatus} className={draftHasError?'has-error':''}>{draftMessage}</span><span>{data.objects.length}/200 peças · X / Y / Z</span></footer>
       <input ref={fileInput} type="file" accept=".json,application/json" hidden onChange={open}/><input ref={objInput} type="file" accept=".obj" hidden onChange={uploadObj}/><input ref={imageInput} type="file" accept="image/png,image/jpeg" hidden onChange={uploadArt}/>
     </div>;
 }
