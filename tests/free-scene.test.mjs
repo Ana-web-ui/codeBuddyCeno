@@ -6,13 +6,14 @@ import { join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 const require = createRequire(import.meta.url), out = mkdtempSync(join(tmpdir(), 'codebuddy-structure-move-'));
-const compiled = spawnSync(process.execPath, [require.resolve('typescript/bin/tsc'), '--target', 'ES2022', '--module', 'commonjs', '--moduleResolution', 'node', '--strict', '--skipLibCheck', '--esModuleInterop', '--outDir', out, 'lib/free-scene-exporters.ts', 'lib/free-scene-sizing.ts'], { encoding: 'utf8' });
+const compiled = spawnSync(process.execPath, [require.resolve('typescript/bin/tsc'), '--target', 'ES2022', '--module', 'commonjs', '--moduleResolution', 'node', '--strict', '--skipLibCheck', '--esModuleInterop', '--outDir', out, 'lib/free-scene-exporters.ts', 'lib/free-scene-sizing.ts', 'lib/free-scene-groups.ts'], { encoding: 'utf8' });
 assert.equal(compiled.status, 0, compiled.stdout + compiled.stderr);
 writeFileSync(join(out, 'package.json'), '{"type":"commonjs"}');
 
 const {emptyFreeScene,newFreeObject,createStandBase,freeCatalog,wallBetween,validateFreeScene,stringifyFreeScene,parseFreeScene,MAX_FREE_SCENE_BYTES}=require(join(out,'free-scene.js'));
 const {freeParts}=require(join(out,'free-scene-geometry.js'));
 const {resizeFreeObject}=require(join(out,'free-scene-sizing.js'));
+const {freeSelection,groupFreeObjects,ungroupFreeObjects,moveFreeObjects,removeFreeObjects}=require(join(out,'free-scene-groups.js'));
 const {supplierProducts,supplierObjectSize}=require(join(out,'supplier-products.js'));
 const {exportFreeBlender,exportFreeBlenderCommand,exportFreeMax}=require(join(out,'free-scene-exporters.js'));
 const fixtures=process.env.CODEBUDDY_FREE_FIXTURES?resolve(process.env.CODEBUDDY_FREE_FIXTURES):join(out,'fixtures');mkdirSync(fixtures,{recursive:true});
@@ -225,4 +226,54 @@ test('cena criada do zero exporta várias peças também como comando único do 
  assert.equal(command.split('\n').length, 1);
  writeFileSync(join(fixtures, 'cena-completa.py'), script);
  writeFileSync(join(fixtures, 'cena-completa-console.py'), command);
+});
+
+test('grupos preservam seleção, posições relativas, alturas, JSON e desagrupamento', () => {
+ const original={...emptyFreeScene(),objects:[
+  {...newFreeObject('wall',1),position:[-3,2,0],rotation:[0,0,35]},
+  {...newFreeObject('led',2),position:[-2,2,1.2]},
+  {...newFreeObject('text',3),position:[-2,1.8,2.5],text:'TV1'},
+  newFreeObject('counter',4),
+ ]};
+ const before=JSON.stringify(original);
+ const grouped=groupFreeObjects(original,[1,2,3]);
+ assert.deepEqual(freeSelection(grouped,2,[]),[1,3,2]);
+ assert.deepEqual(freeSelection(grouped,2,[],false,true),[2]);
+ assert.deepEqual(freeSelection(grouped,4,[1,2,3],true),[1,2,3,4]);
+ assert.deepEqual(freeSelection(grouped,2,[1,2,3,4],true),[4]);
+ const moved=moveFreeObjects(grouped,[1,2,3],[5,-2,3]);
+ moved.objects.slice(0,3).forEach((object,i)=>{
+  assert.deepEqual(object.position,original.objects[i].position.map((value,axis)=>value+[5,-2,3][axis]));
+  assert.deepEqual(object.rotation,original.objects[i].rotation);
+  assert.deepEqual(object.size,original.objects[i].size);
+ });
+ assert.deepEqual(moved.objects[3],original.objects[3]);
+ assert.deepEqual(parseFreeScene(stringifyFreeScene(moved)),moved);
+ assert.deepEqual(ungroupFreeObjects(moved,[2]).objects,moved.objects);
+ assert.equal(ungroupFreeObjects(moved,[2]).groups.length,0);
+ const singleRemoved=removeFreeObjects(moved,[2]);
+ assert.deepEqual(singleRemoved.groups[0].objectIds,[1,3]);
+ assert.equal(removeFreeObjects(singleRemoved,[1]).groups.length,0);
+ assert.deepEqual(groupFreeObjects(grouped,[2,4]).groups[0].objectIds,[1,2,3,4]);
+ const locked={...grouped,objects:grouped.objects.map(object=>object.id===2?{...object,locked:true}:object)};
+ assert.throws(()=>moveFreeObjects(locked,[1,2,3],[1,0,0]),/Desbloqueie/);
+ assert.throws(()=>groupFreeObjects(locked,[1,2]),/Desbloqueie/);
+ assert.throws(()=>removeFreeObjects(locked,[1,2]),/Desbloqueie/);
+ assert.equal(JSON.stringify(original),before);
+ const py=exportFreeBlender(moved),ms=exportFreeMax(moved);
+ assert.ok(py.includes("raiz.parent = pais.get(item['id'])"));
+ assert.ok(ms.includes('raiz.parent=grupo_1'));
+ writeFileSync(join(fixtures,'grupos.py'),py);
+ writeFileSync(join(fixtures,'grupos.ms'),ms);
+ writeFileSync(join(fixtures,'grupos.json'),JSON.stringify(moved));
+});
+
+test('rejeita grupos corrompidos e aceita cenas anteriores sem grupos', () => {
+ const scene={...emptyFreeScene(),objects:[newFreeObject('wall',1),newFreeObject('led',2)]};
+ assert.deepEqual(parseFreeScene(stringifyFreeScene(scene)),scene);
+ const group={id:1,name:'Marca',objectIds:[1,2]};
+ for (const groups of [null,{},[ {...group,id:0} ],[ {...group,name:''} ],[ {...group,objectIds:[1]} ],
+  [ {...group,objectIds:[1,1]} ],[ {...group,objectIds:[1,9]} ],[ group,{...group,id:2} ],[ group,group ],[ {...group,extra:true} ]]) {
+  assert.throws(()=>validateFreeScene({...scene,groups}));
+ }
 });

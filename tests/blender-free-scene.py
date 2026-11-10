@@ -64,6 +64,20 @@ for item in items:
         assert max(abs(obj.matrix_world[i][j]-matrix[i][j]) for i in range(4) for j in range(4))<1e-5
     print('FREE_SCENE_OK',item['id'])
 
+group_scene = json.loads((folder / 'grupos.json').read_text(encoding='utf8'))
+bpy.ops.wm.read_factory_settings(use_empty=True)
+exec(compile((folder / 'grupos.py').read_text(encoding='utf8'), 'grupos.py', 'exec'), {})
+bpy.context.view_layer.update()
+group_parent = next(obj for obj in bpy.data.objects if obj.get('code_buddy_id') == 'group:1')
+assert group_parent.name == group_scene['groups'][0]['name']
+for config in group_scene['objects']:
+    root = next(obj for obj in bpy.data.objects if obj.type == 'EMPTY' and obj.get('code_buddy_id') == 'free:' + str(config['id']))
+    assert (root.parent == group_parent) == (config['id'] in group_scene['groups'][0]['objectIds'])
+    expected = Matrix.Translation(Vector(config['position'])) @ Euler(tuple(math.radians(v) for v in config['rotation']), 'XYZ').to_matrix().to_4x4()
+    assert max(abs(root.matrix_world[i][j] - expected[i][j]) for i in range(4) for j in range(4)) < 1e-5
+assert len(group_parent.children) == 3
+print('FREE_SCENE_GROUPS_OK')
+
 from bpy_extras.object_utils import world_to_camera_view
 
 for filename, mode in [('cena-completa.py', 'exec'), ('cena-completa-console.py', 'single')]:

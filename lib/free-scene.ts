@@ -20,7 +20,8 @@ export const freeEnvironments = {
     pavilion: 'Pavilhão cinza',
 } as const;
 export type FreeEnvironment = keyof typeof freeEnvironments;
-export type FreeScene = { name: string; grid: boolean; gridSize: number; environment?: FreeEnvironment; view: '3d'|'plan'; objects: FreeObject[] };
+export type FreeGroup = { id: number; name: string; objectIds: number[] };
+export type FreeScene = { name: string; grid: boolean; gridSize: number; environment?: FreeEnvironment; view: '3d'|'plan'; objects: FreeObject[]; groups?: FreeGroup[] };
 export const MAX_FREE_SCENE_BYTES = 10*1024*1024;
 export const freeCatalog: {kind: FreeKind; label: string; size: V3; color: string}[] = [
     {kind:'wall',label:'Parede',size:[3,.12,3],color:'#e1e4eb'},
@@ -83,7 +84,7 @@ export function newFreeObject(kind: FreeKind, id: number, productId?: string): F
 const objectKeys=Object.keys(newFreeObject('box',1)).sort().join(',');
 const isRecord=(v:unknown):v is Record<string,unknown>=>!!v && typeof v==='object' && !Array.isArray(v);
 export function validateFreeScene(value: unknown): asserts value is FreeScene {
-    if(!isRecord(value) || !['grid,gridSize,name,objects,view','environment,grid,gridSize,name,objects,view'].includes(Object.keys(value).sort().join(','))) throw new Error('Cena livre inválida.');
+    if(!isRecord(value) || !['grid,gridSize,name,objects,view','environment,grid,gridSize,name,objects,view'].includes(Object.keys(value).filter(key=>key!=='groups').sort().join(','))) throw new Error('Cena livre inválida.');
     if ('environment' in value && (typeof value.environment !== 'string' || !Object.hasOwn(freeEnvironments, value.environment))) {
         throw new Error('Cenário desconhecido.');
     }
@@ -120,6 +121,22 @@ export function validateFreeScene(value: unknown): asserts value is FreeScene {
         if(item.image){const size=artworkImageSize(item.image);if(!arts.has(item.image)){arts.add(item.image);artPixels+=size.width*size.height;}if(artPixels>64*1024*1024)throw new Error('As artes estão muito grandes juntas. Reduza a resolução das imagens.');if(item.kind==='obj' || item.kind==='text')throw new Error('A arte frontal se aplica a paredes e peças, não a texto ou OBJ.');}
         if(item.kind==='obj') { if(++objCount>5) throw new Error('Use até cinco objetos OBJ personalizados.'); parseObj(item.source); }
         else if(item.source) throw new Error('Somente um objeto personalizado pode conter dados OBJ.');
+    }
+    if ('groups' in value) {
+        if (!Array.isArray(value.groups) || value.groups.length > 100) throw new Error('Grupos inválidos.');
+        const groupIds = new Set<number>();
+        const members = new Set<number>();
+        for (const group of value.groups) {
+            if (!isRecord(group) || Object.keys(group).sort().join(',') !== 'id,name,objectIds' ||
+                !Number.isInteger(group.id) || (group.id as number) < 1 || (group.id as number) > 1000000 || groupIds.has(group.id as number) ||
+                typeof group.name !== 'string' || !group.name.trim() || group.name.length > 100 || /[\u0000-\u001f]/.test(group.name) ||
+                !Array.isArray(group.objectIds) || group.objectIds.length < 2 || group.objectIds.length > 200) throw new Error('Confira o nome e as peças do grupo.');
+            groupIds.add(group.id as number);
+            for (const id of group.objectIds) {
+                if (typeof id !== 'number' || !ids.has(id) || members.has(id)) throw new Error('Cada peça deve pertencer a um único grupo existente.');
+                members.add(id);
+            }
+        }
     }
     // Sobreposições, paredes cruzadas e posições fora da grade são permitidas deliberadamente.
 }

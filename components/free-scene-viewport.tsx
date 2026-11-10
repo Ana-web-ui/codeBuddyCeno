@@ -7,12 +7,13 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { freeParts } from '@/lib/free-scene-geometry';
 import { resizeFreeObject } from '@/lib/free-scene-sizing';
+import { freeSelection } from '@/lib/free-scene-groups';
 import type { FreeScene, FreeObject, FreeKind, V3 } from '@/lib/free-scene';
 export type FreeTool='select'|'move'|'rotate'|'scale'|'hand'|'wall'|'rectangle';
 export type FreePose={position:V3;rotation:V3;size:V3};
 export type FreeViewportApi={fit:()=>void;zoom:(factor:number)=>void;center:()=>V3;cancel:()=>void};
-type Props={data:FreeScene;selectedId:number|null;tool:FreeTool;view:'3d'|'plan';snap:boolean;
-    apiRef:MutableRefObject<FreeViewportApi|null>;onSelectAction:(id:number|null)=>void;
+type Props={data:FreeScene;selectedId:number|null;selectedIds:number[];tool:FreeTool;view:'3d'|'plan';snap:boolean;
+    apiRef:MutableRefObject<FreeViewportApi|null>;onSelectAction:(id:number|null,additive?:boolean)=>void;
     onTransformAction:(id:number,pose:FreePose)=>boolean;onWallAction:(a:V3,b:V3)=>void;onRectangleAction:(a:V3,b:V3)=>void;onBusyAction:(busy:boolean)=>void};
 function disposeTree(root:THREE.Object3D) {
     root.traverse(obj=>{ if(obj instanceof THREE.Mesh || obj instanceof THREE.LineSegments) {
@@ -96,6 +97,7 @@ export function FreeSceneViewport(props:Props) {
         let controls:OrbitControls<THREE.PerspectiveCamera|THREE.OrthographicCamera>=new OrbitControls(camera,renderer.domElement);controls.target.set(0,0,0);controls.enableDamping=true;controls.update();
         const transform=new TransformControls(camera,renderer.domElement);transform.setSize(.85);scene.add(transform.getHelper());
         const selection=new THREE.Box3Helper(new THREE.Box3(),0x5268df);selection.visible=false;scene.add(selection);
+        const selectionBoxes = new Map<number, THREE.Box3Helper>();
         const draft=new THREE.Mesh(new THREE.BoxGeometry(1,1,1),new THREE.MeshStandardMaterial({color:0x657be5,transparent:true,opacity:.35}));draft.visible=false;scene.add(draft);
         const ray=new THREE.Raycaster(),pointer=new THREE.Vector2();
         const feedback = measurement.current!;
@@ -104,7 +106,7 @@ export function FreeSceneViewport(props:Props) {
         const cursor = new THREE.Vector2();
         let grid:THREE.GridHelper|null=null,gridSize=0,currentView:'3d'|'plan'='3d';let lastW=0,lastH=0,disposed=false;
         const nodes=new Map<number,THREE.Group>(),textures=new Map<string,THREE.Texture>();
-        let direct:{id:number;start:THREE.Vector3;position:V3;axis:'x'|'y'|null}|null=null;
+        let direct:{id:number;ids:number[];start:THREE.Vector3;position:V3;axis:'x'|'y'|null}|null=null;
         let wallStart:THREE.Vector3|null=null,wallEnd:THREE.Vector3|null=null;
         let down:{x:number;y:number;gizmo:boolean}|null=null;
         let busy=false,ignoreGizmoCommit=false;
@@ -120,20 +122,28 @@ export function FreeSceneViewport(props:Props) {
             controls.enabled=p.tool!=='wall' && !busy;
             controls.mouseButtons.LEFT=p.tool==='hand'?THREE.MOUSE.PAN:THREE.MOUSE.ROTATE;
             controls.mouseButtons.RIGHT=THREE.MOUSE.PAN;
-            transform.setMode(p.tool==='rotate'?'rotate':p.tool==='scale'?'scale':'translate');
+            transform.setMode(p.selectedIds.length>1 ? 'translate' : p.tool==='rotate'?'rotate':p.tool==='scale'?'scale':'translate');
             transform.setSpace('world');transform.setTranslationSnap(p.snap?.1:null);transform.setRotationSnap(p.snap?Math.PI/12:null);transform.setScaleSnap(null);
             transform.showX=p.view==='3d' || p.tool!=='rotate';transform.showY=transform.showX;transform.showZ=p.view==='3d' || p.tool==='rotate';
-            const selected=p.selectedId===null?null:nodes.get(p.selectedId),data=selected?.userData.config as FreeObject|undefined;
+            const selected=[...p.selectedIds].reverse().map(id=>nodes.get(id)).find(node=>node?.visible),data=selected?.userData.config as FreeObject|undefined;
             const showManipulator = ['select', 'move', 'rotate', 'scale'].includes(p.tool);
 
-if (selected && data?.visible && !data.locked && showManipulator) {
+if (selected && data?.visible && !p.data.objects.some(object=>p.selectedIds.includes(object.id) && object.locked) && showManipulator) {
     if (transform.object !== selected) {
         transform.attach(selected);
     }
 } else {
     transform.detach();
 }
-            selection.visible=!!selected && !!data?.visible;if(selected && selection.visible)selection.box.setFromObject(selected);
+            selection.visible=!!selected && !!data?.visible;
+            for (const [id, box] of selectionBoxes) {
+                if (!p.selectedIds.includes(id) || !nodes.get(id)?.visible) { scene.remove(box);disposeTree(box);selectionBoxes.delete(id); }
+            }
+            for (const id of p.selectedIds) {
+                if (!nodes.get(id)?.visible || selectionBoxes.has(id)) continue;
+                const box = new THREE.Box3Helper(new THREE.Box3(), 0xf3a64b);
+                selectionBoxes.set(id, box);scene.add(box);
+            }
         }
         function sync() {
             const p=latest.current;
@@ -186,7 +196,18 @@ if (selected && data?.visible && !data.locked && showManipulator) {
         function commitNode(node:THREE.Group) {
             const o=node.userData.config as FreeObject;
             const pose:FreePose={position:node.position.toArray() as V3,rotation:[node.rotation.x,node.rotation.y,node.rotation.z].map(THREE.MathUtils.radToDeg) as V3,size:o.size.map((v,i)=>v*node.scale.toArray()[i]) as V3};
-            if(!latest.current.onTransformAction(o.id,pose))resetNode(node);
+            if(!latest.current.onTransformAction(o.id,pose))for(const member of nodes.values())resetNode(member);
+        }
+        function previewMove(id: number, ids: number[]) {
+            const anchor = nodes.get(id);
+            if (!anchor) return;
+            const object = anchor.userData.config as FreeObject;
+            const delta = anchor.position.clone().sub(new THREE.Vector3(...object.position));
+            for (const memberId of ids) {
+                if (memberId === id) continue;
+                const node = nodes.get(memberId);
+                if (node) node.position.fromArray((node.userData.config as FreeObject).position).add(delta);
+            }
         }
         function updateMeasurements() {
             let title: string;
@@ -216,6 +237,10 @@ if (selected && data?.visible && !data.locked && showManipulator) {
                 text = measurementText(object.kind, size);
                 floating = transform.dragging;
             }
+            if (!wallStart && latest.current.selectedIds.length > 1 && !selection.box.isEmpty()) {
+                title = `Conjunto de ${latest.current.selectedIds.length} peças`;
+                text = measurementText('box', selection.box.getSize(new THREE.Vector3()).toArray() as V3);
+            }
             if (feedbackTitle.textContent !== title) feedbackTitle.textContent = title;
             if (feedbackValues.textContent !== text) feedbackValues.textContent = text;
             feedback.hidden = false;
@@ -235,9 +260,17 @@ if (selected && data?.visible && !data.locked && showManipulator) {
             if(p.tool==='wall' || p.tool==='rectangle') {const point=ground(event);if(!point)return;wallStart=point;wallEnd=point.clone();controls.enabled=false;renderer.domElement.setPointerCapture(event.pointerId);markBusy(true);event.preventDefault();return;}
             if(down.gizmo)return;
             const node=hitObject(event);
+            if (event.shiftKey) {
+                controls.enabled=false;
+                return;
+            }
             if(node && p.tool==='move' && !(node.userData.config as FreeObject).locked){
                 const point=ground(event,node.position.z);if(!point)return;
-                p.onSelectAction(node.userData.freeId);direct={id:node.userData.freeId,start:point,position:node.position.toArray() as V3,axis:null};
+                const id = node.userData.freeId as number;
+                const ids = p.selectedIds.includes(id) ? p.selectedIds : freeSelection(p.data,id,p.selectedIds);
+                if (p.data.objects.some(object=>ids.includes(object.id) && object.locked)) {p.onSelectAction(id);return;}
+                if (!p.selectedIds.includes(id)) p.onSelectAction(id);
+                direct={id,ids,start:point,position:node.position.toArray() as V3,axis:null};
                 controls.enabled=false;renderer.domElement.setPointerCapture(event.pointerId);markBusy(true);event.preventDefault();
             }
         }
@@ -284,6 +317,7 @@ if (selected && data?.visible && !data.locked && showManipulator) {
                         direct.axis = null;
                     }
                     node.position.set(direct.position[0] + dx, direct.position[1] + dy, direct.position[2]);
+                    previewMove(direct.id, direct.ids);
                 }
             }
         }
@@ -309,14 +343,15 @@ if (selected && data?.visible && !data.locked && showManipulator) {
                 }
             }
             if(direct){pointerMove(event);const node=nodes.get(direct.id);direct=null;markBusy(false);if(node)commitNode(node);}
-            if(!hadWall && !hadDirect && down && !down.gizmo && Math.hypot(event.clientX-down.x,event.clientY-down.y)<4 && latest.current.tool!=='hand')latest.current.onSelectAction(hitObject(event)?.userData.freeId ?? null);
+            if(!hadWall && !hadDirect && down && !down.gizmo && Math.hypot(event.clientX-down.x,event.clientY-down.y)<4 && latest.current.tool!=='hand')latest.current.onSelectAction(hitObject(event)?.userData.freeId ?? null,event.shiftKey);
             if((hadWall || hadDirect) && renderer.domElement.hasPointerCapture(event.pointerId))renderer.domElement.releasePointerCapture(event.pointerId);
             down=null;configure();
         }
         function cancel() {
-            if(direct){const node=nodes.get(direct.id);if(node)resetNode(node);direct=null;}
+            if(direct){for(const node of nodes.values())resetNode(node);direct=null;}
             wallStart=null;wallEnd=null;draft.visible=false;down=null;
             if(transform.dragging){ignoreGizmoCommit=true;transform.reset();transform.pointerUp(null);ignoreGizmoCommit=false;}
+            for (const node of nodes.values()) resetNode(node);
             markBusy(false);configure();updateMeasurements();
         }
         function fit() {
@@ -333,6 +368,10 @@ if (selected && data?.visible && !data.locked && showManipulator) {
         const onGizmoUp=()=>{if(transform.object && !ignoreGizmoCommit)commitNode(transform.object as THREE.Group);};
         const onGizmoChange = () => {
             const node = transform.object;
+            if (node && latest.current.selectedIds.length > 1 && transform.getMode() === 'translate') {
+                previewMove(node.userData.freeId, latest.current.selectedIds);
+                return;
+            }
             if (!node || transform.getMode() !== 'scale') return;
             const object = node.userData.config as FreeObject;
             if (object.kind !== 'floor') return;
@@ -348,7 +387,15 @@ if (selected && data?.visible && !data.locked && showManipulator) {
         canvas.addEventListener('pointercancel',cancel);canvas.addEventListener('keydown',onKey);
         const observer=new ResizeObserver(resize);observer.observe(container);
         const api={fit,zoom,center:()=>[controls.target.x,controls.target.y,0] as V3,cancel};latest.current.apiRef.current=api;runtime.current={sync};sync();
-        renderer.setAnimationLoop(()=>{if(disposed || !container.clientWidth || !container.clientHeight)return;controls.update();scene.updateMatrixWorld();const selected=latest.current.selectedId===null?null:nodes.get(latest.current.selectedId);if(selected && selection.visible)selection.box.setFromObject(selected);updateMeasurements();renderer.render(scene,camera);});
+        renderer.setAnimationLoop(()=>{
+            if(disposed || !container.clientWidth || !container.clientHeight)return;
+            controls.update();scene.updateMatrixWorld();selection.box.makeEmpty();
+            for (const [id, box] of selectionBoxes) {
+                const node = nodes.get(id);
+                if (node) {box.box.setFromObject(node);selection.box.union(box.box);}
+            }
+            updateMeasurements();renderer.render(scene,camera);
+        });
         return ()=>{disposed=true;feedback.hidden=true;runtime.current=null;latest.current.apiRef.current=null;observer.disconnect();renderer.setAnimationLoop(null);controls.dispose();transform.dispose();canvas.removeEventListener('pointerdown',pointerDown,true);canvas.removeEventListener('pointermove',pointerMove);canvas.removeEventListener('pointerup',pointerUp);canvas.removeEventListener('pointercancel',cancel);canvas.removeEventListener('keydown',onKey);disposeTree(scene);for(const texture of textures.values())texture.dispose();textures.clear();renderer.dispose();renderer.forceContextLoss();canvas.remove();};
     },[]);
     return <div ref={host} className={`free-viewport tool-${props.tool}`} role="application" aria-label="Área de criação 3D" data-view={props.view}>

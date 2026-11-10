@@ -12,11 +12,13 @@ export const tourSteps = [
 ] as const;
 
 const shortcuts = [
+    ['Shift + clique', 'Adicionar ou remover peças da seleção'],
+    ['Ctrl + G', 'Agrupar a seleção'], ['Ctrl + Shift + G', 'Desagrupar'],
     ['M', 'Selecionar'], ['V', 'Mover'], ['G', 'Girar'], ['S', 'Redimensionar'],
     ['Shift + arrastar a peça', 'Mover em uma direção horizontal (X ou Y)'],
     ['H', 'Navegar'], ['R', 'Desenhar retângulo'], ['B', 'Desenhar parede'],
     ['T', 'Inserir texto'], ['0', 'Enquadrar a cena'],
-    ['Ctrl + D', 'Duplicar a peça'], ['Ctrl + C', 'Copiar a peça selecionada'], ['Ctrl + V', 'Colar a peça copiada'], ['Delete ou Backspace', 'Excluir a peça'],
+    ['Ctrl + D', 'Duplicar a seleção'], ['Ctrl + C', 'Copiar a seleção'], ['Ctrl + V', 'Colar a seleção copiada'], ['Delete ou Backspace', 'Excluir a seleção'],
     ['Ctrl + Z', 'Desfazer'], ['Ctrl + Shift + Z ou Ctrl + Y', 'Refazer'],
     ['Ctrl + S', 'Salvar a cena em JSON'], ['Esc', 'Cancelar o gesto ou limpar a seleção'],
 ] as const;

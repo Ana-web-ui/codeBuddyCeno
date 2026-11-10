@@ -52,6 +52,15 @@ def vincular(obj):
 
 def cor_linear(v): return v/12.92 if v <= .04045 else ((v+.055)/1.055)**2.4
 
+grupos = json.loads(${JSON.stringify(JSON.stringify(scene.groups ?? []))})
+pais = {}
+for grupo in grupos:
+    pai = vincular(bpy.data.objects.new(grupo['name'], None))
+    pai['code_buddy_id'] = 'group:' + str(grupo['id'])
+    pai['code_buddy_role'] = 'group'
+    for id_peca in grupo['objectIds']:
+        pais[id_peca] = pai
+
 def material_parte(parte, acabamento):
     mat = bpy.data.materials.new(colecao.name + '_' + parte['name'])
     mat.use_nodes = True
@@ -88,6 +97,7 @@ def material_parte(parte, acabamento):
 
 for item in objetos:
     raiz = vincular(bpy.data.objects.new(item['name'],None))
+    raiz.parent = pais.get(item['id'])
     raiz.location = item['position']
     raiz.rotation_euler = Euler(tuple(math.radians(v) for v in item['rotation']),'XYZ')
     raiz['code_buddy_id'] = 'free:' + str(item['id'])
@@ -201,12 +211,15 @@ fn materialLivre nome rgb opacidade aspereza =
     mat.base_color = rgb; mat.roughness = aspereza; mat.transparency = 1-opacidade
     mat
 )
-${scene.objects.map(o=>maxObject(o,artwork)).join('\n')}
+${(scene.groups ?? []).map(group=>`local grupo_${group.id} = registrar (Dummy name:${ms(group.name)} pos:[0,0,0])
+setUserProp grupo_${group.id} "code_buddy_id" "group:${group.id}"
+setUserProp grupo_${group.id} "code_buddy_role" "group"`).join('\n')}
+${scene.objects.map(o=>maxObject(o,artwork,scene.groups?.find(group=>group.objectIds.includes(o.id))?.id)).join('\n')}
 format "CenoLab: cena livre criada.\\n"
 )
 `;
 }
-function maxObject(o:FreeObject, artwork?:ArtworkPaths):string {
+function maxObject(o:FreeObject, artwork?:ArtworkPaths, groupId?:number):string {
     const product = getSupplierProduct(o.productId);
     const color=(hex:string)=>'(color '+[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16)).join(' ')+')';
     return `(
@@ -240,6 +253,7 @@ append pecas obj
 )`;
 }).join('\n')}
 raiz.transform=(rotateXMatrix ${o.rotation[0]})*(rotateYMatrix ${o.rotation[1]})*(rotateZMatrix ${o.rotation[2]})*(transMatrix ${vec(o.position)})
+${groupId === undefined ? '' : `raiz.parent=grupo_${groupId}`}
 ${!o.visible?'hide pecas':''}
 ${o.locked?'freeze pecas':''}
 )`;
