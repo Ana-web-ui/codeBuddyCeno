@@ -10,7 +10,7 @@ const compiled = spawnSync(process.execPath, [require.resolve('typescript/bin/ts
 assert.equal(compiled.status, 0, compiled.stdout + compiled.stderr);
 writeFileSync(join(out, 'package.json'), '{"type":"commonjs"}');
 
-const {emptyFreeScene,newFreeObject,freeCatalog,wallBetween,validateFreeScene,stringifyFreeScene,parseFreeScene,MAX_FREE_SCENE_BYTES}=require(join(out,'free-scene.js'));
+const {emptyFreeScene,newFreeObject,createStandBase,freeCatalog,wallBetween,validateFreeScene,stringifyFreeScene,parseFreeScene,MAX_FREE_SCENE_BYTES}=require(join(out,'free-scene.js'));
 const {freeParts}=require(join(out,'free-scene-geometry.js'));
 const {resizeFreeObject}=require(join(out,'free-scene-sizing.js'));
 const {supplierProducts,supplierObjectSize}=require(join(out,'supplier-products.js'));
@@ -19,6 +19,10 @@ const fixtures=process.env.CODEBUDDY_FREE_FIXTURES?resolve(process.env.CODEBUDDY
 const logo='data:image/png;base64,'+readFileSync('tests/fixtures/branding-logo.png').toString('base64');
 const obj='o Produto\nv 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nv 0 0 1\nv 1 0 1\nv 1 1 1\nv 0 1 1\nf 1 4 3 2\nf 5 6 7 8\nf 1 2 6 5\nf 2 3 7 6\nf 3 4 8 7\nf 4 1 5 8';
 const cases=freeCatalog.map(({kind})=>[kind,newFreeObject(kind,1)]);
+cases.push(
+ ['floor-thin',resizeFreeObject(newFreeObject('floor',1),[5,4,.01])],
+ ['floor-thick',resizeFreeObject(newFreeObject('floor',1),[5,4,.4])],
+);
 cases.push(['touk',newFreeObject('supplierTotem',1,'touk-wt55v-slim')],['touk-arte',{...newFreeObject('supplierTotem',1,'touk-wt55v-slim'),image:logo}],['obj',{...newFreeObject('obj',1),source:obj}],['arte',{...newFreeObject('wall',1),image:logo}],
  ['transformacao-xyz',{...newFreeObject('counter',1),position:[2,-3,1.5],rotation:[17,29,35],size:[3,.9,1.3]}],
  ['oculto-bloqueado',{...newFreeObject('chair',1),visible:false,locked:true}],
@@ -64,7 +68,7 @@ test('limites de peças e imagens continuam validados',()=>{
 
 
 test('novas peças e OBJ têm a base no chão; JSON preserva alturas ajustadas',()=>{
- for (const item of [...freeCatalog.map(({kind})=>newFreeObject(kind,1)), {...newFreeObject('obj',1),source:obj}]) {
+ for (const item of [...freeCatalog.filter(({kind})=>kind!=='floor').map(({kind})=>newFreeObject(kind,1)), {...newFreeObject('obj',1),source:obj}]) {
   const minimum=Math.min(...freeParts(item).map(part=>{
    const localBottom=part.shape==='mesh'
     ? Math.min(...part.vertices.map(vertex=>vertex[2]))
@@ -77,6 +81,26 @@ test('novas peças e OBJ têm a base no chão; JSON preserva alturas ajustadas',
  assert.deepEqual(parseFreeScene(stringifyFreeScene({...emptyFreeScene(),objects:[raised]})).objects[0].position,[2,3,4]);
 });
 
+
+test('piso desconta a espessura e mantém o topo no chão ao redimensionar', () => {
+ for (const floor of [newFreeObject('floor', 1), ...[3,6].map(depth=>createStandBase(depth).objects[0])]) {
+  assert.equal(floor.position[2], -floor.size[2]);
+  for (const thickness of [.01, .1, .4, 2]) {
+   const resized = resizeFreeObject(floor, [5, 4, thickness]);
+   const part = freeParts(resized).find(part=>part.name==='Piso');
+   const top = resized.position[2] + part.center[2] + part.size[2] / 2;
+   assert.ok(Math.abs(top) < 1e-8);
+   assert.ok(Math.abs(resized.position[2] + thickness) < 1e-8);
+   assert.deepEqual(parseFreeScene(stringifyFreeScene({...emptyFreeScene(),objects:[resized]})).objects[0], resized);
+   const restored = resizeFreeObject(resized, resized.originalSize);
+   assert.ok(Math.abs(restored.position[2] - floor.position[2]) < 1e-8);
+  }
+ }
+ const raised = {...newFreeObject('floor',1),position:[2,3,1.2]};
+ const resized = resizeFreeObject(raised,[8,6,.5]);
+ assert.ok(Math.abs(resized.position[2]+.5-1.3)<1e-8);
+ assert.deepEqual(parseFreeScene(stringifyFreeScene({...emptyFreeScene(),objects:[raised]})).objects[0],raised);
+});
 
 test('totem de fornecedor mantém identidade após renomear, copiar e reabrir',()=>{
  const item=newFreeObject('supplierTotem',1,'touk-wt55v-slim');

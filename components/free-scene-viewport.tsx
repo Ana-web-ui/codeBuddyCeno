@@ -6,6 +6,7 @@ import { createFreeEnvironment, environmentLighting } from './free-scene-environ
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { freeParts } from '@/lib/free-scene-geometry';
+import { resizeFreeObject } from '@/lib/free-scene-sizing';
 import type { FreeScene, FreeObject, FreeKind, V3 } from '@/lib/free-scene';
 export type FreeTool='select'|'move'|'rotate'|'scale'|'hand'|'wall'|'rectangle';
 export type FreePose={position:V3;rotation:V3;size:V3};
@@ -330,6 +331,16 @@ if (selected && data?.visible && !data.locked && showManipulator) {
         function zoom(factor:number){if(camera===plan){plan.zoom=THREE.MathUtils.clamp(plan.zoom*factor,.02,100);plan.updateProjectionMatrix();}else{perspective.position.sub(controls.target).multiplyScalar(1/factor).add(controls.target);}controls.update();}
         const onDrag=(event:{value:unknown})=>{markBusy(!!event.value);controls.enabled=!event.value && latest.current.tool!=='wall';};
         const onGizmoUp=()=>{if(transform.object && !ignoreGizmoCommit)commitNode(transform.object as THREE.Group);};
+        const onGizmoChange = () => {
+            const node = transform.object;
+            if (!node || transform.getMode() !== 'scale') return;
+            const object = node.userData.config as FreeObject;
+            if (object.kind !== 'floor') return;
+            const size = object.size.map((value, axis) => value * node.scale.getComponent(axis)) as V3;
+            if (size.some(value => !Number.isFinite(value) || value < .01 || value > 1000)) return;
+            node.position.z = resizeFreeObject(object, size).position[2];
+        };
+        transform.addEventListener('objectChange', onGizmoChange);
         transform.addEventListener('dragging-changed',onDrag);transform.addEventListener('mouseUp',onGizmoUp);
         const onKey=(event:KeyboardEvent)=>{if(event.key==='Escape' && busy && latest.current.tool!=='rectangle'){event.preventDefault();event.stopPropagation();cancel();}};
         const canvas=renderer.domElement;

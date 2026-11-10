@@ -1,10 +1,15 @@
 import type { FreeObject, V3 } from './free-scene';
 import { freeParts } from './free-scene-geometry';
 
-function bottomOffset(object: FreeObject): number {
+function supportOffset(object: FreeObject): number {
     const x = object.rotation[0] * Math.PI / 180;
     const y = object.rotation[1] * Math.PI / 180;
     const vertical = [-Math.sin(y), Math.cos(y) * Math.sin(x), Math.cos(y) * Math.cos(x)];
+    if (object.kind === 'floor') {
+        const center = vertical[2] * object.size[2] / 2;
+        const extent = object.size.reduce((sum, value, axis) => sum + Math.abs(vertical[axis]) * value / 2, 0);
+        return center + extent;
+    }
     let bottom = Infinity;
     for (const part of freeParts(object)) {
         const center = part.center.reduce((sum, value, axis) => sum + value * vertical[axis], 0);
@@ -31,7 +36,7 @@ function bottomOffset(object: FreeObject): number {
     return Number.isFinite(bottom) ? bottom : 0;
 }
 
-/** Resize around the footprint, keeping the lowest point at its current height. */
+/** Keep the floor's top surface, or another piece's lowest point, at its current height. */
 export function resizeFreeObject(object: FreeObject, size: V3): FreeObject {
     if (size.some(value => !Number.isFinite(value) || value < .01 || value > 1000)) {
         throw new Error('Use medidas entre 0,01 e 1000 m.');
@@ -42,6 +47,6 @@ export function resizeFreeObject(object: FreeObject, size: V3): FreeObject {
         originalSize: [...(object.originalSize ?? object.size)],
         position: [...object.position],
     };
-    resized.position[2] += bottomOffset(object) - bottomOffset(resized);
+    resized.position[2] += supportOffset(object) - supportOffset(resized);
     return resized;
 }

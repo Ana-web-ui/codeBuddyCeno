@@ -27,6 +27,10 @@ for item in items:
     assert max(abs(root.matrix_world[i][j]-expected[i][j]) for i in range(4) for j in range(4))<1e-5, item['id']
     children=[o for o in col.objects if o.parent==root]
     assert len(children)==len(item['parts']),item['id']
+    if config['kind'] == 'floor':
+        heights = [obj.matrix_world @ Vector(corner) for obj in children for corner in obj.bound_box]
+        assert abs(max(point.z for point in heights)) < 1e-5, item['id']
+        assert abs(min(point.z for point in heights) + config['size'][2]) < 1e-5, item['id']
     remaining=list(children)
     for part in item['parts']:
         local=Vector(part['center'])

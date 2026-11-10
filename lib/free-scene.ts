@@ -47,7 +47,6 @@ export function createStandBase(depth: 3 | 6): FreeScene {
     const width = 3;
     const floor = newFreeObject('floor', 1);
     floor.size = [width, depth, floor.size[2]];
-    floor.position[2] = -floor.size[2];
 
     const wall = newFreeObject('wall', 2);
     wall.size[0] = width;
@@ -75,7 +74,10 @@ export function newFreeObject(kind: FreeKind, id: number, productId?: string): F
         };
     }
     if (!item && kind!=='obj') throw new Error('Tipo de peça inválido.');
-    return {id,kind,name:item?.label ?? 'Objeto 3D',position:[0,0,kind==='led' ? -(item?.size[2] ?? 0)*.35 : 0],rotation:[0,0,0],size:[...(item?.size ?? [1,1,1])],
+    // O piso cresce para baixo da cota zero, onde as demais peças se apoiam.
+    const height = item?.size[2] ?? 0;
+    const z = kind === 'floor' ? -height : kind === 'led' ? -height * .35 : 0;
+    return {id,kind,name:item?.label ?? 'Objeto 3D',position:[0,0,z],rotation:[0,0,0],size:[...(item?.size ?? [1,1,1])],
         color:item?.color ?? '#8f9cb2',visible:true,locked:false,text:kind==='text'?'Sua marca':'',image:'',source:'',objUnit:'m',upAxis:'z',shelves:3,roughness:.55,opacity:1};
 }
 const objectKeys=Object.keys(newFreeObject('box',1)).sort().join(',');
