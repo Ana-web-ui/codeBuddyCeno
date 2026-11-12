@@ -29,6 +29,10 @@ export function exportFreePackage(scene: FreeScene, target: 'blender' | 'max'): 
         target === 'blender'
             ? '3. No Blender, abra o script em Scripting > Open e clique em Run Script. As imagens serão incorporadas ao salvar o .blend.'
             : '3. No 3ds Max, use Scripting > Run Script. Mantenha os arquivos de materiais ao compartilhar a cena .max.',
+        ...(target === 'blender' ? [
+            '4. Para visualizar as cores e imagens, coloque o mouse sobre a área 3D, aperte Z e escolha Material Preview / Prévia de materiais.',
+            'O modo Solid / Sólido não exibe as imagens dos materiais.',
+        ] : []),
         '',
     ].join('\r\n'));
     return zipSync(files, { level: 0 });
