@@ -21,7 +21,7 @@ export function maxPedestals(c: PedestalConfig, layout: PedestalLayout): string 
     const positions = '#(' + layout.positions.map(([x, y]) => `[${x},${y},0]`).join(',') + ')';
     return `
 -- BIBLIOTECA: PEDESTAIS EXPOSITORES
-undo "Adicionar pedestais Code Buddy" on
+undo "Adicionar pedestais CenoLab" on
 (
     local posicoesPedestais = ${positions}
     local materialPedestais = cbMaterial "${c.pedestalMat}"

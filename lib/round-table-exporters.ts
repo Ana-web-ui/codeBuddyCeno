@@ -123,7 +123,7 @@ export function maxRoundTables(
 -- BIBLIOTECA: MESAS REDONDAS PARAMETRICAS
 -- Quantidade: ${layout.generatedCount}
 
-undo "Adicionar mesas redondas Code Buddy" on
+undo "Adicionar mesas redondas CenoLab" on
 (
     local posicoesMesas = ${positions}
     local pecasMesas = ${parts}

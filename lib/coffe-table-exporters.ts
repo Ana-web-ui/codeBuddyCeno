@@ -40,7 +40,7 @@ export function maxCoffeeTables(c: CoffeeTableConfig, layout: CoffeeTableLayout)
     const pieces = '#(' + parts(c).map(p => '#(' + p.join(',') + ')').join(',') + ')';
     return `
 -- BIBLIOTECA: MESAS DE CENTRO
-undo "Adicionar mesas de centro Code Buddy" on
+undo "Adicionar mesas de centro CenoLab" on
 (
     local posicoesCentro = ${pos}
     local pecasCentro = ${pieces}

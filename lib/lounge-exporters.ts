@@ -63,7 +63,7 @@ function maxObjects(name: string, layout: LoungeLayout, parts: Part[], mat: Mate
     const pieces = '#(' + parts.map(p => '#(' + p.join(',') + ')').join(',') + ')';
     return `
 -- BIBLIOTECA: ${name.toUpperCase()}
-undo "Adicionar ${name} Code Buddy" on
+undo "Adicionar ${name} CenoLab" on
 (
     local posicoesLounge = ${pos}
     local pecasLounge = ${pieces}

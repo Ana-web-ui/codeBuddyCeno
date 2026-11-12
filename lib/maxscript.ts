@@ -1,12 +1,22 @@
+import { ledHasSupports, ledUnit } from './led-layout';
+import { wrapMaxUnit } from './assembly-exporters';
+import { structureTransform } from './structure-layout';
+import { maxBrandingSupport } from './branding-exporters';
+import { lightColor } from './presentation';
+import { maxFloor, maxPresentationCameras } from './presentation-exporters';
+import { maxImportedModels } from './imported-model-exporters';
 import type {Config} from './generator';
 import { geometry } from './generator';
 import { exportProjectKey } from './export-project';
+import { receptionExport } from './reception-exporters';
+import { maxCounters } from './counter-exporters';
+import { maxStorage } from './storage-exporters';
 const msString=(value:string)=>'"'+value.replace(/\\/g,'\\\\').replace(/"/g,'\\"').replace(/[\r\n]/g,' ')+'"';
 export function generateMax(c:Config){
   const rgb=[1,3,5].map(i=>parseInt(c.color.slice(i,i+2),16));
   const settings:Record<string,number|boolean>={LARGURA:c.width,PROFUNDIDADE:c.depth,ALTURA:c.height,PAREDE_FUNDO:c.back,PAREDE_ESQUERDA:c.left,PAREDE_DIREITA:c.right,ADICIONAR_LED:c.led,ADICIONAR_BALCAO:c.counter,ADICIONAR_PALCO:c.stage,ADICIONAR_TOTEM:c.totem,ADICIONAR_SPOTS:c.spots,LED_LARGURA:c.ledWidth,LED_ALTURA:c.ledHeight,LED_BASE:c.ledBottom,BALCAO_LARGURA:c.counterWidth,BALCAO_PROFUNDIDADE:c.counterDepth,BALCAO_ALTURA:c.counterHeight,BALCOES:c.counterCount,PALCO_LARGURA:c.stageWidth,PALCO_PROFUNDIDADE:c.stageDepth,PALCO_ALTURA:c.stageHeight,TOTEM_LARGURA:c.totemWidth,TOTEM_PROFUNDIDADE:c.totemDepth,TOTEM_ALTURA:c.totemHeight,TOTENS:c.totemCount,SPOTS_POR_LADO:c.spotsCount};
   const data=c.led&&c.screenImage?c.screenImage.split(',')[1]:'';
-  return `-- CODE BUDDY | Cenografia | 3ds Max (Physical Material)
+  return `-- CenoLab | Cenografia | 3ds Max (Physical Material)
 -- Projeto: ${c.name.replace(/[\r\n]/g,' ')}
 -- Scripting > Run Script > selecione este arquivo .ms.
 -- Medidas em metros, convertidas para as unidades atuais da cena.
@@ -134,11 +144,13 @@ fn cbTela largura altura y z mat =
 fn cbSpot nome posicao alvo potencia cor =
 (
     local destino = cbRegistrar (TargetObject name:("CB_Alvo_"+nome) pos:(alvo*METRO))
-    local obj = Targetspot name:("CB_"+nome) pos:(posicao*METRO) target:destino multiplier:potencia rgb:cor hotspot:40 falloff:65
+    local obj = Targetspot name:("CB_"+nome) pos:(posicao*METRO) target:destino multiplier:(potencia*${c.lightingIntensity}) rgb:(${lightColor(c) ? `(if nome == "Luz_Preenchimento" then (color ${lightColor(c, true)!.map(n => Math.round(n*255)).join(" ")}) else (color ${lightColor(c)!.map(n => Math.round(n*255)).join(" ")}))` : "cor"}) hotspot:40 falloff:65
+    setUserProp obj "code_buddy_role" "presentation_light"
     obj.castShadows = true
     cbRegistrar obj
 )
 
+${maxBrandingSupport(c)}
 -- Materiais novos por execução preservam os refinamentos das versões anteriores.
 local branco = cbMaterial "white"
 local marca = cbMaterial "brand"
@@ -151,9 +163,9 @@ local tela = if ADICIONAR_LED then cbTV() else undefined
 local escuro = cbMaterial "metal"
 escuro.base_color = color 30 35 43
 
-undo "Gerar stand Code Buddy" on
+undo "Gerar stand CenoLab" on
 (
-    cbCaixa "Piso" LARGURA PROFUNDIDADE .1 0 0 .05 piso
+${maxFloor(c).split('\n').map(line => '    ' + line).join('\n')}
     if PAREDE_FUNDO do
     (
         cbCaixa "Parede_Fundo" LARGURA .15 ALTURA 0 (PROFUNDIDADE/2.0-.075) (ALTURA/2.0+.1) parede
@@ -161,7 +173,20 @@ undo "Gerar stand Code Buddy" on
     )
     if PAREDE_ESQUERDA do cbCaixa "Parede_Esquerda" .15 PROFUNDIDADE ALTURA (-LARGURA/2.0+.075) 0 (ALTURA/2.0+.1) parede
     if PAREDE_DIREITA do cbCaixa "Parede_Direita" .15 PROFUNDIDADE ALTURA (LARGURA/2.0-.075) 0 (ALTURA/2.0+.1) parede
-    if ADICIONAR_LED do
+${c.led && c.objectTransforms['led:0'] ? wrapMaxUnit(ledUnit(c), structureTransform(c, 'led:0'), `    if ADICIONAR_LED do
+    (
+        local y = PROFUNDIDADE/2.0-.35
+        local z = .1+LED_BASE+LED_ALTURA/2.0
+        cbCaixa "LED_Moldura" (LED_LARGURA+.12) .12 (LED_ALTURA+.12) 0 y z escuro
+        cbTela LED_LARGURA LED_ALTURA (y-.075) z tela
+        if ${ledHasSupports(c) ? 'true' : 'false'} do for sinal in #(-1,1) do
+        (
+            local x = sinal*LED_LARGURA*.4
+            cbCaixa "LED_Suporte" .09 .09 LED_BASE x y (.1+LED_BASE/2.0) escuro
+            cbCaixa "LED_Base" .45 .5 .06 x y .13 escuro
+        )
+    )
+`, { group: true, preserveNames: true }) : `    if ADICIONAR_LED do
     (
         local y = PROFUNDIDADE/2.0-.35
         local z = .1+LED_BASE+LED_ALTURA/2.0
@@ -174,14 +199,22 @@ undo "Gerar stand Code Buddy" on
             cbCaixa "LED_Base" .45 .5 .06 x y .13 escuro
         )
     )
-    if ADICIONAR_BALCAO do for i = 1 to BALCOES do
+`}
+${c.counterDetailed || c.counterArtEnabled || Object.keys(c.objectTransforms).some(id => id.startsWith('counter:')) ? maxCounters(c, geometry(c).counterXs, geometry(c).counterY) : `    if ADICIONAR_BALCAO do for i = 1 to BALCOES do
     (
-        local x = (i-1-(BALCOES-1)/2.0)*(BALCAO_LARGURA+.4)
-        local y = -PROFUNDIDADE*.28
+        local x = (#(${geometry(c).counterXs.join(', ')}))[i]
+        local y = ${geometry(c).counterY}
         cbCaixa "Balcao_Corpo" BALCAO_LARGURA BALCAO_PROFUNDIDADE (BALCAO_ALTURA-.06) x y (.1+(BALCAO_ALTURA-.06)/2.0) balcao
         cbCaixa "Balcao_Tampo" (BALCAO_LARGURA+.08) (BALCAO_PROFUNDIDADE+.08) .06 x y (.1+BALCAO_ALTURA-.03) branco
     )
-    if ADICIONAR_PALCO do cbCaixa "Palco" PALCO_LARGURA PALCO_PROFUNDIDADE PALCO_ALTURA 0 ${geometry(c).stageY} (.1+PALCO_ALTURA/2.0) palco
+`}
+    if ADICIONAR_PALCO do
+    (
+        local palcoObj = cbCaixa "Palco" PALCO_LARGURA PALCO_PROFUNDIDADE PALCO_ALTURA (${structureTransform(c, 'stage:0').x}) (${structureTransform(c, 'stage:0').y}) (.1+PALCO_ALTURA/2.0) palco
+        palcoObj.rotation = angleaxis ${structureTransform(c, 'stage:0').rotation} [0,0,1]
+        setUserProp palcoObj "code_buddy_id" "stage:0"
+        setUserProp palcoObj "code_buddy_role" "stage"
+    )
     if ADICIONAR_TOTEM do for i = 1 to TOTENS do
     (
         local x = (i-1-(TOTENS-1)/2.0)*(TOTEM_LARGURA+.5)
@@ -191,7 +224,7 @@ undo "Gerar stand Code Buddy" on
     )
     cbSpot "Luz_Principal" [0,-PROFUNDIDADE*.6,ALTURA+3] [0,0,1] 1.2 (color 255 245 235)
     cbSpot "Luz_Preenchimento" [LARGURA/2.0,0,ALTURA+1] [0,0,1] .6 (color 220 230 255)
-    if ADICIONAR_SPOTS do for sinal in #(-1,1) do
+${c.lightingPreset === 'studio' ? '    cbSpot "Luz_Recorte" [-LARGURA*.4,PROFUNDIDADE*.5,ALTURA+2] [0,0,1] .8 (color 255 255 255)\n' : ''}    if ADICIONAR_SPOTS do for sinal in #(-1,1) do
     (
         local x = sinal*(LARGURA/2.0-.35)
         cbCaixa "Poste_Luz" .07 .07 ALTURA x (PROFUNDIDADE/2.0-.35) (ALTURA/2.0+.1) escuro
@@ -203,17 +236,37 @@ undo "Gerar stand Code Buddy" on
             cbCaixa "Spot_Corpo" .15 .15 .2 x y (ALTURA+.05) escuro
         )
     )
-    local distancia = amax (PROFUNDIDADE*1.8) (LARGURA*1.35)
+${c.presentationCameras ? maxPresentationCameras(c) : `    local distancia = amax (PROFUNDIDADE*1.8) (LARGURA*1.35)
     local destino = cbRegistrar (TargetObject name:"CB_Alvo_Camera" pos:[0,0,ALTURA*.35*METRO])
     local camera = cbRegistrar (TargetCamera name:"CB_Camera_Frontal" pos:[0,-distancia*METRO,ALTURA*1.45*METRO] target:destino)
     local tamanho = amax #(LARGURA*1.25,PROFUNDIDADE*1.4,ALTURA*2.5)
     camera.fov = 2*atan(tamanho/(2*distancia))
     renderWidth = 1920
-    renderHeight = 1080
+    renderHeight = 1080`}
 )
+${maxStorage(c)}
+${receptionExport(c)}
+${maxImportedModels(c)}
 select criados
-max zoomext sel all
-format "Code Buddy: nova versão criada na camada %. Anteriores preservadas.\\n" nomeGeracao
+undo "Orientar estande CenoLab" on
+(
+    local anguloFrente = ${c.projectType === 'stand' || c.projectType === 'reception' ? c.frontRotation : 0}
+    if anguloFrente != 0 do
+    (
+        local objetosGeracao = for obj in criados collect obj
+        local raiz = cbRegistrar (Dummy name:(nomeGeracao + "_Orientacao") pos:[0,0,0])
+        for obj in objetosGeracao do
+        (
+            if obj.parent == undefined then
+                obj.parent = raiz
+            else if (findItem objetosGeracao obj.parent) == 0 then
+                obj.parent = raiz
+        )
+        raiz.transform = rotateZMatrix anguloFrente
+    )
+)
+${c.presentationCameras ? '' : 'max zoomext sel all'}
+format "CenoLab: nova versão criada na camada %. Anteriores preservadas.\\n" nomeGeracao
 )
 `;
 }

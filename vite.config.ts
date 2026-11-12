@@ -69,6 +69,10 @@ const localBindingConfig = {
 // ==========================================
 
 export default defineConfig(async ({ command }) => {
+  // No Windows, o recarregamento do runner de Workers pode ficar em erro interno.
+  // O desenvolvimento usa o runner Node do Vinext; os adaptadores de build permanecem.
+  const localWindowsDev = process.platform === 'win32' &&
+    command === 'serve' && !managedLinux && !isVercel;
 
   // Configuracoes originais do Cloudflare.
   process.env.CLOUDFLARE_CF_FETCH_ENABLED ??= "false";
@@ -81,7 +85,7 @@ export default defineConfig(async ({ command }) => {
     ".wrangler/registry";
 
   // Carrega Cloudflare somente fora da Vercel.
-  const cloudflare = isVercel
+  const cloudflare = isVercel || localWindowsDev
     ? null
     : (await import("@cloudflare/vite-plugin"))
         .cloudflare;
@@ -112,7 +116,7 @@ export default defineConfig(async ({ command }) => {
       rolldownConfig: { platform: "node" },
     }));
 
-  } else {
+  } else if (!localWindowsDev) {
 
     // Mantem a configuracao Cloudflare.
     if (!cloudflare) {
